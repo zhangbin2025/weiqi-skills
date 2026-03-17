@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw 深度问答 - Q&A</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px;
+            background: linear-gradient(135deg, #FF6B35 0%, #f7931e 100%);
+            border-radius: 16px;
+            color: white;
+            box-shadow: 0 4px 20px rgba(255, 107, 53, 0.3);
+        }
+        .header h1 { font-size: 2em; margin-bottom: 10px; }
+        .header .subtitle { opacity: 0.9; font-size: 1.1em; }
+        .header .date { margin-top: 15px; font-size: 0.9em; opacity: 0.8; }
+        .qa-item {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border-left: 4px solid #3498db;
+        }
+        .question {
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 1.15em;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: flex-start;
+        }
+        .question::before {
+            content: "Q";
+            background: #3498db;
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85em;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+        .answer {
+            color: #555;
+            padding-left: 40px;
+        }
+        .answer p { margin-bottom: 10px; }
+        .answer p:last-child { margin-bottom: 0; }
+        .highlight {
+            background: #fff3cd;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Consolas", monospace;
+            font-size: 0.9em;
+            color: #e74c3c;
+        }
+        .tag {
+            display: inline-block;
+            background: #e8f4f8;
+            color: #3498db;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            margin-right: 5px;
+        }
+        .summary-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin: 30px 0;
+        }
+        .summary-box h2 { margin-bottom: 15px; }
+        .summary-box ul { padding-left: 20px; }
+        .summary-box li { margin: 8px 0; }
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #ddd;
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        @media print {
+            body { background: white; }
+            .qa-item { box-shadow: none; border: 1px solid #ddd; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🦞 OpenClaw 深度问答</h1>
+        <div class="subtitle">架构、原理与设计哲学</div>
+        <div class="date">生成时间：2026年3月16日</div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">OpenClaw 的整体架构是什么？</div>
+        <div class="answer">
+            <p><span class="tag">Gateway 架构</span></p>
+            <p><strong>核心：</strong>单一 WebSocket Gateway（默认 <code class="code">127.0.0.1:18789</code>）作为控制平面。</p>
+            <p><strong>接入层：</strong>20+ 消息渠道（QQ、Telegram、WhatsApp、Discord 等）统一接入 Gateway。</p>
+            <p><strong>客户端：</strong>CLI、Web UI、macOS App、iOS/Android Nodes 通过 WS 连接。</p>
+            <p><strong>运行时：</strong>Pi Agent（嵌入 pi-mono）处理推理和工具调用。</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">Pi Agent 的实现原理是什么？</div>
+        <div class="answer">
+            <p><span class="tag">运行时</span></p>
+            <p>基于 <strong>pi-mono</strong> 的 Agent 运行时，OpenClaw 改造为 RPC 模式：</p>
+            <p>1. <code class="code">agent</code> RPC 接收任务 → 返回 runId（异步）</p>
+            <p>2. <code class="code">runEmbeddedPiAgent</code> 序列化执行（每会话独立队列）</p>
+            <p>3. 事件流桥接：<code class="code">subscribeEmbeddedPiSession</code> 将 Pi 事件转为 OpenClaw 流</p>
+            <p>4. 超时保护：默认 600s，工具调用独立计时</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">工作流如何存储？</div>
+        <div class="answer">
+            <p><span class="tag">存储</span></p>
+            <p><strong>技能定义：</strong><code class="code">workspace/skills/&lt;name&gt;/SKILL.md</code>（Markdown + YAML）</p>
+            <p><strong>会话历史：</strong><code class="code">agents/&lt;id&gt;/sessions/&lt;id&gt;.jsonl</code>（按事件逐行记录）</p>
+            <p><strong>长期记忆：</strong><code class="code">workspace/MEMORY.md</code>（跨会话保留）</p>
+            <p><strong>每日日志：</strong><code class="code">workspace/memory/YYYY-MM-DD.md</code></p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">大模型如何理解技能文档？</div>
+        <div class="answer">
+            <p><span class="tag">自然语言</span></p>
+            <p>SKILL.md 直接注入系统提示词，模型像阅读<strong>操作手册</strong>一样理解：</p>
+            <p>• <code class="code">当用户询问天气时</code> → 识别触发条件</p>
+            <p>• <code class="code">使用 web_search 搜索</code> → 知道调用什么工具</p>
+            <p>• 示例和格式说明 → 学习输出规范</p>
+            <p>不同于传统 Function Calling 的 JSON Schema，OpenClaw 用自然语言描述流程。</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">非文本操作（点击、拖拽、语音）如何处理？</div>
+        <div class="answer">
+            <p><span class="tag">文本化</span></p>
+            <p><strong>核心原则：</strong>所有输入必须文本化，输出可以多媒体化。</p>
+            <p>• <strong>浏览器：</strong>CDP accessibility tree（<code class="code">ref=e12</code> 而非像素坐标）</p>
+            <p>• <strong>视觉：</strong>截图 + 多模态模型识别 → 生成坐标</p>
+            <p>• <strong>语音输入：</strong>STT 转文字后才进入模型</p>
+            <p>• <strong>语音输出：</strong>TTS 生成音频文件发送</p>
+            <p>• <strong>拖拽：</strong>封装为 <code class="code">drag(from, to)</code> 工具调用</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">哪些大模型支持视觉理解？</div>
+        <div class="answer">
+            <p><span class="tag">多模态</span></p>
+            <p><strong>商业：</strong>GPT-4o、Claude 3.5 Sonnet、Gemini 2.0、Qwen-VL、Kimi k1.5</p>
+            <p><strong>开源：</strong>LLaVA、Qwen2-VL、InternVL2、MiniCPM-V</p>
+            <p><strong>推荐：</strong>网页截图用 Claude 3.5，中文文档用 Qwen-VL，实时流用 Gemini。</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">固化工作流需要强算力模型吗？</div>
+        <div class="answer">
+            <p><span class="tag">成本优化</span></p>
+            <p><strong>不需要。</strong>可按场景选择：</p>
+            <p>• 简单问答 → 轻量模型（GPT-4o-mini、Qwen-Turbo）</p>
+            <p>• 固化工作流 → 中等模型（Claude Haiku）</p>
+            <p>• 复杂推理 → 大模型（Claude 3.5、GPT-4o）</p>
+            <p>支持本地部署（Ollama），成本接近零。</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">如何防止工作流死循环？</div>
+        <div class="answer">
+            <p><span class="tag">安全防护</span></p>
+            <p>• <strong>超时：</strong>单轮默认 600s，工具调用独立超时</p>
+            <p>• <strong>次数限制：</strong>单轮最多 20 次工具调用</p>
+            <p>• <strong>循环检测：</strong>A→B→A→B 模式自动拦截</p>
+            <p>• <strong>去重：</strong>相同参数调用短期缓存（~5分钟）</p>
+            <p>• <strong>队列模式：</strong>steer 模式下新消息打断当前执行</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">除 exec 外还有哪些执行方式？</div>
+        <div class="answer">
+            <p><span class="tag">工具矩阵</span></p>
+            <p>• <code class="code">web_search/fetch</code> → HTTP API 调用</p>
+            <p>• <code class="code">browser</code> → CDP 浏览器自动化</p>
+            <p>• <code class="code">nodes</code> → 远程设备 RPC（iOS/Android）</p>
+            <p>• <code class="code">sessions_spawn</code> → 子代理（ACP/Subagent）</p>
+            <p>• <code class="code">cron</code> → 定时任务调度</p>
+            <p>• <code class="code">canvas</code> → 可视化界面操作</p>
+            <p>• <code class="code">message</code> → 跨渠道消息发送</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">创始人是谁？设计哲学是什么？</div>
+        <div class="answer">
+            <p><span class="tag">理念</span></p>
+            <p><strong>Peter Steinberger</strong>（PSPDFKit 创始人）</p>
+            <p><strong>核心：</strong>为 Molty（太空龙虾 AI）打造真正的个人助理，而非聊天机器人。</p>
+            <p><strong>原则：</strong></p>
+            <p>• Local-First：数据留在本地，拒绝 SaaS 订阅</p>
+            <p>• 渠道即界面：不新建 App，在你已用的渠道中工作</p>
+            <p>• 成为某人：有身份、记忆、边界，而非工具</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">版本历程如何？</div>
+        <div class="answer">
+            <p><span class="tag">CalVer</span></p>
+            <p>采用日历版本：<code class="code">vYYYY.M.D</code></p>
+            <p>• 2024.11 → 项目启动，基础 Gateway</p>
+            <p>• 2025.x → 多渠道扩展，Pi Agent 集成</p>
+            <p>• 2026.1 → Skills、Canvas、视觉模型</p>
+            <p>• 2026.3.8 → 最新，备份系统、安全加固</p>
+            <p>三通道：stable / beta / dev</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">代码规模多大？能否保持轻量？</div>
+        <div class="answer">
+            <p><span class="tag">规模</span></p>
+            <p>• 源码：~5-10 万行 TypeScript</p>
+            <p>• 打包：3000+ 模块</p>
+            <p>• 运行时：Gateway ~100-200MB，对话 +50-100MB</p>
+            <p><strong>模块化保持轻量：</strong></p>
+            <p>• 不配 skills → 不加载</p>
+            <p>• 不配 nodes → 无设备开销</p>
+            <p>• 不配 browser → 不启动 Chrome</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">隐私如何保护？</div>
+        <div class="answer">
+            <p><span class="tag">安全</span></p>
+            <p>• <strong>存储：</strong>全部本地（<code class="code">~/.openclaw/</code>）</p>
+            <p>• <strong>模型选择：</strong>本地 Ollama（完全离线）或信任 API（Anthropic 承诺不训练）</p>
+            <p>• <strong>记忆：</strong>用户控制的 Markdown 文件</p>
+            <p>• <strong>压缩：</strong>自动清理对话历史，保留摘要</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">长期/7x24 小时任务如何处理？</div>
+        <div class="answer">
+            <p><span class="tag">异步</span></p>
+            <p><strong>不是不能长期运行，是用对模式：</strong></p>
+            <p>• <code class="code">cron</code> → 定时任务（每次触发独立短任务）</p>
+            <p>• <code class="code">sessions_spawn</code> → 后台子代理（长期运行）</p>
+            <p>• <strong>外部进程 + 状态查询</strong> → 后台启动，定期汇报</p>
+            <p>单次对话有 600s 限制，但 Gateway 可以 7x24 调度。</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">与 Manus 的区别？</div>
+        <div class="answer">
+            <p><span class="tag">竞品</span></p>
+            <p><strong>Manus：</strong>云端通用 Agent，重任务执行（写代码、爬虫），网页提交任务等待结果。</p>
+            <p><strong>OpenClaw：</strong>本地消息助手，轻量日常管理（提醒、查询、自动化），即时消息对话。</p>
+            <p><strong>不是替代：</strong>Manus 做大事，OpenClaw 做小事，两者互补。</p>
+        </div>
+    </div>
+
+    <div class="qa-item">
+        <div class="question">历史定位是什么？</div>
+        <div class="answer">
+            <p><span class="tag">先驱</span></p>
+            <p><strong>参考：</strong>pi-mono（运行时）、Hubot（消息渠道）、Huginn（自动化）、Tailscale（远程访问）</p>
+            <p><strong>独特：</strong>最早将"本地优先 + 多渠道 + Markdown 技能 + 设备协同"整合成熟</p>
+            <p><strong>不是最早：</strong>Siri(2011)、Hubot(2013)、Huginn(2020) 在前，但 OpenClaw 是这波 LLM Agent 浪潮中最早成熟的开源本地方案之一。</p>
+        </div>
+    </div>
+
+    <div class="summary-box">
+        <h2>🎯 核心要点</h2>
+        <ul>
+            <li><strong>架构：</strong>单一 Gateway + WebSocket + 模块化工具</li>
+            <li><strong>技能：</strong>Markdown 自然语言定义，非 JSON Schema</li>
+            <li><strong>隐私：</strong>Local-First，数据不出机，可选完全离线</li>
+            <li><strong>长期任务：</strong>用 cron 或子代理，非单次对话阻塞</li>
+            <li><strong>定位：</strong>个人消息助手，非云端重执行器</li>
+            <li><strong>成本：</strong>按需加载，小模型可跑固化工作流</li>
+        </ul>
+    </div>
+
+    <footer>
+        <p>OpenClaw Q&A 存档 | 对话时间：2026年3月16日</p>
+        <p>官网：<a href="https://openclaw.ai">openclaw.ai</a> | 文档：<a href="https://docs.openclaw.ai">docs.openclaw.ai</a></p>
+    </footer>
+</body>
+</html>

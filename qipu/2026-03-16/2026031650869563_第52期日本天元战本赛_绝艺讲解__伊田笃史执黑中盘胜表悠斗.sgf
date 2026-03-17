@@ -1,0 +1,640 @@
+(;GM[1]FF[4]
+SZ[19]
+GN[第52期日本天元战本赛<绝艺讲解>]
+DT[2026-03-16]
+PB[伊田笃史]
+PW[表悠斗]
+BR[P9段]
+WR[P4段]
+KM[650]HA[0]RU[Japanese]AP[GNU Go:3.8]RE[B+R]TM[10800]TC[5]TT[60]AP[foxwq]RL[0]
+;B[qd]
+(;W[dp]
+(;B[qp]
+(;W[dd]
+(;B[nd]
+(;W[op]
+(;B[oq]
+(;W[nq]
+(;B[pq]
+(;W[np]
+(;B[pn]
+(;W[jp]
+(;B[fc]
+(;W[cn]
+(;B[cc]
+(;W[dc]
+(;B[cd]
+(;W[de]
+(;B[db]
+(;W[eb]
+(;B[cb]
+(;W[lc]
+(;B[jc]
+(;W[le]
+(;B[mf]
+(;W[hc]
+(;B[cf]
+(;W[pd]
+(;B[pc]
+(;W[oc]
+(;B[od]
+(;W[pe]
+(;B[qc]
+(;W[nc]
+(;B[md]
+(;W[ld]
+(;B[pf]
+(;W[fb]
+(;B[lf]
+(;W[kf]
+(;B[je]
+(;W[ke]
+(;B[gc]
+(;W[hd]
+(;B[gb]
+(;W[ec]
+(;B[ge]
+(;W[hb]
+(;B[ff]
+(;W[cg]
+(;B[bf]
+(;W[df]
+(;B[he]
+(;W[ga]
+(;B[id]
+(;W[eg]
+(;B[gh]
+(;W[jh]
+(;B[jf]
+(;W[kg]
+(;B[kb]
+(;W[mc]
+(;B[ei]
+(;W[di]
+(;B[dj]
+(;W[ci]
+(;B[eh]
+(;W[dh]
+(;B[gj]
+(;W[fg]
+(;B[gg]
+(;W[qe]
+(;B[cj]
+(;W[bh]
+(;B[qf]
+(;W[re]
+(;B[of]
+(;W[rb]
+(;B[rc]
+(;W[sc]
+(;B[sb]
+(;W[sa]
+(;B[sd]
+(;W[qo]
+(;B[po]
+(;W[pp]
+(;B[qq]
+(;W[qn]
+(;B[pm]
+(;W[rl]
+(;B[qk]
+(;W[qm]
+(;B[pl]
+(;W[rk]
+(;B[rj]
+(;W[qj]
+(;B[ri]
+(;W[rp]
+(;B[rq]
+(;W[sp]
+(;B[ob]
+(;W[or]
+(;B[jj]
+(;W[nb]
+(;B[pb]
+(;W[kj]
+(;B[jk]
+(;W[lk]
+(;B[ll]
+(;W[ml]
+(;B[kk]
+(;W[lj]
+(;B[mm]
+(;W[mh]
+(;B[pj]
+(;W[rf]
+(;B[rg]
+(;W[qg]
+(;B[qh]
+(;W[lm]
+(;B[kl]
+(;W[nm]
+(;B[mk]
+(;W[mn]
+(;B[mj]
+(;W[sg]
+(;B[sb]
+(;W[rh]
+(;B[ph]
+(;W[sc]
+(;B[bk]
+(;W[fd]
+(;B[sb]
+(;W[gd]
+(;B[ma]
+(;W[na]
+(;B[ra]
+(;W[nj]
+(;B[mi]
+(;W[nf]
+(;B[ng]
+(;W[ni]
+(;B[nk]
+(;W[ok]
+(;B[ki]
+(;W[nh]
+(;B[oj]
+(;W[og]
+(;B[pg])
+(;B[pg]C[)
+(;B[lh]C[)
+(;W[og]C[)
+(;W[ol]C[)
+(;W[lh]C[)
+(;B[oj]C[)
+(;B[ne]C[)
+(;B[ol]C[)
+(;W[nh]C[)
+(;W[lh]C[)
+(;W[oj]C[)
+(;B[ki]C[)
+(;B[lh]C[)
+(;B[sq]C[)
+(;W[ok]C[)
+(;W[nh]C[)
+(;W[og]C[)
+(;B[nk]C[)
+(;B[ki]C[)
+(;B[nl]C[)
+(;W[nh]C[)
+(;W[nk]C[)
+(;W[og]C[)
+(;B[ng]C[)
+(;B[oe]C[)
+(;W[ni]C[)
+(;W[nf]C[)
+(;W[nk]C[)
+(;B[nk]C[)
+(;B[mi]C[)
+(;B[ki]C[)
+(;W[mi]C[)
+(;W[nf]C[)
+(;W[ni]C[)
+(;B[ra]C[)
+(;B[sc]C[)
+(;B[qa]C[)
+(;W[mi]C[)
+(;W[na]C[)
+(;W[nf]C[)
+(;B[ma]C[)
+(;B[mi]C[)
+(;B[ki]C[)
+(;W[mi]C[)
+(;W[nf]C[)
+(;W[hi]C[)
+(;B[mi]C[)
+(;B[gd]C[)
+(;B[sb]C[)
+(;W[fd]C[)
+(;W[bg]C[)
+(;W[bj]C[)
+(;B[mi]C[)
+(;B[bk]C[)
+(;B[bj]C[)
+(;W[mi]C[)
+(;W[sc]C[)
+(;W[nf]C[)
+(;B[ph]C[)
+(;W[mi]C[)
+(;W[rh]C[)
+(;W[hi]C[)
+(;B[pg]C[)
+(;B[mi]C[)
+(;B[bj]C[)
+(;W[mi]C[)
+(;W[sg]C[)
+(;W[nf]C[)
+(;B[ki]C[)
+(;B[nk]C[)
+(;B[mj]C[)
+(;W[mn]C[)
+(;W[nf]C[)
+(;W[nl]C[)
+(;B[mn]C[)
+(;B[bk]C[)
+(;B[bj]C[)
+(;W[nm]C[)
+(;W[mr]C[)
+(;W[ji]C[)
+(;B[kl]C[)
+(;B[bk]C[)
+(;B[bj]C[)
+(;W[lm]C[)
+(;W[mr]C[)
+(;W[bj]C[)
+(;B[qh]C[)
+(;B[bj]C[)
+(;B[bk]C[)
+(;W[mr]C[)
+(;W[qg]C[)
+(;W[bj]C[)
+(;B[rg]C[)
+(;B[bk]C[)
+(;B[bj]C[)
+(;W[mr]C[)
+(;W[bj]C[)
+(;W[ji]C[)
+(;B[bk]C[)
+(;B[nl]C[)
+(;B[mk]C[)
+(;W[mh]C[)
+(;W[lm]C[)
+(;W[lh]C[)
+(;B[lh]C[)
+(;B[bk]C[)
+(;B[ki]C[)
+(;W[lj]C[)
+(;W[ki]C[)
+(;W[oa]C[)
+(;B[kk]C[)
+(;B[lh]C[)
+(;B[bk]C[)
+(;W[lh]C[)
+(;W[ml]C[)
+(;W[mh]C[)
+(;B[bk]C[)
+(;B[lh]C[)
+(;B[bj]C[)
+(;W[kk]C[)
+(;W[lh]C[)
+(;W[ji]C[)
+(;B[kk]C[)
+(;B[bk]C[)
+(;B[lh]C[)
+(;W[kj]C[)
+(;W[oa]C[)
+(;W[hi]C[)
+(;B[pb]C[)
+(;B[bk]C[)
+(;B[bj]C[)
+(;W[kj]C[)
+(;W[hi]C[)
+(;W[qi]C[)
+(;B[jj]C[)
+(;B[bk]C[)
+(;B[bj]C[)
+(;W[bj]C[)
+(;W[qi]C[)
+(;W[hi]C[)
+(;B[bk]C[)
+(;B[ob]C[)
+(;B[bj]C[)
+(;W[sp]C[)
+(;W[qi]C[)
+(;W[hi]C[)
+(;B[rq]C[)
+(;B[bk]C[)
+(;B[bj]C[)
+(;W[qi]C[)
+(;W[rp]C[)
+(;W[pj]C[)
+(;B[bk]C[)
+(;B[ri]C[)
+(;B[bj]C[)
+(;W[bj]C[)
+(;W[qj]C[)
+(;W[rp]C[)
+(;B[rj]C[)
+(;B[bk]C[)
+(;B[bj]C[)
+(;W[rk]C[)
+(;W[hi]C[)
+(;W[bj]C[)
+(;B[bk]C[)
+(;B[pl]C[)
+(;B[bj]C[)
+(;W[bj]C[)
+(;W[qh]C[)
+(;W[rk]C[)
+(;B[bk]C[)
+(;B[qk]C[)
+(;B[bj]C[)
+(;W[ql]C[)
+(;W[bj]C[)
+(;W[qm]C[)
+(;B[pm]C[)
+(;B[qm]C[)
+(;B[pl]C[)
+(;W[bj]C[)
+(;W[qn]C[)
+(;W[hi]C[)
+(;B[qq]C[)
+(;B[rq]C[)
+(;B[bj]C[)
+(;W[bj]C[)
+(;W[pp]C[)
+(;W[hi]C[)
+(;B[qn]C[)
+(;B[bk]C[)
+(;B[po]C[)
+(;W[bj]C[)
+(;W[qo]C[)
+(;W[hi]C[)
+(;B[sd]C[)
+(;B[bj]C[)
+(;B[bk]C[)
+(;W[sa]C[)
+(;W[rf]C[)
+(;W[qb]C[)
+(;B[sb]C[)
+(;B[bk]C[)
+(;B[bj]C[)
+(;W[sc]C[)
+(;W[rf]C[)
+(;W[qb]C[)
+(;B[rc]C[)
+(;B[bk]C[)
+(;B[bj]C[)
+(;W[rb]C[)
+(;W[qb]C[)
+(;W[hi]C[)
+(;B[of]C[)
+(;B[oe]C[)
+(;W[re]C[)
+(;W[oe]C[)
+(;W[of]C[)
+(;B[qf]C[)
+(;B[bj]C[)
+(;B[bk]C[)
+(;W[bj]C[)
+(;W[bh]C[)
+(;W[fd]C[)
+(;B[qf]C[)
+(;B[cj]C[)
+(;B[re]C[)
+(;W[qe]C[)
+(;W[fh]C[)
+(;W[hi]C[)
+(;B[gg]C[)
+(;W[qe]C[)
+(;W[fg]C[)
+(;W[hi]C[)
+(;B[oe]C[)
+(;B[of]C[)
+(;B[gj]C[)
+(;W[dh]C[)
+(;W[fg]C[)
+(;B[eh]C[)
+(;B[oe]C[)
+(;B[of]C[)
+(;W[gg]C[)
+(;W[ci]C[)
+(;W[fh]C[)
+(;B[dj]C[)
+(;B[oe]C[)
+(;B[of]C[)
+(;W[fh]C[)
+(;W[cj]C[)
+(;W[eh]C[)
+(;B[oe]C[)
+(;B[of]C[)
+(;B[fi]C[)
+(;W[of]C[)
+(;W[mc]C[)
+(;W[kc]C[)
+(;B[kb]C[)
+(;B[fi]C[)
+(;B[ii]C[)
+(;W[me]C[)
+(;W[kb]C[)
+(;W[jb]C[)
+(;B[kb]C[)
+(;B[jf]C[)
+(;B[fi]C[)
+(;W[jf]C[)
+(;W[jb]C[)
+(;W[kh]C[)
+(;B[kb]C[)
+(;B[gh]C[)
+(;B[jf]C[)
+(;W[jb]C[)
+(;W[jf]C[)
+(;W[eg]C[)
+(;B[jf]C[)
+(;B[id]C[)
+(;B[jd]C[)
+(;W[jd]C[)
+(;W[jf]C[)
+(;W[ga]C[)
+(;B[he]C[)
+(;B[dg]C[)
+(;B[mc]C[)
+(;W[df]C[)
+(;W[fe]C[)
+(;W[he]C[)
+(;B[bf]C[)
+(;B[df]C[)
+(;B[ce]C[)
+(;W[he]C[)
+(;W[ee]C[)
+(;W[cg]C[)
+(;B[ff]C[)
+(;B[jf]C[)
+(;B[he]C[)
+(;W[he]C[)
+(;W[jd]C[)
+(;W[hb]C[)
+(;B[hb]C[)
+(;B[ge]C[)
+(;W[ec]C[)
+(;W[hb]C[)
+(;B[gb]C[)
+(;W[hd]C[)
+(;W[he]C[)
+(;W[gb]C[)
+(;B[gc]C[)
+(;B[he]C[)
+(;B[hd]C[)
+(;W[jf]C[)
+(;W[he]C[)
+(;W[ke]C[)
+(;B[gc]C[)
+(;B[je]C[)
+(;W[je]C[)
+(;W[kf]C[)
+(;W[me]C[)
+(;B[je]C[)
+(;B[id]C[)
+(;B[gc]C[)
+(;W[fb]C[)
+(;W[ec]C[)
+(;B[of]C[)
+(;B[pf]C[)
+(;B[fb]C[)
+(;W[ld]C[)
+(;B[md]C[)
+(;B[of]C[)
+(;B[pf]C[)
+(;W[nc]C[)
+(;W[ob]C[)
+(;W[fb]C[)
+(;B[qc]C[)
+(;W[pe]C[)
+(;B[od]C[)
+(;W[oc]C[)
+(;W[fb]C[)
+(;W[qo]C[)
+(;B[pe]C[)
+(;B[pc]C[)
+(;B[qe]C[)
+(;W[fb]C[)
+(;W[pl]C[)
+(;W[ql]C[)
+(;B[ec]C[)
+(;B[fb]C[)
+(;B[cf]C[)
+(;W[ec]C[)
+(;W[hc]C[)
+(;W[lf]C[)
+(;B[cf]C[)
+(;B[mc]C[)
+(;B[je]C[)
+(;W[le]C[)
+(;W[pd]C[)
+(;W[hc]C[)
+(;B[cf]C[)
+(;B[ec]C[)
+(;B[jc]C[)
+(;W[fb]C[)
+(;W[ql]C[)
+(;W[hc]C[)
+(;B[cb]C[)
+(;W[eb]C[)
+(;W[ql]C[)
+(;W[ce]C[)
+(;B[db]C[)
+(;B[bf]C[)
+(;B[ce]C[)
+(;W[de]C[)
+(;W[qo]C[)
+(;W[ce]C[)
+(;B[cd]C[)
+(;W[cd]C[)
+(;W[dc]C[)
+(;W[ql]C[)
+(;B[cc]C[)
+(;B[hq]C[)
+(;B[cg]C[)
+(;W[df]C[)
+(;W[ec]C[)
+(;W[lc]C[)
+(;B[cc]C[)
+(;B[fc]C[)
+(;B[cf]C[)
+(;W[jp]C[)
+(;W[ql]C[)
+(;W[jq]C[)
+(;B[qn]C[)
+(;B[pn]C[)
+(;B[qm]C[)
+(;W[np]C[)
+(;W[mp]C[)
+(;B[pq]C[)
+(;B[or]C[)
+(;W[nq]C[)
+(;B[oq]C[)
+(;B[fc]C[)
+(;B[pq]C[)
+(;W[op]C[)
+(;W[oq]C[)
+(;W[np]C[)
+(;B[op]C[)
+(;B[nq]C[)
+(;B[od]C[)
+(;W[dc]C[)
+(;B[dc]C[)
+(;W[dd]C[)
+            <div  class="col-sm-12">
+                <div class="bdsharebuttonbox"><a href="#" class="bds_more" data-cmd="more"></a><a href="#" class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a><a href="#" class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a><a href="#" class="bds_renren" data-cmd="renren" title="分享到人人网"></a><a href="#" class="bds_weixin" data-cmd="weixin" title="分享到微信"></a><a href="#" class="bds_sqq" data-cmd="sqq" title="分享到QQ好友"></a></div>
+                <script>window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"第52期日本天元战本赛<绝艺讲解>&nbsp;伊田笃史执黑中盘胜表悠斗","bdDesc":"第52期日本天元战本赛<绝艺讲解>&nbsp;伊田笃史执黑中盘胜表悠斗","bdPic":"https://www.foxwq.com/Public/Images/logo2.png","bdMini":"2","bdMiniList":false,"bdStyle":"0","bdSize":"16"},"share":{},"image":{"viewList":["qzone","tsina","renren","weixin","sqq"],"viewText":"分享到：","viewSize":"16"},"selectShare":{"bdContainerClass":null,"bdSelectMiniList":["qzone","tsina","renren","weixin","sqq"]}};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://bdimg.share.baidu.com/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];</script>
+            </div>
+        </div>
+    </div>
+</div>
+<hr>
+<footer class="bottom">
+    <p class="text-center">北京野狐世纪技术有限公司 Copyright(C) <span id="year"></span> All Rights reserved.</p>
+    <P class="text-center">
+        <a href="https://beian.miit.gov.cn" target="_blank">京ICP备09066251号</a>&nbsp;
+        <a href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=11010102002237" target="_blank"><img src="/Public/Images/beian.png" alt="">京公网安备 11010102002237号</a>
+    </P>
+    <p class="text-center">全国文化市场统一举报电话：12318</p>
+    <p class="text-center">商城客服电话：400-656-6936    请在工作日10:30-11:30 13:00-17:00拨打</p>
+    <p class="text-center">野狐少儿围棋客服电话：400-688-5063</p>
+    <script src="https://www.googletagmanager.com/gtag/js?id=G-RJZVB1BZBR" type=""></script>
+    <script>
+        document.getElementById('year').textContent = new Date().getFullYear();
+        <!-- Google tag (gtag.js) -->
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-RJZVB1BZBR');
+    </script>
+    <!--
+    <script src="/Public/new/all.js"></script>
+    -->
+</footer>
+<script src="/Public/Boot3/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="/Public/Js/artDialog/jquery.artDialog.js?skin=default"></script>
+<script type="text/javascript" src="/Public/Js/artDialog/plugins/iframeTools.js"></script>
+<script src="/Public/new/all.js"></script>
+<script type="text/javascript">
+    var qipuId = 2026031650869563;
+    $(document).keydown(function(event){
+        if(event.keyCode == 37){
+            $(".back").click();
+        }else if (event.keyCode == 32){
+            $(".forward").click();
+        }else if (event.keyCode == 39){
+            $(".forward").click();
+        }
+    });
+    function showGo(e){
+        //alert('1');
+        var url = "/qipu/test/id/2026031650869563/type/1/move/" + e.innerHTML;
+        art.dialog.open(url, {title: '参考图',width: 421,height: 477});
+        //alert(qipuId + ',' + e.innerHTML);
+    }
+    function myFun2()
+    {
+
+    }
+    $(function(){
+        $(document).on("click", '.variation-nav', function(){
+            //console.log(this.textContent());
+            showGo(this);
+        });
+        $('<audio id="chatAudio"><source src="/player/images/stone0.ogg" type="audio/ogg"><source src="/player/images/stone0.mp3" type="audio/mpeg"><source src="/player/images/stone0.wav" type="audio/wav"></audio>').appendTo('body');
+        $(document).on('click', '.forward-on,.back-on', function(){
+            $('#chatAudio')[0].play();
+        });
+        var nua = navigator.userAgent;
+        var isAndroid = (nua.indexOf('Mozilla/5.0') > -1 && nua.indexOf('Android ') > -1 && nua.indexOf('AppleWebKit') > -1 && nua.indexOf('Chrome') === -1);
+        if (isAndroid) {
+            $('select.form-control').removeClass('form-control').css('width', '100%');
+        }
+
+    });
+</script>
+</body>
+</html>))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))

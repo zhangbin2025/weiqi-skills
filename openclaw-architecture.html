@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw 架构详解</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.8;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #f5f7fa;
+        }
+        h1 {
+            font-size: 2.5em;
+            color: #1a1a1a;
+            margin-bottom: 10px;
+            border-bottom: 4px solid #FF6B35;
+            padding-bottom: 15px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 1.1em;
+            margin-bottom: 40px;
+        }
+        h2 {
+            font-size: 1.8em;
+            color: #2c3e50;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-left: 15px;
+            border-left: 5px solid #3498db;
+        }
+        h3 {
+            font-size: 1.4em;
+            color: #34495e;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .architecture-diagram {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 25px;
+            border-radius: 8px;
+            font-family: "Consolas", "Monaco", monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            overflow-x: auto;
+            margin: 20px 0;
+            white-space: pre;
+        }
+        .component {
+            display: inline-block;
+            padding: 8px 16px;
+            margin: 5px;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+        .gateway { background: #e74c3c; color: white; }
+        .channel { background: #3498db; color: white; }
+        .client { background: #2ecc71; color: white; }
+        .node { background: #9b59b6; color: white; }
+        .tool { background: #f39c12; color: white; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        th {
+            background: #2c3e50;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #ecf0f1;
+        }
+        tr:hover {
+            background: #f8f9fa;
+        }
+        code {
+            background: #f4f4f4;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: "Consolas", monospace;
+            color: #e74c3c;
+            font-size: 0.9em;
+        }
+        .highlight-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .info-box {
+            background: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        ul, ol {
+            margin: 15px 0;
+            padding-left: 30px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .flow-step {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .step-num {
+            width: 30px;
+            height: 30px;
+            background: #3498db;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+        .protocol-block {
+            background: #2d2d2d;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: "Consolas", monospace;
+            font-size: 13px;
+            margin: 10px 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-x: auto;
+        }
+        .json-key { color: #9cdcfe; }
+        .json-str { color: #ce9178; }
+        .json-num { color: #b5cea8; }
+        footer {
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 2px solid #ecf0f1;
+            text-align: center;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <h1>🦞 OpenClaw 架构详解</h1>
+    <p class="subtitle">个人 AI 助手系统的控制平面设计与实现</p>
+
+    <div class="highlight-box">
+        <strong>核心理念：</strong>OpenClaw 采用「Gateway 即控制平面」的架构，所有消息渠道、客户端、设备节点都通过单一的 WebSocket 网关进行协调，实现统一的身份验证、会话管理和工具调度。
+    </div>
+
+    <h2>📐 整体架构</h2>
+    
+    <div class="architecture-diagram">
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           <span class="gateway">Gateway (控制平面)</span>                         │
+│                        ws://127.0.0.1:18789                             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐      │
+│  │<span class="channel">WhatsApp</span>│ │<span class="channel">Telegram</span>│ │ <span class="channel">Slack</span>   │ │ <span class="channel">Discord</span> │ │<span class="channel"> QQ Bot</span> │  ...   │
+│  │(Baileys) │ │(grammY)  │ │ (Bolt)   │ │(discord.)│ │         │        │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘      │
+└──────────────────────────┬────────────────────────────────────────────┘
+                           │
+           ┌───────────────┼───────────────┬───────────────┐
+           ▼               ▼               ▼               ▼
+    ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐
+    │  <span class="client">CLI</span>     │  │  <span class="client">Web UI</span>   │  │ <span class="client">macOS App</span> │  │   <span class="node">Nodes</span>   │
+    │            │  │            │  │            │  │(iOS/Android)│
+    └────────────┘  └────────────┘  └────────────┘  └────────────┘
+    </div>
+
+    <h2>🏗️ 核心组件</h2>
+
+    <div class="card">
+        <h3>1. Gateway（网关）</h3>
+        <p>Gateway 是整个系统的<strong>单一控制平面</strong>，负责：</p>
+        <ul>
+            <li><strong>渠道管理</strong>：维护与 WhatsApp、Telegram、QQ 等 20+ 消息渠道的连接</li>
+            <li><strong>WebSocket 服务</strong>：默认监听 <code>127.0.0.1:18789</code>，所有客户端通过 WS 连接</li>
+            <li><strong>会话管理</strong>：维护活跃会话（Session）、路由消息、管理工具调用</li>
+            <li><strong>Canvas Host</strong>：在同一端口提供可视化工作区</li>
+        </ul>
+    </div>
+
+    <div class="card">
+        <h3>2. Agent 运行时</h3>
+        <ul>
+            <li><strong>Pi Agent</strong>：基于 RPC 模式运行，支持工具流式调用（tool streaming）</li>
+            <li><strong>会话模型</strong>：
+                <ul>
+                    <li><code>main</code>：私聊会话，拥有最高权限</li>
+                    <li>群组会话：独立隔离上下文，可配置沙箱</li>
+                </ul>
+            </li>
+            <li><strong>工具集</strong>：browser、canvas、nodes、cron、sessions 等</li>
+        </ul>
+    </div>
+
+    <div class="card">
+        <h3>3. Nodes（设备节点）</h3>
+        <p>macOS/iOS/Android 设备通过 WebSocket 以 <code>role: node</code> 接入 Gateway：</p>
+        <ul>
+            <li>暴露设备能力：camera（拍照/录像）、screen record、location、notifications</li>
+            <li>通过 <code>node.invoke</code> 执行设备本地命令</li>
+            <li>支持设备配对和设备令牌管理</li>
+        </ul>
+    </div>
+
+    <h2>📡 协议设计</h2>
+
+    <h3>WebSocket 协议帧</h3>
+
+    <div class="protocol-block">
+<span class="json-key">// 1. 连接握手</span>
+{type:<span class="json-str">"req"</span>, id:<span class="json-num">1</span>, method:<span class="json-str">"connect"</span>, params:{deviceId:<span class="json-str">"..."</span>, token:<span class="json-str">"..."</span>}}
+{type:<span class="json-str">"res"</span>, id:<span class="json-num">1</span>, ok:<span class="json-str">true</span>, payload:{...}}
+
+<span class="json-key">// 2. 发起对话</span>
+{type:<span class="json-str">"req"</span>, id:<span class="json-num">2</span>, method:<span class="json-str">"agent"</span>, params:{message:<span class="json-str">"Hello"</span>}}
+{type:<span class="json-str">"res"</span>, id:<span class="json-num">2</span>, status:<span class="json-str">"accepted"</span>, runId:<span class="json-str">"run-123"</span>}
+
+<span class="json-key">// 3. 服务端推送（流式响应）</span>
+{type:<span class="json-str">"event"</span>, event:<span class="json-str">"agent"</span>, payload:{chunk:<span class="json-str">"..."</span>, runId:<span class="json-str">"run-123"</span>}}
+{type:<span class="json-str">"event"</span>, event:<span class="json-str">"agent"</span>, payload:{done:<span class="json-str">true</span>, runId:<span class="json-str">"run-123"</span>}}
+    </div>
+
+    <h3>连接生命周期</h3>
+    <div class="flow-step">
+        <div class="step-num">1</div>
+        <div>客户端发送 <code>connect</code> 请求，携带设备标识和认证令牌</div>
+    </div>
+    <div class="flow-step">
+        <div class="step-num">2</div>
+        <div>Gateway 验证设备（检查配对状态、签名验证）</div>
+    </div>
+    <div class="flow-step">
+        <div class="step-num">3</div>
+        <div>连接建立，Gateway 推送 <code>presence</code> 和 <code>tick</code> 事件</div>
+    </div>
+    <div class="flow-step">
+        <div class="step-num">4</div>
+        <div>客户端可发起 <code>agent</code>、<code>send</code>、<code>status</code> 等请求</div>
+    </div>
+
+    <h2>🔒 安全模型</h2>
+
+    <table>
+        <tr>
+            <th>层级</th>
+            <th>机制</th>
+            <th>说明</th>
+        </tr>
+        <tr>
+            <td>设备配对</td>
+            <td><code>pairing</code> 模式</td>
+            <td>新设备需通过 <code>openclaw pairing approve &lt;code&gt;</code> 批准</td>
+        </tr>
+        <tr>
+            <td>本地优化</td>
+            <td>自动批准</td>
+            <td>loopback 或本机 tailnet 地址可自动通过配对</td>
+        </tr>
+        <tr>
+            <td>签名验证</td>
+            <td>Challenge-Response</td>
+            <td><code>connect.challenge</code> nonce 签名，绑定 platform + deviceFamily</td>
+        </tr>
+        <tr>
+            <td>DM 策略</td>
+            <td>白名单控制</td>
+            <td>默认 <code>pairing</code> 模式，未知发件人需配对后才处理</td>
+        </tr>
+        <tr>
+            <td>沙箱隔离</td>
+            <td>Docker 沙箱</td>
+            <td>非 main 会话可配置在 Docker 沙箱中运行</td>
+        </tr>
+    </table>
+
+    <h2>🛠️ 工具调用架构</h2>
+
+    <div class="card">
+        <h3>工具执行位置</h3>
+        <table>
+            <tr>
+                <th>工具类别</th>
+                <th>执行位置</th>
+                <th>示例</th>
+            </tr>
+            <tr>
+                <td>Host 工具</td>
+                <td>Gateway 所在主机</td>
+                <td><code>exec</code>、<code>read</code>、<code>write</code>、<code>browser</code></td>
+            </tr>
+            <tr>
+                <td>Node 工具</td>
+                <td>配对设备</td>
+                <td><code>camera_snap</code>、<code>screen_record</code>、<code>location_get</code></td>
+            </tr>
+            <tr>
+                <td>渠道工具</td>
+                <td>对应渠道 API</td>
+                <td><code>discord</code>、<code>slack</code> 相关操作</td>
+            </tr>
+        </table>
+    </div>
+
+    <h2>🌐 远程访问方案</h2>
+
+    <div class="info-box">
+        <strong>推荐方案：</strong>Tailscale 组网，无需开放公网端口
+    </div>
+
+    <h3>方案对比</h3>
+    <table>
+        <tr>
+            <th>方案</th>
+            <th>命令/配置</th>
+            <th>适用场景</th>
+        </tr>
+        <tr>
+            <td>Tailscale Serve</td>
+            <td><code>gateway.tailscale.mode: "serve"</code></td>
+            <td>仅 tailnet 内访问（推荐）</td>
+        </tr>
+        <tr>
+            <td>Tailscale Funnel</td>
+            <td><code>gateway.tailscale.mode: "funnel"</code></td>
+            <td>公开访问（需密码认证）</td>
+        </tr>
+        <tr>
+            <td>SSH 隧道</td>
+            <td><code>ssh -N -L 18789:127.0.0.1:18789 user@host</code></td>
+            <td>临时访问，无需 Tailscale</td>
+        </tr>
+    </table>
+
+    <h2>📁 配置与文件结构</h2>
+
+    <div class="architecture-diagram">
+<span class="json-key">~/.openclaw/</span>
+├── <span class="json-str">openclaw.json</span>          # 主配置文件
+├── <span class="json-str">credentials/</span>           # 渠道凭证（WhatsApp 登录等）
+├── <span class="json-str">workspace/</span>             # Agent 工作区
+│   ├── <span class="json-str">AGENTS.md</span>        # 全局系统提示词
+│   ├── <span class="json-str">SOUL.md</span>          # AI 人格设定
+│   ├── <span class="json-str">TOOLS.md</span>         # 本地环境备注
+│   ├── <span class="json-str">MEMORY.md</span>        # 长期记忆
+│   └── <span class="json-str">skills/</span>          # 技能包目录
+└── <span class="json-str">logs/</span>                # 运行日志
+    </div>
+
+    <h3>核心配置示例</h3>
+    <div class="protocol-block">
+<span class="json-key">// ~/.openclaw/openclaw.json</span>
+{
+  <span class="json-key">agent</span>: {
+    <span class="json-key">model</span>: <span class="json-str">"anthropic/claude-opus-4-6"</span>,
+    <span class="json-key">thinking</span>: <span class="json-str">"medium"</span>
+  },
+  <span class="json-key">channels</span>: {
+    <span class="json-key">qqbot</span>: {
+      <span class="json-key">appId</span>: <span class="json-str">"..."</span>,
+      <span class="json-key">token</span>: <span class="json-str">"..."</span>,
+      <span class="json-key">secret</span>: <span class="json-str">"..."</span>
+    },
+    <span class="json-key">telegram</span>: {
+      <span class="json-key">botToken</span>: <span class="json-str">"123456:ABCDEF"</span>
+    }
+  },
+  <span class="json-key">gateway</span>: {
+    <span class="json-key">bind</span>: <span class="json-str">"127.0.0.1:18789"</span>,
+    <span class="json-key">tailscale</span>: {
+      <span class="json-key">mode</span>: <span class="json-str">"serve"</span>
+    }
+  }
+}
+    </div>
+
+    <h2>🔄 消息处理流程</h2>
+
+    <div class="card">
+        <div class="flow-step">
+            <div class="step-num">1</div>
+            <div><strong>接收</strong>：Gateway 从某个渠道（如 QQ）接收消息</div>
+        </div>
+        <div class="flow-step">
+            <div class="step-num">2</div>
+            <div><strong>验证</strong>：检查发件人是否在 <code>allowFrom</code> 白名单</div>
+        </div>
+        <div class="flow-step">
+            <div class="step-num">3</div>
+            <div><strong>路由</strong>：私聊 → <code>main</code> 会话；群组 → 独立会话</div>
+        </div>
+        <div class="flow-step">
+            <div class="step-num">4</div>
+            <div><strong>处理</strong>：调用 Agent 运行时，执行工具调用</div>
+        </div>
+        <div class="flow-step">
+            <div class="step-num">5</div>
+            <div><strong>回复</strong>：通过原渠道返回响应</div>
+        </div>
+    </div>
+
+    <h2>🎯 设计优势</h2>
+
+    <div class="card">
+        <ol>
+            <li><strong>单一入口</strong>：所有渠道和客户端统一通过 Gateway，易于安全管理</li>
+            <li><strong>渠道无关</strong>：接入新渠道只需实现 Gateway 适配器，上层无感知</li>
+            <li><strong>设备能力无缝暴露</strong>：通过 Node 协议，手机摄像头、位置等能力可直接被 AI 调用</li>
+            <li><strong>灵活部署</strong>：Gateway 可运行在本地、VPS、容器中，客户端通过 Tailscale/SSH 连接</li>
+            <li><strong>会话隔离</strong>：私聊、不同群组完全隔离，支持不同权限和模型配置</li>
+        </ol>
+    </div>
+
+    <div class="warning-box">
+        <strong>注意：</strong>Gateway 设计上每主机只运行一个实例。如果需要连接多个 WhatsApp 账号，需要多台主机或多个容器实例。
+    </div>
+
+    <footer>
+        <p>OpenClaw 架构文档 | 生成时间：2026-03-16</p>
+        <p>📖 官方文档：<a href="https://docs.openclaw.ai">docs.openclaw.ai</a></p>
+    </footer>
+</body>
+</html>

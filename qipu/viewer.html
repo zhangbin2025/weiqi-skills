@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>围棋打谱</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 10px;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            padding: 15px;
+            max-width: 100%;
+            width: 100%;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 12px;
+        }
+        .header h1 {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 6px;
+            line-height: 1.3;
+        }
+        .header .info {
+            color: #666;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .board-container {
+            display: flex;
+            justify-content: center;
+            margin: 10px 0;
+            position: relative;
+        }
+        #board {
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin: 12px 0;
+            flex-wrap: wrap;
+        }
+        .btn {
+            width: 44px;
+            height: 44px;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            background: #f0f0f0;
+            color: #333;
+        }
+        .btn:active {
+            transform: scale(0.95);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 56px;
+            height: 56px;
+            font-size: 24px;
+        }
+        .btn-success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+        }
+        .settings {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+            font-size: 13px;
+        }
+        .setting-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #666;
+        }
+        .setting-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .speed-control input[type="range"] {
+            width: 100px;
+        }
+        .status {
+            text-align: center;
+            margin-top: 12px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .status .move-info {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        .status .move-detail {
+            font-size: 13px;
+            color: #666;
+        }
+        .captured-info {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #e74c3c;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 12px;
+            font-size: 13px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .stone-black {
+            width: 16px;
+            height: 16px;
+            background: radial-gradient(circle at 30% 30%, #666, #000);
+            border-radius: 50%;
+        }
+        .stone-white {
+            width: 16px;
+            height: 16px;
+            background: radial-gradient(circle at 30% 30%, #fff, #ddd);
+            border-radius: 50%;
+            border: 1px solid #ccc;
+        }
+
+        /* 平板适配 */
+        @media (min-width: 600px) {
+            body {
+                padding: 20px;
+                align-items: center;
+            }
+            .container {
+                max-width: 600px;
+                padding: 25px;
+                border-radius: 20px;
+            }
+            .header h1 {
+                font-size: 22px;
+            }
+            .header .info {
+                font-size: 14px;
+            }
+            .btn {
+                width: 50px;
+                height: 50px;
+                font-size: 22px;
+            }
+            .btn-primary {
+                width: 64px;
+                height: 64px;
+                font-size: 28px;
+            }
+        }
+
+        /* 桌面端适配 */
+        @media (min-width: 900px) {
+            .container {
+                max-width: 700px;
+                padding: 30px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 id="gameTitle">围棋打谱</h1>
+            <div class="info" id="gameInfo">
+                加载中...
+            </div>
+        </div>
+
+        <div class="board-container">
+            <canvas id="board"></canvas>
+        </div>
+
+        <div class="controls">
+            <button class="btn" onclick="goToStart()" title="跳到开头">⏮</button>
+            <button class="btn" onclick="prevMove()" title="上一手">◀</button>
+            <button class="btn btn-primary" id="playBtn" onclick="togglePlay()" title="播放/暂停">▶</button>
+            <button class="btn" onclick="nextMove()" title="下一手">▶</button>
+            <button class="btn" onclick="goToEnd()" title="跳到结尾">⏭</button>
+        </div>
+
+        <div class="settings">
+            <div class="setting-item">
+                <input type="checkbox" id="showNumbers" onchange="updateDisplay()">
+                <label for="showNumbers">手数</label>
+            </div>
+            <div class="speed-control">
+                <label>速度</label>
+                <input type="range" id="speedRange" min="200" max="2000" value="800" step="200">
+                <span id="speedValue">0.8s</span>
+            </div>
+            <button class="btn btn-success" onclick="downloadSGF()" title="下载SGF" style="width: 40px; height: 40px; font-size: 18px;">💾</button>
+        </div>
+
+        <div class="status">
+            <div class="move-info" id="moveInfo">第 0 手</div>
+            <div class="move-detail" id="moveDetail">点击播放开始打谱</div>
+            <div class="captured-info" id="capturedInfo"></div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="stone-black"></div>
+                <span id="blackName">黑棋</span>
+            </div>
+            <div class="legend-item">
+                <div class="stone-white"></div>
+                <span id="whiteName">白棋</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // SGF 数据
+        const sgfData = `(;GM[1]FF[4]
+SZ[19]
+GN[第25届中国西南棋王赛16强<绝艺讲解>]
+DT[2026-03-14]
+PB[古力]
+PW[党毅飞]
+BR[P9段]
+WR[P9段]
+KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[qd];W[pp];B[dc];W[dq];B[co];W[de];B[ep];W[eq];B[fp];W[fq];B[gp];W[gq];B[hp];W[ec];B[ci];W[ed];B[oc];W[qn];B[pm];W[pn];B[id];W[be];B[fi];W[iq];B[nm];W[nd];B[nc];W[ld];B[jf];W[mg];B[lf];W[mf];B[lg];W[mh];B[me];W[md];B[ne];W[od];B[pd];W[oe];B[le];W[of];B[nf];W[ph];B[ng];W[qf];B[oi];W[qj];B[ip];W[jq];B[jp];W[nk];B[ok];W[ol];B[nl];W[oj];B[nj];W[pk];B[mk];W[ok];B[pi];W[qi];B[mj];W[lo];B[kn];W[oh];B[nh];W[gh];B[ef];W[dh];B[di];W[fh];B[cf];W[df];B[eg];W[eh];B[dg];W[ch];B[cg];W[bh];B[bf];W[gf];B[dd];W[ce];B[ee];W[cc];B[db];W[cb];B[eb];W[fb];B[ge];W[fc];B[fd];W[ck];B[bj];W[cn];B[bk];W[bo];B[cp];W[cl];B[ei];W[bp];B[cq];W[fk];B[gi];W[dn];B[bm];W[bl];B[al];W[an];B[am];W[cm];B[eo];W[bn];B[ak];W[fm];B[hj];W[kq];B[gl];W[fl];B[gc];W[gb];B[hc];W[hb];B[ib];W[cd];B[om];W[qm];B[oq];W[pq];B[no];W[jc];B[ic];W[re];B[pr];W[rc];B[rd];W[sd];B[rb];W[qc];B[qb];W[sb];B[lb];W[mb];B[mc];W[lc];B[nb];W[qr];B[nr];W[mq];B[op];W[ps];B[ek];W[ej];B[gm];W[ko];B[jn];W[mn];B[mm];W[ln];B[lm];W[oo];B[lq];W[lp];B[lr];W[mr];B[mp];W[kr];B[nn];W[kb];B[ma];W[pc];B[pb];W[sc];B[os];W[or];B[ha];W[da];B[pr];W[af];B[ag];W[or];B[dj];W[dk];B[pr];W[fj];B[qs];W[hk])`;
+
+        const BOARD_SIZE = 19;
+        
+        // 解析 SGF - 只提取主分支着法（忽略变化图）
+        // 野狐围棋SGF格式：主分支是线性嵌套的，每个深度1-N有1手，变化图在最大深度+1
+        function parseSGF(sgf) {
+            const moves = [];
+            const info = {};
+            
+            // 提取基本信息
+            const pbMatch = sgf.match(/PB\[([^\]]+)\]/);
+            const pwMatch = sgf.match(/PW\[([^\]]+)\]/);
+            const brMatch = sgf.match(/BR\[([^\]]+)\]/);
+            const wrMatch = sgf.match(/WR\[([^\]]+)\]/);
+            const gnMatch = sgf.match(/GN\[([^\]]+)\]/);
+            const dtMatch = sgf.match(/DT\[([^\]]+)\]/);
+            const reMatch = sgf.match(/RE\[([^\]]+)\]/);
+            
+            if (pbMatch) info.black = pbMatch[1];
+            if (pwMatch) info.white = pwMatch[1];
+            if (brMatch) info.blackRank = brMatch[1];
+            if (wrMatch) info.whiteRank = wrMatch[1];
+            if (gnMatch) info.gameName = gnMatch[1];
+            if (dtMatch) info.date = dtMatch[1];
+            if (reMatch) info.result = reMatch[1];
+            
+            // 清理换行符
+            const cleanSgf = sgf.replace(/\r\n/g, '').replace(/\n/g, '');
+            
+            // 检测SGF格式：检查是否有嵌套括号结构
+            const openParenCount = (cleanSgf.match(/\(/g) || []).length;
+            const closeParenCount = (cleanSgf.match(/\)/g) || []).length;
+            const isNestedFormat = openParenCount > 1;  // 如果有多于1个左括号，说明是嵌套格式
+            
+            // 收集每个着法及其深度
+            const moveData = [];
+            const regex = /;([BW])\[([a-z]{2})\]/g;
+            let match;
+            
+            while ((match = regex.exec(cleanSgf)) !== null) {
+                const pos = match.index;
+                let depth = 0;
+                
+                if (isNestedFormat) {
+                    // 嵌套格式（野狐原始格式）：计算括号深度
+                    for (let j = 0; j < pos; j++) {
+                        if (cleanSgf[j] === '(') depth++;
+                        else if (cleanSgf[j] === ')') depth--;
+                    }
+                } else {
+                    // 平面格式（已清理的SGF）：按顺序分配递增深度
+                    depth = moveData.length + 1;
+                }
+                
+                moveData.push({
+                    color: match[1] === 'B' ? 'black' : 'white',
+                    coord: match[2],
+                    x: match[2].charCodeAt(0) - 97,
+                    y: match[2].charCodeAt(1) - 97,
+                    depth: depth
+                });
+            }
+            
+            // 统计每个深度的着法数量
+            const depthCounts = {};
+            for (const m of moveData) {
+                depthCounts[m.depth] = (depthCounts[m.depth] || 0) + 1;
+            }
+            
+            // 策略：提取主分支着法
+            // depth 1-187 都是主分支
+            // depth=188 只取第一个着法（后续的是变化图）
+            const mainMoves = [];
+            let depth188Seen = false;
+            
+            // 按深度排序
+            const sortedMoves = moveData.sort((a, b) => a.depth - b.depth);
+            
+            for (const m of sortedMoves) {
+                if (m.depth >= 1 && m.depth <= 187) {
+                    mainMoves.push(m);
+                } else if (m.depth === 188 && !depth188Seen) {
+                    // depth=188的第一个着法是主分支
+                    mainMoves.push(m);
+                    depth188Seen = true;
+                }
+                // depth=188的后续着法（变化图）和更高深度的都跳过
+            }
+            
+            // 注意：不去重！围棋中棋子可以被提掉，同一位置可以再次下子
+            for (const m of mainMoves) {
+                moves.push({ color: m.color, x: m.x, y: m.y });
+            }
+            
+            return { moves, info };
+        }
+
+        const { moves, info } = parseSGF(sgfData);
+        let currentMove = 0;
+        let isPlaying = false;
+        let playInterval = null;
+
+        // 更新页面标题和信息
+        function updateGameInfo() {
+            const title = info.gameName || '围棋打谱';
+            document.getElementById('gameTitle').textContent = title;
+            document.title = title;
+            
+            const blackText = info.black ? `${info.black}${info.blackRank ? ` (${info.blackRank})` : ''}` : '黑棋';
+            const whiteText = info.white ? `${info.white}${info.whiteRank ? ` (${info.whiteRank})` : ''}` : '白棋';
+            
+            document.getElementById('blackName').textContent = blackText;
+            document.getElementById('whiteName').textContent = whiteText;
+            
+            let infoHtml = '';
+            if (info.black && info.white) {
+                infoHtml += `<strong>黑:</strong>${info.black} <strong>白:</strong>${info.white}<br>`;
+            }
+            if (info.result) infoHtml += `<strong>结果:</strong>${info.result} `;
+            if (info.date) infoHtml += `<strong>日期:</strong>${info.date}`;
+            
+            document.getElementById('gameInfo').innerHTML = infoHtml || '围棋棋谱';
+        }
+
+        // Canvas 设置 - 响应式
+        const canvas = document.getElementById('board');
+        const ctx = canvas.getContext('2d');
+        
+        function resizeCanvas() {
+            const container = document.querySelector('.board-container');
+            const maxWidth = Math.min(container.clientWidth - 20, window.innerWidth - 40, 570);
+            const size = Math.max(300, maxWidth);
+            
+            canvas.width = size;
+            canvas.height = size;
+            canvas.style.width = size + 'px';
+            canvas.style.height = size + 'px';
+            
+            updateDisplay();
+        }
+
+        function getGridParams() {
+            const margin = canvas.width * 0.05;
+            const gridSize = (canvas.width - 2 * margin) / (BOARD_SIZE - 1);
+            return { margin, gridSize };
+        }
+
+        // 创建棋盘状态数组
+        function createBoard() {
+            return Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+        }
+
+        function getStone(board, x, y) {
+            if (x < 0 || x >= BOARD_SIZE || y < 0 || y >= BOARD_SIZE) return null;
+            return board[y][x];
+        }
+
+        function setStone(board, x, y, color) {
+            board[y][x] = color;
+        }
+
+        function removeStone(board, x, y) {
+            board[y][x] = null;
+        }
+
+        function getNeighbors(x, y) {
+            const neighbors = [];
+            const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+            for (const [dx, dy] of dirs) {
+                const nx = x + dx, ny = y + dy;
+                if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE) {
+                    neighbors.push([nx, ny]);
+                }
+            }
+            return neighbors;
+        }
+
+        function getGroup(board, x, y, color, group = null) {
+            if (!group) group = new Set();
+            const key = `${x},${y}`;
+            if (group.has(key)) return group;
+            
+            const stone = getStone(board, x, y);
+            if (stone !== color) return group;
+            
+            group.add(key);
+            
+            for (const [nx, ny] of getNeighbors(x, y)) {
+                getGroup(board, nx, ny, color, group);
+            }
+            
+            return group;
+        }
+
+        function captureStones(board, x, y, moveColor) {
+            const captured = [];
+            const opponent = moveColor === 'black' ? 'white' : 'black';
+            
+            for (const [nx, ny] of getNeighbors(x, y)) {
+                if (getStone(board, nx, ny) === opponent) {
+                    const group = getGroup(board, nx, ny, opponent);
+                    let hasLiberty = false;
+                    
+                    for (const pos of group) {
+                        const [gx, gy] = pos.split(',').map(Number);
+                        for (const [nnx, nny] of getNeighbors(gx, gy)) {
+                            if (getStone(board, nnx, nny) === null) {
+                                hasLiberty = true;
+                                break;
+                            }
+                        }
+                        if (hasLiberty) break;
+                    }
+                    
+                    if (!hasLiberty) {
+                        for (const pos of group) {
+                            const [gx, gy] = pos.split(',').map(Number);
+                            captured.push([gx, gy]);
+                            removeStone(board, gx, gy);
+                        }
+                    }
+                }
+            }
+            
+            return captured;
+        }
+
+        function calculateBoardState(moveIndex) {
+            const board = createBoard();
+            let blackCaptured = 0;
+            let whiteCaptured = 0;
+            
+            for (let i = 0; i < moveIndex; i++) {
+                const move = moves[i];
+                setStone(board, move.x, move.y, move.color);
+                
+                const captured = captureStones(board, move.x, move.y, move.color);
+                
+                if (move.color === 'black') {
+                    blackCaptured += captured.length;
+                } else {
+                    whiteCaptured += captured.length;
+                }
+            }
+            
+            return { board, blackCaptured, whiteCaptured };
+        }
+
+        function initBoardBackground() {
+            const { margin, gridSize } = getGridParams();
+            
+            ctx.fillStyle = '#DEB887';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = Math.max(1, canvas.width / 400);
+            
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                ctx.beginPath();
+                ctx.moveTo(margin, margin + i * gridSize);
+                ctx.lineTo(margin + (BOARD_SIZE - 1) * gridSize, margin + i * gridSize);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(margin + i * gridSize, margin);
+                ctx.lineTo(margin + i * gridSize, margin + (BOARD_SIZE - 1) * gridSize);
+                ctx.stroke();
+            }
+
+            const stars = [3, 9, 15];
+            ctx.fillStyle = '#000';
+            const starRadius = Math.max(2, canvas.width / 150);
+            for (let r of stars) {
+                for (let c of stars) {
+                    ctx.beginPath();
+                    ctx.arc(margin + c * gridSize, margin + r * gridSize, starRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        function drawStone(x, y, color, number = null, isLastMove = false) {
+            const { margin, gridSize } = getGridParams();
+            const cx = margin + x * gridSize;
+            const cy = margin + y * gridSize;
+            const radius = gridSize * 0.45;
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            
+            if (color === 'black') {
+                const gradient = ctx.createRadialGradient(cx - radius/3, cy - radius/3, 0, cx, cy, radius);
+                gradient.addColorStop(0, '#666');
+                gradient.addColorStop(1, '#000');
+                ctx.fillStyle = gradient;
+                ctx.fill();
+            } else {
+                const gradient = ctx.createRadialGradient(cx - radius/3, cy - radius/3, 0, cx, cy, radius);
+                gradient.addColorStop(0, '#fff');
+                gradient.addColorStop(1, '#ddd');
+                ctx.fillStyle = gradient;
+                ctx.fill();
+                ctx.strokeStyle = '#999';
+                ctx.lineWidth = Math.max(1, canvas.width / 500);
+                ctx.stroke();
+            }
+
+            const showNumbers = document.getElementById('showNumbers').checked;
+            if (showNumbers && number !== null) {
+                ctx.font = `bold ${gridSize * 0.35}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = color === 'black' ? '#fff' : '#000';
+                ctx.fillText(number.toString(), cx, cy);
+            }
+
+            if (isLastMove) {
+                ctx.beginPath();
+                ctx.arc(cx, cy, radius * 0.25, 0, Math.PI * 2);
+                ctx.fillStyle = color === 'black' ? '#fff' : '#000';
+                ctx.fill();
+            }
+        }
+
+        function updateDisplay() {
+            initBoardBackground();
+            
+            const { board, blackCaptured, whiteCaptured } = calculateBoardState(currentMove);
+            
+            for (let y = 0; y < BOARD_SIZE; y++) {
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    const color = board[y][x];
+                    if (color) {
+                        let moveNum = 0;
+                        for (let i = 0; i < currentMove; i++) {
+                            if (moves[i].x === x && moves[i].y === y) {
+                                moveNum = i + 1;
+                                break;
+                            }
+                        }
+                        const isLastMove = (currentMove > 0 && moves[currentMove - 1].x === x && moves[currentMove - 1].y === y);
+                        drawStone(x, y, color, moveNum, isLastMove);
+                    }
+                }
+            }
+            
+            document.getElementById('moveInfo').textContent = `第 ${currentMove} 手 / 共 ${moves.length} 手`;
+            
+            if (currentMove === 0) {
+                document.getElementById('moveDetail').textContent = '点击播放开始打谱';
+                document.getElementById('capturedInfo').textContent = '';
+            } else {
+                const move = moves[currentMove - 1];
+                const colorText = move.color === 'black' ? '黑' : '白';
+                const col = String.fromCharCode(65 + move.x);
+                const row = 19 - move.y;
+                document.getElementById('moveDetail').textContent = `${colorText}${currentMove}手: ${col}${row}`;
+                
+                let captureText = '';
+                if (blackCaptured > 0 || whiteCaptured > 0) {
+                    const parts = [];
+                    if (blackCaptured > 0) parts.push(`黑提${blackCaptured}子`);
+                    if (whiteCaptured > 0) parts.push(`白提${whiteCaptured}子`);
+                    captureText = parts.join(' ');
+                }
+                document.getElementById('capturedInfo').textContent = captureText;
+            }
+        }
+
+        function downloadSGF() {
+            const blob = new Blob([sgfData], { type: 'application/x-go-sgf' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const filename = info.gameName ? info.gameName.replace(/[<>:"/\\|?*]/g, '_') : '棋谱';
+            a.download = filename + '.sgf';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function goToStart() {
+            currentMove = 0;
+            updateDisplay();
+        }
+
+        function goToEnd() {
+            currentMove = moves.length;
+            updateDisplay();
+        }
+
+        function prevMove() {
+            if (currentMove > 0) {
+                currentMove--;
+                updateDisplay();
+            }
+        }
+
+        function nextMove() {
+            if (currentMove < moves.length) {
+                currentMove++;
+                updateDisplay();
+            }
+        }
+
+        function togglePlay() {
+            const btn = document.getElementById('playBtn');
+            if (isPlaying) {
+                pausePlay();
+                btn.textContent = '▶';
+            } else {
+                startPlay();
+                btn.textContent = '⏸';
+            }
+        }
+
+        function startPlay() {
+            isPlaying = true;
+            const speed = parseInt(document.getElementById('speedRange').value);
+            
+            playInterval = setInterval(() => {
+                if (currentMove < moves.length) {
+                    currentMove++;
+                    updateDisplay();
+                } else {
+                    pausePlay();
+                    document.getElementById('playBtn').textContent = '▶';
+                }
+            }, speed);
+        }
+
+        function pausePlay() {
+            isPlaying = false;
+            if (playInterval) {
+                clearInterval(playInterval);
+                playInterval = null;
+            }
+        }
+
+        document.getElementById('speedRange').addEventListener('input', function() {
+            const val = this.value;
+            document.getElementById('speedValue').textContent = (val / 1000).toFixed(1) + 's';
+            if (isPlaying) {
+                pausePlay();
+                startPlay();
+            }
+        });
+
+        // 触摸滑动支持
+        let touchStartX = 0;
+        canvas.addEventListener('touchstart', function(e) {
+            touchStartX = e.touches[0].clientX;
+        });
+        
+        canvas.addEventListener('touchend', function(e) {
+            const touchEndX = e.changedTouches[0].clientX;
+            const diff = touchStartX - touchEndX;
+            if (Math.abs(diff) > 50) {
+                if (diff > 0) {
+                    nextMove();
+                } else {
+                    prevMove();
+                }
+            }
+        });
+
+        // 键盘控制
+        document.addEventListener('keydown', function(e) {
+            switch(e.key) {
+                case 'ArrowLeft':
+                    prevMove();
+                    break;
+                case 'ArrowRight':
+                    nextMove();
+                    break;
+                case ' ':
+                    e.preventDefault();
+                    togglePlay();
+                    break;
+            }
+        });
+
+        // 窗口大小变化时重新调整
+        window.addEventListener('resize', resizeCanvas);
+
+        // 初始化
+        updateGameInfo();
+        resizeCanvas();
+    </script>
+</body>
+</html>
