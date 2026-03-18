@@ -161,27 +161,29 @@ def extract_qipu_links(html, target_date):
 
 def extract_sgf(html):
     """从HTML中提取SGF格式的棋谱"""
-    # SGF格式以 (;GM[ 开头
-    match = re.search(r'\(;GM\[1\]FF\[4\].*?\)\s*\)\s*\)', html, re.DOTALL)
-    if match:
-        sgf = match.group(0)
-        # 清理可能的截断
-        sgf = re.sub(r'\n\s*<<<END_EXTERNAL.*', '', sgf)
-        return sgf
+    # 找到SGF开始位置
+    sgf_start = html.find("(;GM[1]FF[4]")
+    if sgf_start == -1:
+        return None
     
-    # 尝试更宽松的匹配
-    match = re.search(r'\(;GM\[1\]FF\[4\].*', html, re.DOTALL)
-    if match:
-        sgf = match.group(0)
-        # 清理截断内容
-        sgf = re.sub(r'\n\s*<<<END_EXTERNAL.*', '', sgf)
-        sgf = re.sub(r'/"juey.*', ')', sgf)
-        # 尝试平衡括号
-        open_count = sgf.count('(')
-        close_count = sgf.count(')')
-        if open_count > close_count:
-            sgf += ')' * (open_count - close_count)
+    # 从SGF开始位置查找第一个HTML标签的位置
+    # SGF内容在第一个HTML标签之前结束
+    html_tag_match = re.search(r'</?[a-zA-Z][^>]*>', html[sgf_start:])
+    
+    if html_tag_match:
+        # 截取SGF内容（从开头到第一个HTML标签之前）
+        sgf_end = sgf_start + html_tag_match.start()
+        sgf = html[sgf_start:sgf_end]
+        # 去除末尾空白
+        sgf = sgf.rstrip()
         return sgf
+    else:
+        # 如果没有找到HTML标签，使用原始逻辑（备用）
+        match = re.search(r'\(;GM\[1\]FF\[4\].*?\)\s*\)\s*\)', html, re.DOTALL)
+        if match:
+            sgf = match.group(0)
+            sgf = re.sub(r'\n\s*<<<END_EXTERNAL.*', '', sgf)
+            return sgf
     
     return None
 
@@ -198,8 +200,9 @@ def download_qipu(link_info, save_dir):
         print(f"  ⚠️ 无法提取SGF内容")
         return None
     
-    # 生成文件名
-    safe_title = re.sub(r'[^\w\u4e00-\u9fff]', '_', link_info['title'])[:50]
+    # 生成文件名（移除"绝艺讲解"）
+    title_clean = link_info['title'].replace('绝艺讲解', '').replace('<', '').replace('>', '')
+    safe_title = re.sub(r'[^\w\u4e00-\u9fff]', '_', title_clean)[:50]
     # 从URL中提取ID
     match = re.search(r'/id/(\d+)', link_info['url'])
     file_id = match.group(1) if match else datetime.now().strftime('%Y%m%d%H%M%S')
