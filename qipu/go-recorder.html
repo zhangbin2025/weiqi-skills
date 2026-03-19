@@ -418,8 +418,8 @@
             const tempStone = {col, row, player, moveNum: 0, isPass: false};
             gameState.push(tempStone);
             
-            // 先检查是否能吃对方
-            let captured = 0;
+            // 先检查是否能吃对方，同时记录被提的棋子
+            const toCapture = new Set();
             const checkedGroups = new Set();
             
             for (const [dx, dy] of directions) {
@@ -434,27 +434,40 @@
                             checkedGroups.add(`${s.col},${s.row}`);
                         }
                         if (countLiberties(group) === 0) {
-                            captured += group.length;
+                            for (const s of group) {
+                                toCapture.add(`${s.col},${s.row}`);
+                            }
                         }
                     }
                 }
             }
             
-            // 如果不能吃子，检查自己是否还有气
-            let suicide = false;
-            if (captured === 0) {
-                const myGroup = findGroup(col, row, player);
-                if (countLiberties(myGroup) === 0) {
-                    suicide = true;
-                }
+            // 调试输出
+            console.log(`isSuicide: ${player} at (${col},${row}), toCapture=${Array.from(toCapture).join(';')}`);
+            
+            // 临时标记被提的棋子
+            for (const key of toCapture) {
+                capturedStones.add(key);
             }
             
-            // 移除临时棋子
-            gameState.pop();
+            // 检查自己是否还有气（考虑提子后空出的位置成为气）
+            const myGroup = findGroup(col, row, player);
+            const myLiberties = countLiberties(myGroup);
+            console.log(`  myGroup size=${myGroup.length}, liberties=${myLiberties}`);
             
-            // 恢复 capturedStones 状态
+            let suicide = false;
+            if (myLiberties === 0) {
+                suicide = true;
+            }
+            
+            // 恢复状态
+            for (const key of toCapture) {
+                capturedStones.delete(key);
+            }
+            gameState.pop();
             if (wasCaptured) capturedStones.add(posKey);
             
+            console.log(`  isSuicide result: ${suicide}`);
             return suicide;
         }
         
