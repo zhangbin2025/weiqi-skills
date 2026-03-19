@@ -77,6 +77,68 @@ def extract_main_branch(sgf_content):
     return main_moves
 
 
+def extract_variations(sgf_content, main_moves):
+    """
+    提取变化图（变例）
+    返回: {手数: [{name, moves, comment}, ...]}
+    """
+    lines = sgf_content.replace('\r\n', '\n').split('\n')
+    variations = {}
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        
+        moves_in_line = re.findall(r';([BW])\[([a-z]{2})\]', line)
+        
+        # 只处理有多个着法的行（变化图）
+        if len(moves_in_line) <= 1:
+            continue
+        
+        comment_match = re.search(r'C\[([^\]]+)\]', line)
+        comment = comment_match.group(1) if comment_match else ""
+        
+        # 找到分叉点
+        first_color, first_coord = moves_in_line[0]
+        
+        for start_idx, main_move in enumerate(main_moves):
+            if main_move['color'] == first_color and main_move['coord'] == first_coord:
+                # 检查后续是否分歧
+                has_diff = False
+                for i in range(1, len(moves_in_line)):
+                    if start_idx + i >= len(main_moves):
+                        has_diff = True
+                        break
+                    var_color, var_coord = moves_in_line[i]
+                    main = main_moves[start_idx + i]
+                    if main['color'] != var_color or main['coord'] != var_coord:
+                        has_diff = True
+                        break
+                
+                if has_diff or len(moves_in_line) > len(main_moves) - start_idx:
+                    move_num = start_idx + 1
+                    var_moves = [{'color': c, 'coord': coord} for c, coord in moves_in_line]
+                    
+                    if move_num not in variations:
+                        variations[move_num] = []
+                    
+                    # 提取胜率作为名称
+                    name = f"变化{len(variations[move_num])+1}"
+                    win_match = re.search(r'([黑白]).*?(\d+\.?\d*)%', comment)
+                    if win_match:
+                        name += f" {win_match.group(1)}{win_match.group(2)}%"
+                    
+                    variations[move_num].append({
+                        'name': name,
+                        'moves': var_moves,
+                        'comment': comment
+                    })
+                break
+    
+    return variations
+
+
 def extract_game_info(sgf_content):
     """提取棋局信息"""
     info = {}
@@ -102,8 +164,10 @@ def extract_game_info(sgf_content):
     return info
 
 
-def generate_html(main_moves, game_info, output_path):
+def generate_html(main_moves, game_info, variations, output_path):
     """生成HTML打谱网页"""
+    
+    import json
     
     # 构建SGF字符串（平面格式）
     sgf_moves = ''.join([f";{m['color']}[{m['coord']}]" for m in main_moves])
@@ -130,6 +194,9 @@ PW[{white_name}]
 BR[{black_rank}]
 WR[{white_rank}]
 KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
+    
+    # 变化图数据
+    variations_json = json.dumps(variations, ensure_ascii=False)
     
     # HTML模板
     html_template = f'''<!DOCTYPE html>
@@ -164,18 +231,18 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         }}
         .header {{
             text-align: center;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
         }}
         .header h1 {{
-            font-size: 18px;
+            font-size: 15px;
             color: #333;
-            margin-bottom: 6px;
-            line-height: 1.3;
+            margin-bottom: 2px;
+            line-height: 1.2;
         }}
         .header .info {{
             color: #666;
-            font-size: 12px;
-            line-height: 1.6;
+            font-size: 11px;
+            line-height: 1.3;
         }}
         .board-container {{
             display: flex;
@@ -317,10 +384,8 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
 <body>
     <div class="container">
         <div class="header">
-            <h1 id="gameTitle">{game_name}</h1>
-            <div class="info" id="gameInfo">
-                加载中...
-            </div>
+            <h1 id="gameTitle">{game_name.replace('<绝艺讲解>', '').replace('绝艺讲解', '')}</h1>
+            <div class="info" id="gameInfo">{black_name} vs {white_name} · {result}</div>
         </div>
 
         <div class="board-container">
@@ -335,7 +400,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             <button class="btn" onclick="goToEnd()" title="跳到结尾">⏭</button>
         </div>
 
-        <div class="settings">
+        <div class="settings" id="settingsRow">
             <div class="setting-item">
                 <input type="checkbox" id="showNumbers" onchange="updateDisplay()">
                 <label for="showNumbers">手数</label>
@@ -346,6 +411,23 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                 <span id="speedValue">0.8s</span>
             </div>
             <button class="btn btn-success" onclick="downloadSGF()" title="下载SGF" style="width: 40px; height: 40px; font-size: 18px;">💾</button>
+        </div>
+        
+        <!-- 变化图列表面板 -->
+        <div id="varPanel" style="margin: 8px 0; padding: 8px 10px; background: #f8f9fa; border-radius: 8px; display: none;">
+            <div style="font-weight: bold; margin-bottom: 6px; color: #333; font-size: 13px;">
+                第 <span id="varMoveNum">0</span> 手的变化图
+            </div>
+            <div id="varList" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+        </div>
+        
+        <!-- 变化图查看控制面板 -->
+        <div id="varControlPanel" style="display: none; margin: 8px 0; padding: 10px; background: #f0f0f0; border-radius: 8px;">
+            <div style="display: flex; justify-content: center; gap: 20px;">
+                <button class="btn" id="varPrevBtn" onclick="varPrev()" style="width: 44px; height: 44px; font-size: 20px; background: #667eea; color: white;">◀</button>
+                <button class="btn" onclick="exitVariation()" style="width: 44px; height: 44px; font-size: 20px; background: #ff6b6b; color: white;">↩</button>
+                <button class="btn" id="varNextBtn" onclick="varNext()" style="width: 44px; height: 44px; font-size: 20px; background: #667eea; color: white;">▶</button>
+            </div>
         </div>
 
         <div class="status">
@@ -411,6 +493,12 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         let currentMove = 0;
         let isPlaying = false;
         let playInterval = null;
+        
+        // 变化图相关变量
+        const variations = {variations_json};
+        let inVariation = false;
+        let varMoves = [];
+        let varIndex = 0;
 
         // Canvas 设置
         const canvas = document.getElementById('board');
@@ -726,10 +814,180 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         document.getElementById('speedRange').addEventListener('input', (e) => {{
             document.getElementById('speedValue').textContent = (e.target.value / 1000) + 's';
         }});
+        
+        // ==================== 变化图功能 ====================
+        
+        // 更新变化图面板
+        function updateVarPanel() {{
+            const varPanel = document.getElementById('varPanel');
+            const varList = document.getElementById('varList');
+            
+            if (inVariation || !variations[currentMove]) {{
+                varPanel.style.display = 'none';
+                return;
+            }}
+            
+            varPanel.style.display = 'block';
+            document.getElementById('varMoveNum').textContent = currentMove;
+            varList.innerHTML = '';
+            
+            variations[currentMove].forEach((v, i) => {{
+                const btn = document.createElement('button');
+                btn.className = 'btn';
+                btn.style.cssText = 'width: auto; padding: 4px 10px; height: 28px; font-size: 11px; background: #667eea; color: white; border-radius: 4px;';
+                btn.textContent = v.name;
+                btn.onclick = () => enterVariation(v);
+                varList.appendChild(btn);
+            }});
+        }}
+        
+        // 进入变化图
+        function enterVariation(v) {{
+            inVariation = true;
+            varMoves = v.moves.map(m => ({{
+                color: m.color === 'B' ? 'black' : 'white',
+                x: m.coord.charCodeAt(0) - 97,
+                y: m.coord.charCodeAt(1) - 97
+            }}));
+            varIndex = 2; // 默认显示第一手变化（跳过主分支分叉点，直接显示变化后的第一手）
+            
+            // 隐藏主控制面板和变化图列表
+            document.getElementById('mainControls').style.display = 'none';
+            document.getElementById('settingsRow').style.display = 'none';
+            document.getElementById('varPanel').style.display = 'none';
+            document.getElementById('varControlPanel').style.display = 'block';
+            
+            updateVarButtons();
+            updateDisplay();
+        }}
+        
+        // 退出变化图
+        function exitVariation() {{
+            inVariation = false;
+            varMoves = [];
+            varIndex = 0;
+            
+            // 显示主控制面板
+            document.getElementById('mainControls').style.display = 'flex';
+            document.getElementById('settingsRow').style.display = 'flex';
+            document.getElementById('varControlPanel').style.display = 'none';
+            
+            updateVarPanel();
+            updateDisplay();
+        }}
+        
+        // 变化图上一步
+        function varPrev() {{
+            if (varIndex > 0) {{
+                varIndex--;
+                updateVarButtons();
+                updateDisplay();
+            }}
+        }}
+        
+        // 变化图下一步
+        function varNext() {{
+            if (varIndex < varMoves.length) {{
+                varIndex++;
+                updateVarButtons();
+                updateDisplay();
+            }}
+        }}
+        
+        // 更新变化图按钮状态
+        function updateVarButtons() {{
+            const prevBtn = document.getElementById('varPrevBtn');
+            const nextBtn = document.getElementById('varNextBtn');
+            
+            prevBtn.style.opacity = varIndex <= 0 ? '0.3' : '1';
+            prevBtn.style.cursor = varIndex <= 0 ? 'not-allowed' : 'pointer';
+            prevBtn.disabled = varIndex <= 0;
+            
+            nextBtn.style.opacity = varIndex >= varMoves.length ? '0.3' : '1';
+            nextBtn.style.cursor = varIndex >= varMoves.length ? 'not-allowed' : 'pointer';
+            nextBtn.disabled = varIndex >= varMoves.length;
+        }}
+        
+        // 修改原有的绘制函数支持变化图
+        const originalDrawBoard = updateDisplay;
+        updateDisplay = function() {{
+            if (inVariation) {{
+                // 绘制主分支 + 变化图
+                drawBoard();
+                const board = createBoard();
+                
+                // 主分支着法
+                for (let i = 0; i < currentMove && i < moves.length; i++) {{
+                    board[moves[i].y][moves[i].x] = moves[i].color;
+                }}
+                
+                // 变化图着法
+                for (let i = 0; i < varIndex && i < varMoves.length; i++) {{
+                    board[varMoves[i].y][varMoves[i].x] = varMoves[i].color;
+                }}
+                
+                // 绘制棋子 - 变化图模式下强制显示手数
+                const {{ margin, gridSize }} = getGridParams();
+                
+                // 临时开启手数显示
+                const showNumbersCheckbox = document.getElementById('showNumbers');
+                const originalShowNumbers = showNumbersCheckbox.checked;
+                showNumbersCheckbox.checked = true;
+                
+                for (let y = 0; y < BOARD_SIZE; y++) {{
+                    for (let x = 0; x < BOARD_SIZE; x++) {{
+                        if (board[y][x]) {{
+                            // 检查是否是变化图的棋子，显示变化图手数（从1开始）
+                            let varMoveNum = null;
+                            for (let i = 0; i < varIndex && i < varMoves.length; i++) {{
+                                if (varMoves[i].x === x && varMoves[i].y === y) {{
+                                    varMoveNum = i + 1; // 变化图手数从1开始
+                                    break;
+                                }}
+                            }}
+                            
+                            // 变化图模式下不显示最后一手标记（因为有手数显示了）
+                            const isLast = false;
+                            
+                            drawStone(x, y, board[y][x], isLast, varMoveNum);
+                        }}
+                    }}
+                }}
+                
+                // 恢复原来的手数显示设置
+                showNumbersCheckbox.checked = originalShowNumbers;
+                
+                // 更新状态
+                const totalMoves = currentMove + varIndex;
+                document.getElementById('moveInfo').textContent = `第 ${{totalMoves}} 手`;
+                if (varIndex === 0) {{
+                    document.getElementById('moveDetail').textContent = '变化图起点';
+                }} else if (varIndex >= varMoves.length) {{
+                    document.getElementById('moveDetail').textContent = '变化图结束';
+                }} else {{
+                    const last = varMoves[varIndex-1];
+                    const coord = String.fromCharCode(97+last.x) + String.fromCharCode(97+last.y);
+                    document.getElementById('moveDetail').textContent = coord.toUpperCase();
+                }}
+            }} else {{
+                originalDrawBoard();
+                updateVarPanel();
+            }}
+        }};
+        
+        // 修改键盘控制
+        const originalPrev = prevMove;
+        const originalNext = nextMove;
+        prevMove = function() {{ if (inVariation) varPrev(); else originalPrev(); }};
+        nextMove = function() {{ if (inVariation) varNext(); else originalNext(); }};
+        
+        // 给主控制面板加ID
+        document.querySelector('.controls').id = 'mainControls';
 
         // 初始化
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
+        updateVarPanel();
     </script>
 </body>
 </html>'''
@@ -812,11 +1070,17 @@ def main():
     
     print(f"   提取到 {len(main_moves)} 手主分支着法")
     
+    # 提取变化图
+    variations = extract_variations(sgf_content, main_moves)
+    if variations:
+        total = sum(len(v) for v in variations.values())
+        print(f"   提取到 {total} 个变化图")
+    
     # 提取棋局信息
     game_info = extract_game_info(sgf_content)
     
     # 生成HTML
-    generate_html(main_moves, game_info, output_path)
+    generate_html(main_moves, game_info, variations, output_path)
     
     print(f"\n🌐 查看方式:")
     print(f"   python3 -m http.server 8080 --directory {output_dir}")
