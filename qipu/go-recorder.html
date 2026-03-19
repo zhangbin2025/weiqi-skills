@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>围棋记谱</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #e8e8e8;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            touch-action: manipulation;
+        }
+        .stone-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid #666;
+        }
+        .stone-indicator.black {
+            background: #222;
+        }
+        .stone-indicator.white {
+            background: #fff;
+        }
+        .board-container {
+            position: relative;
+            background: #d4a574;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            padding: 4px;
+            max-width: 100%;
+        }
+        #board {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            touch-action: none;
+        }
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 12px;
+            padding: 0 10px;
+            width: 100%;
+            max-width: 600px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
+        .toolbar button {
+            width: 42px;
+            height: 42px;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 20px;
+            background: #666;
+            color: white;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .toolbar button:active {
+            transform: scale(0.92);
+            background: #444;
+        }
+        .move-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 16px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+    
+    <div class="board-container">
+        <canvas id="board"></canvas>
+    </div>
+    
+    <div class="toolbar">
+        <div class="btn-group">
+            <button onclick="undoMove()">↶</button>
+            <button onclick="passMove()">⊘</button>
+            <button onclick="clearBoard()">+</button>
+            <button onclick="exportSGF()">↓</button>
+        </div>
+        <div class="move-display">
+            <div id="player-indicator" class="stone-indicator black"></div>
+            <span id="move-num">0</span>手
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('board');
+        const ctx = canvas.getContext('2d');
+        const BOARD_SIZE = 19;
+        
+        function getBoardSize() {
+            const maxWidth = Math.min(window.innerWidth - 20, 600);
+            const maxHeight = window.innerHeight - 180;
+            return Math.min(maxWidth, maxHeight, 570);
+        }
+        
+        let boardSize = getBoardSize();
+        let MARGIN, GRID_SIZE;
+        
+        function updateDimensions() {
+            boardSize = getBoardSize();
+            // 让线铺满，边距只留一点
+            MARGIN = boardSize * 0.04;
+            GRID_SIZE = (boardSize - 2 * MARGIN) / (BOARD_SIZE - 1);
+            
+            canvas.width = boardSize;
+            canvas.height = boardSize;
+            canvas.style.width = boardSize + 'px';
+            canvas.style.height = boardSize + 'px';
+        }
+        
+        let gameState = [];
+        let currentPlayer = 'B';
+        let capturedStones = new Set(); // 记录被提的棋子坐标 "col,row"
+        
+        // 音效系统 - 使用噪声合成更真实的围棋音效
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function createNoiseBuffer() {
+            const bufferSize = audioCtx.sampleRate * 0.1;
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+            return buffer;
+        }
+        
+        let noiseBuffer = null;
+        
+        function playSound(type) {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            
+            if (!noiseBuffer) {
+                noiseBuffer = createNoiseBuffer();
+            }
+            
+            if (type === 'place') {
+                // 落子音：木石碰撞声
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = noiseBuffer;
+                
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.value = 2500;
+                filter.Q.value = 1;
+                
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.06);
+                
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(audioCtx.destination);
+                
+                noise.start(audioCtx.currentTime);
+                noise.stop(audioCtx.currentTime + 0.06);
+                
+                // 添加谐波增强木质感
+                const osc = audioCtx.createOscillator();
+                osc.type = 'triangle';
+                osc.frequency.value = 400;
+                
+                const oscGain = audioCtx.createGain();
+                oscGain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                oscGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+                
+                osc.connect(oscGain);
+                oscGain.connect(audioCtx.destination);
+                osc.start(audioCtx.currentTime);
+                osc.stop(audioCtx.currentTime + 0.05);
+                
+            } else if (type === 'capture') {
+                // 吃子音：提子声（更低沉、稍长）
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = noiseBuffer;
+                
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = 1200;
+                filter.frequency.linearRampToValueAtTime(600, audioCtx.currentTime + 0.15);
+                
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(0.6, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.18);
+                
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(audioCtx.destination);
+                
+                noise.start(audioCtx.currentTime);
+                noise.stop(audioCtx.currentTime + 0.18);
+                
+                // 添加一些随机微响声模拟石子散落
+                for (let i = 0; i < 3; i++) {
+                    setTimeout(() => {
+                        if (audioCtx.state === 'running') {
+                            const microNoise = audioCtx.createBufferSource();
+                            microNoise.buffer = noiseBuffer;
+                            const microFilter = audioCtx.createBiquadFilter();
+                            microFilter.type = 'highpass';
+                            microFilter.frequency.value = 3000;
+                            const microGain = audioCtx.createGain();
+                            microGain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                            microGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.03);
+                            microNoise.connect(microFilter);
+                            microFilter.connect(microGain);
+                            microGain.connect(audioCtx.destination);
+                            microNoise.start(audioCtx.currentTime);
+                            microNoise.stop(audioCtx.currentTime + 0.03);
+                        }
+                    }, 50 + i * 30);
+                }
+                
+            } else if (type === 'pass') {
+                // 停一手：轻柔提示音（比原来稍明显一点）
+                const osc = audioCtx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = 523.25; // C5
+                
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(audioCtx.currentTime);
+                osc.stop(audioCtx.currentTime + 0.1);
+                
+            } else if (type === 'undo') {
+                // 悔棋音效：短促的"啵"声
+                const osc = audioCtx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.08);
+                
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(audioCtx.currentTime);
+                osc.stop(audioCtx.currentTime + 0.08);
+                
+            } else if (type === 'clear') {
+                // 清空音效：棋子哗啦啦掉落
+                // 使用多个高频噪声模拟石子散落
+                for (let i = 0; i < 8; i++) {
+                    setTimeout(() => {
+                        if (audioCtx.state === 'running') {
+                            const noise = audioCtx.createBufferSource();
+                            noise.buffer = noiseBuffer;
+                            
+                            const filter = audioCtx.createBiquadFilter();
+                            filter.type = 'highpass';
+                            filter.frequency.value = 2000 + Math.random() * 2000;
+                            
+                            const gain = audioCtx.createGain();
+                            gain.gain.setValueAtTime(0.15 + Math.random() * 0.1, audioCtx.currentTime);
+                            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05 + Math.random() * 0.05);
+                            
+                            noise.connect(filter);
+                            filter.connect(gain);
+                            gain.connect(audioCtx.destination);
+                            noise.start(audioCtx.currentTime);
+                            noise.stop(audioCtx.currentTime + 0.1);
+                        }
+                    }, i * 40);
+                }
+                
+                // 添加低频底音模拟一堆棋子掉落
+                const baseOsc = audioCtx.createOscillator();
+                baseOsc.type = 'triangle';
+                baseOsc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                baseOsc.frequency.linearRampToValueAtTime(80, audioCtx.currentTime + 0.4);
+                
+                const baseGain = audioCtx.createGain();
+                baseGain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                baseGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+                
+                baseOsc.connect(baseGain);
+                baseGain.connect(audioCtx.destination);
+                baseOsc.start(audioCtx.currentTime);
+                baseOsc.stop(audioCtx.currentTime + 0.4);
+            }
+        }
+        
+        // 获取某位置的棋子（只返回未被提的）
+        function getStone(col, row) {
+            if (capturedStones.has(`${col},${row}`)) return null;
+            return gameState.find(m => !m.isPass && m.col === col && m.row === row);
+        }
+        
+        // 计算一个棋子群的 liberties（气）
+        function countLiberties(group) {
+            const liberties = new Set();
+            const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+            
+            for (const stone of group) {
+                for (const [dx, dy] of directions) {
+                    const nc = stone.col + dx;
+                    const nr = stone.row + dy;
+                    if (nc >= 0 && nc < BOARD_SIZE && nr >= 0 && nr < BOARD_SIZE) {
+                        if (!getStone(nc, nr)) {
+                            liberties.add(`${nc},${nr}`);
+                        }
+                    }
+                }
+            }
+            return liberties.size;
+        }
+        
+        // 找到一个棋子群（连通块）
+        function findGroup(startCol, startRow, player) {
+            const group = [];
+            const visited = new Set();
+            const stack = [{col: startCol, row: startRow}];
+            
+            while (stack.length > 0) {
+                const {col, row} = stack.pop();
+                const key = `${col},${row}`;
+                
+                if (visited.has(key)) continue;
+                visited.add(key);
+                
+                const stone = getStone(col, row);
+                if (stone && stone.player === player) {
+                    group.push(stone);
+                    
+                    const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+                    for (const [dx, dy] of directions) {
+                        const nc = col + dx;
+                        const nr = row + dy;
+                        if (nc >= 0 && nc < BOARD_SIZE && nr >= 0 && nr < BOARD_SIZE) {
+                            stack.push({col: nc, row: nr});
+                        }
+                    }
+                }
+            }
+            
+            return group;
+        }
+        
+        // 执行吃子，标记被吃的棋子，返回被吃数量
+        function removeDeadStones(opponent) {
+            const toRemove = [];
+            const visited = new Set();
+            
+            for (const move of gameState) {
+                if (move.isPass || move.player !== opponent) continue;
+                if (capturedStones.has(`${move.col},${move.row}`)) continue;
+                const key = `${move.col},${move.row}`;
+                if (visited.has(key)) continue;
+                
+                const group = findGroup(move.col, move.row, opponent);
+                for (const s of group) {
+                    visited.add(`${s.col},${s.row}`);
+                }
+                
+                if (countLiberties(group) === 0) {
+                    toRemove.push(...group);
+                }
+            }
+            
+            // 标记被吃的棋子（不移除记录，只标记为已提）
+            for (const stone of toRemove) {
+                capturedStones.add(`${stone.col},${stone.row}`);
+            }
+            
+            return toRemove.length;
+        }
+        
+        // 检查是否是自杀（禁入点）
+        function isSuicide(col, row, player) {
+            const opponent = player === 'B' ? 'W' : 'B';
+            const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+            
+            // 临时添加棋子
+            const tempStone = {col, row, player, moveNum: 0, isPass: false};
+            gameState.push(tempStone);
+            
+            // 先检查是否能吃对方
+            let captured = 0;
+            const checkedGroups = new Set();
+            
+            for (const [dx, dy] of directions) {
+                const nc = col + dx;
+                const nr = row + dy;
+                const neighbor = getStone(nc, nr);
+                if (neighbor && neighbor.player === opponent) {
+                    const key = `${nc},${nr}`;
+                    if (!checkedGroups.has(key)) {
+                        const group = findGroup(nc, nr, opponent);
+                        for (const s of group) {
+                            checkedGroups.add(`${s.col},${s.row}`);
+                        }
+                        if (countLiberties(group) === 0) {
+                            captured += group.length;
+                        }
+                    }
+                }
+            }
+            
+            // 如果不能吃子，检查自己是否还有气
+            let suicide = false;
+            if (captured === 0) {
+                const myGroup = findGroup(col, row, player);
+                if (countLiberties(myGroup) === 0) {
+                    suicide = true;
+                }
+            }
+            
+            // 移除临时棋子
+            gameState.pop();
+            
+            return suicide;
+        }
+        
+        function init() {
+            updateDimensions();
+            drawBoard();
+            loadGame();
+            
+            window.addEventListener('resize', function() {
+                updateDimensions();
+                drawStones();
+            });
+        }
+        
+        function drawBoard() {
+            ctx.fillStyle = '#d4a574';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                const pos = MARGIN + i * GRID_SIZE;
+                
+                ctx.beginPath();
+                ctx.moveTo(MARGIN, pos);
+                ctx.lineTo(MARGIN + (BOARD_SIZE - 1) * GRID_SIZE, pos);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(pos, MARGIN);
+                ctx.lineTo(pos, MARGIN + (BOARD_SIZE - 1) * GRID_SIZE);
+                ctx.stroke();
+            }
+            
+            // 星位
+            const stars = [3, 9, 15];
+            ctx.fillStyle = '#333';
+            for (let r of stars) {
+                for (let c of stars) {
+                    const x = MARGIN + c * GRID_SIZE;
+                    const y = MARGIN + r * GRID_SIZE;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+        
+        function drawStones() {
+            drawBoard();
+            
+            // 绘制当前在棋盘上的有效棋子（未被提的）
+            const activeMoves = gameState.filter((m, idx) => {
+                if (m.isPass) return false;
+                return !capturedStones.has(`${m.col},${m.row}`);
+            });
+            
+            for (let i = 0; i < activeMoves.length; i++) {
+                const move = activeMoves[i];
+                const x = MARGIN + move.col * GRID_SIZE;
+                const y = MARGIN + move.row * GRID_SIZE;
+                const radius = GRID_SIZE * 0.46;
+                
+                if (move.player === 'B') {
+                    ctx.fillStyle = '#222';
+                    ctx.beginPath();
+                    ctx.arc(x, y, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    ctx.fillStyle = '#fff';
+                    ctx.beginPath();
+                    ctx.arc(x, y, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#bbb';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+            }
+            
+            // 最后一手标记
+            const lastMove = gameState[gameState.length - 1];
+            if (lastMove && !lastMove.isPass && !capturedStones.has(`${lastMove.col},${lastMove.row}`)) {
+                const x = MARGIN + lastMove.col * GRID_SIZE;
+                const y = MARGIN + lastMove.row * GRID_SIZE;
+                ctx.fillStyle = lastMove.player === 'B' ? '#fff' : '#f00';
+                ctx.beginPath();
+                ctx.arc(x, y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        
+        function getBoardPos(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (clientX - rect.left) * scaleX;
+            const y = (clientY - rect.top) * scaleY;
+            
+            const col = Math.round((x - MARGIN) / GRID_SIZE);
+            const row = Math.round((y - MARGIN) / GRID_SIZE);
+            
+            if (col >= 0 && col < BOARD_SIZE && row >= 0 && row < BOARD_SIZE) {
+                return { col, row };
+            }
+            return null;
+        }
+        
+        function placeStone(e) {
+            e.preventDefault();
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            
+            if (!clientX || !clientY) return;
+            
+            const pos = getBoardPos(clientX, clientY);
+            if (!pos) return;
+            
+            const existing = gameState.find(m => !m.isPass && m.col === pos.col && m.row === pos.row);
+            if (existing) {
+                showStatus('该位置已有棋子');
+                return;
+            }
+            
+            // 检查是否自杀
+            if (isSuicide(pos.col, pos.row, currentPlayer)) {
+                showStatus('禁入点');
+                return;
+            }
+            
+            // 落子
+            gameState.push({
+                col: pos.col,
+                row: pos.row,
+                player: currentPlayer,
+                moveNum: gameState.length + 1,
+                isPass: false
+            });
+            
+            // 执行吃子
+            const opponent = currentPlayer === 'B' ? 'W' : 'B';
+            const captured = removeDeadStones(opponent);
+            
+            // 播放音效
+            playSound(captured > 0 ? 'capture' : 'place');
+            
+            currentPlayer = currentPlayer === 'B' ? 'W' : 'B';
+            updateUI();
+            drawStones();
+            saveGame();
+        }
+        
+        function passMove() {
+            gameState.push({
+                player: currentPlayer,
+                moveNum: gameState.length + 1,
+                isPass: true
+            });
+            
+            playSound('pass');
+            
+            currentPlayer = currentPlayer === 'B' ? 'W' : 'B';
+            updateUI();
+            saveGame();
+            
+            const playerName = gameState[gameState.length - 1].player === 'B' ? '黑' : '白';
+            showStatus(`${playerName}方停一手`);
+        }
+        
+        // 重新计算所有被提的棋子（悔棋后需要重新计算）
+        function recaptureStones() {
+            capturedStones.clear();
+            // 从头开始模拟，标记所有被提的棋子
+            const tempCaptured = new Set();
+            const tempGameState = [];
+            
+            for (const move of gameState) {
+                if (move.isPass) {
+                    tempGameState.push(move);
+                    continue;
+                }
+                
+                // 跳过已被标记为提掉的
+                if (tempCaptured.has(`${move.col},${move.row}`)) continue;
+                
+                tempGameState.push(move);
+                
+                // 检查是否能吃对方（简化：只检查邻接）
+                const opponent = move.player === 'B' ? 'W' : 'B';
+                const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+                
+                for (const [dx, dy] of directions) {
+                    const nc = move.col + dx;
+                    const nr = move.row + dy;
+                    const neighbor = tempGameState.find(m => !m.isPass && m.col === nc && m.row === nr && !tempCaptured.has(`${m.col},${m.row}`));
+                    if (neighbor && neighbor.player === opponent) {
+                        const group = findGroupInTemp(nc, nr, opponent, tempGameState, tempCaptured);
+                        if (countLibertiesInTemp(group, tempGameState, tempCaptured) === 0) {
+                            for (const s of group) {
+                                tempCaptured.add(`${s.col},${s.row}`);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 合并到正式的capturedStones
+            for (const key of tempCaptured) {
+                capturedStones.add(key);
+            }
+        }
+        
+        // 在临时状态中找到连通块
+        function findGroupInTemp(startCol, startRow, player, tempState, tempCaptured) {
+            const group = [];
+            const visited = new Set();
+            const stack = [{col: startCol, row: startRow}];
+            
+            while (stack.length > 0) {
+                const {col, row} = stack.pop();
+                const key = `${col},${row}`;
+                
+                if (visited.has(key)) continue;
+                visited.add(key);
+                
+                const stone = tempState.find(m => !m.isPass && m.col === col && m.row === row && !tempCaptured.has(key));
+                if (stone && stone.player === player) {
+                    group.push(stone);
+                    
+                    const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+                    for (const [dx, dy] of directions) {
+                        const nc = col + dx;
+                        const nr = row + dy;
+                        if (nc >= 0 && nc < BOARD_SIZE && nr >= 0 && nr < BOARD_SIZE) {
+                            stack.push({col: nc, row: nr});
+                        }
+                    }
+                }
+            }
+            
+            return group;
+        }
+        
+        // 在临时状态中计算气
+        function countLibertiesInTemp(group, tempState, tempCaptured) {
+            const liberties = new Set();
+            const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+            
+            for (const stone of group) {
+                for (const [dx, dy] of directions) {
+                    const nc = stone.col + dx;
+                    const nr = stone.row + dy;
+                    if (nc >= 0 && nc < BOARD_SIZE && nr >= 0 && nr < BOARD_SIZE) {
+                        const occupied = tempState.find(m => !m.isPass && m.col === nc && m.row === nr && !tempCaptured.has(`${m.col},${m.row}`));
+                        if (!occupied) {
+                            liberties.add(`${nc},${nr}`);
+                        }
+                    }
+                }
+            }
+            return liberties.size;
+        }
+        
+        function undoMove() {
+            if (gameState.length === 0) {
+                showStatus('没有可悔的棋');
+                return;
+            }
+            
+            // 悔棋音效：短促的"啵"声
+            playSound('undo');
+            
+            gameState.pop();
+            currentPlayer = currentPlayer === 'B' ? 'W' : 'B';
+            
+            // 重新计算被提的棋子
+            recaptureStones();
+            
+            updateUI();
+            drawStones();
+            saveGame();
+            
+            showStatus('已悔棋');
+        }
+        
+        function clearBoard() {
+            if (!confirm('新建棋谱会清空当前棋子，确定新建吗？')) return;
+            
+            // 清空音效：类似棋子哗啦啦掉落的声音
+            playSound('clear');
+            
+            gameState = [];
+            currentPlayer = 'B';
+            capturedStones.clear();
+            
+            updateUI();
+            drawStones();
+            saveGame();
+            
+            showStatus('棋盘已清空');
+        }
+        
+        function updateUI() {
+            document.getElementById('move-num').textContent = gameState.length;
+            const indicator = document.getElementById('player-indicator');
+            indicator.className = 'stone-indicator ' + (currentPlayer === 'B' ? 'black' : 'white');
+        }
+        
+        function saveGame() {
+            const data = {
+                gameState: gameState,
+                currentPlayer: currentPlayer,
+                captured: Array.from(capturedStones),
+                timestamp: new Date().toISOString()
+            };
+            localStorage.setItem('go-game-save', JSON.stringify(data));
+        }
+        
+        function loadGame() {
+            const saved = localStorage.getItem('go-game-save');
+            if (saved) {
+                try {
+                    const data = JSON.parse(saved);
+                    gameState = data.gameState || [];
+                    currentPlayer = data.currentPlayer || 'B';
+                    capturedStones = new Set(data.captured || []);
+                    updateUI();
+                    drawStones();
+                } catch (e) {
+                    console.error('加载失败', e);
+                }
+            }
+        }
+        
+        function generateSGF() {
+            const coords = 'abcdefghijklmnopqrstuvwxyz';
+            let sgf = '(;GM[1]FF[4]SZ[19]CA[UTF-8]AP[GoRecorder]KM[0]';
+            
+            for (const move of gameState) {
+                if (move.isPass) {
+                    sgf += move.player === 'B' ? ';B[]' : ';W[]';
+                } else {
+                    const coord = coords[move.col] + coords[move.row];
+                    sgf += move.player === 'B' ? `;B[${coord}]` : `;W[${coord}]`;
+                }
+            }
+            
+            sgf += ')';
+            return sgf;
+        }
+        
+        function exportSGF() {
+            if (gameState.length === 0) {
+                showStatus('棋盘为空');
+                return;
+            }
+            
+            const sgf = generateSGF();
+            const blob = new Blob([sgf], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            const now = new Date();
+            const dateStr = now.getFullYear().toString() +
+                           String(now.getMonth() + 1).padStart(2, '0') +
+                           String(now.getDate()).padStart(2, '0') + '_' +
+                           String(now.getHours()).padStart(2, '0') +
+                           String(now.getMinutes()).padStart(2, '0') +
+                           String(now.getSeconds()).padStart(2, '0');
+            a.download = `棋谱_${dateStr}_${gameState.length}手.sgf`;
+            a.click();
+            
+            URL.revokeObjectURL(url);
+            showStatus('SGF已下载');
+        }
+        
+        function showStatus(msg) {
+            // 状态提示已移除，函数保留兼容
+            console.log(msg);
+        }
+        
+        canvas.addEventListener('click', placeStone);
+        canvas.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            placeStone(e);
+        }, { passive: false });
+        
+        document.body.addEventListener('touchmove', function(e) {
+            if (e.target === canvas) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+        
+        init();
+    </script>
+</body>
+</html>
