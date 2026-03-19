@@ -455,11 +455,27 @@
             const myLiberties = countLiberties(myGroup);
             console.log(`  myGroup size=${myGroup.length}, liberties=${myLiberties}`);
             
+            // 禁入点判断：
+            // 1. 如果自己没气，但能提子（四周对方棋子只剩这口气），则允许（胀牯牛）
+            // 2. 如果自己没气，且不能提子，则是禁入点
             let suicide = false;
-            // 禁入点：没提子且自己也没气
-            // 倒扑/胀牯牛：提了子，即使自己也没气，也是允许的
-            if (myLiberties === 0 && toCapture.size === 0) {
-                suicide = true;
+            if (myLiberties === 0) {
+                // 检查四周是否有可提的对方棋子
+                let canCapture = false;
+                for (const [dx, dy] of directions) {
+                    const nc = col + dx, nr = row + dy;
+                    const neighbor = getStone(nc, nr);
+                    if (neighbor && neighbor.player === opponent) {
+                        const group = findGroup(nc, nr, opponent);
+                        if (countLiberties(group) === 0) {
+                            canCapture = true;
+                            break;
+                        }
+                    }
+                }
+                if (!canCapture) {
+                    suicide = true;
+                }
             }
             
             // 恢复状态
