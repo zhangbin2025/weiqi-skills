@@ -136,6 +136,7 @@
         let gameState = [];
         let currentPlayer = 'B';
         let capturedStones = new Set(); // 记录被提的棋子坐标 "col,row"
+        let koPosition = null; // 打劫位 {col, row}，禁止对方立即提回
         
         // 音效系统 - 使用噪声合成更真实的围棋音效
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -312,10 +313,16 @@
             }
         }
         
-        // 获取某位置的棋子（只返回未被提的）
+        // 获取某位置的棋子（只返回未被提的，从后往前找最新的）
         function getStone(col, row) {
             if (capturedStones.has(`${col},${row}`)) return null;
-            return gameState.find(m => !m.isPass && m.col === col && m.row === row);
+            for (let i = gameState.length - 1; i >= 0; i--) {
+                const m = gameState[i];
+                if (!m.isPass && m.col === col && m.row === row) {
+                    return m;
+                }
+            }
+            return null;
         }
         
         // 计算一个棋子群的 liberties（气）
@@ -368,7 +375,7 @@
             return group;
         }
         
-        // 执行吃子，标记被吃的棋子，返回被吃数量
+        // 执行吃子，标记被吃的棋子，返回被吃坐标列表
         function removeDeadStones(opponent) {
             const toRemove = [];
             const visited = new Set();
@@ -394,13 +401,18 @@
                 capturedStones.add(`${stone.col},${stone.row}`);
             }
             
-            return toRemove.length;
+            return toRemove.map(s => ({col: s.col, row: s.row}));
         }
         
         // 检查是否是自杀（禁入点）
         function isSuicide(col, row, player) {
             const opponent = player === 'B' ? 'W' : 'B';
             const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+            const posKey = `${col},${row}`;
+            
+            // 临时从 capturedStones 移除该坐标（如果有），否则 getStone 会返回 null
+            const wasCaptured = capturedStones.has(posKey);
+            if (wasCaptured) capturedStones.delete(posKey);
             
             // 临时添加棋子
             const tempStone = {col, row, player, moveNum: 0, isPass: false};
@@ -439,6 +451,9 @@
             
             // 移除临时棋子
             gameState.pop();
+            
+            // 恢复 capturedStones 状态
+            if (wasCaptured) capturedStones.add(posKey);
             
             return suicide;
         }
@@ -558,8 +573,8 @@
             const pos = getBoardPos(clientX, clientY);
             if (!pos) return;
             
-            const existing = gameState.find(m => !m.isPass && m.col === pos.col && m.row === pos.row);
-            if (existing) {
+            // 用 getStone 检查当前该位置是否有有效棋子（没被提的）
+            if (getStone(pos.col, pos.row)) {
                 showStatus('该位置已有棋子');
                 return;
             }
@@ -569,6 +584,18 @@
                 showStatus('禁入点');
                 return;
             }
+            
+            // 检查是否违反打劫规则
+            if (koPosition && koPosition.col === pos.col && koPosition.row === pos.row) {
+                showStatus('打劫');
+                return;
+            }
+            
+            // 如果该位置之前被提过，从 capturedStones 移除
+            capturedStones.delete(`${pos.col},${pos.row}`);
+            
+            // 记录落子前的打劫位，用于判断是否是打劫提子
+            const prevKo = koPosition;
             
             // 落子
             gameState.push({
@@ -581,10 +608,18 @@
             
             // 执行吃子
             const opponent = currentPlayer === 'B' ? 'W' : 'B';
-            const captured = removeDeadStones(opponent);
+            const capturedCoords = removeDeadStones(opponent);
+            
+            // 判断打劫：只提了一个子，形成打劫局面
+            if (capturedCoords.length === 1) {
+                koPosition = capturedCoords[0];
+            } else {
+                // 多子提或没提子，清除打劫
+                koPosition = null;
+            }
             
             // 播放音效
-            playSound(captured > 0 ? 'capture' : 'place');
+            playSound(capturedCoords.length > 0 ? 'capture' : 'place');
             
             currentPlayer = currentPlayer === 'B' ? 'W' : 'B';
             updateUI();
@@ -598,6 +633,9 @@
                 moveNum: gameState.length + 1,
                 isPass: true
             });
+            
+            // 停一手清除打劫
+            koPosition = null;
             
             playSound('pass');
             
@@ -715,6 +753,9 @@
             gameState.pop();
             currentPlayer = currentPlayer === 'B' ? 'W' : 'B';
             
+            // 悔棋后清除打劫（状态不确定了）
+            koPosition = null;
+            
             // 重新计算被提的棋子
             recaptureStones();
             
@@ -734,6 +775,7 @@
             gameState = [];
             currentPlayer = 'B';
             capturedStones.clear();
+            koPosition = null;
             
             updateUI();
             drawStones();
