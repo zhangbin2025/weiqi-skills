@@ -85,6 +85,52 @@
             font-size: 16px;
             color: #333;
         }
+        .notation-panel {
+            margin-top: 12px;
+            width: 100%;
+            max-width: 600px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .notation-header {
+            background: #666;
+            color: #fff;
+            padding: 8px 12px;
+            font-size: 14px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .notation-content {
+            max-height: 150px;
+            overflow-y: auto;
+            padding: 8px 12px;
+            font-size: 14px;
+            line-height: 1.6;
+            font-family: monospace;
+        }
+        .notation-row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 4px;
+        }
+        .notation-move {
+            color: #333;
+            min-width: 70px;
+        }
+        .notation-move .num {
+            color: #999;
+            margin-right: 4px;
+        }
+        .notation-move.black {
+            color: #222;
+        }
+        .notation-move.white {
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -104,6 +150,16 @@
         <div class="move-display">
             <div id="player-indicator" class="stone-indicator black"></div>
             <span id="move-num">0</span>手
+        </div>
+    </div>
+
+    <div class="notation-panel">
+        <div class="notation-header">
+            <span>棋谱记录</span>
+            <span id="notation-count">0手</span>
+        </div>
+        <div class="notation-content" id="notation-content">
+            <div style="color:#999;text-align:center;padding:20px;">暂无落子</div>
         </div>
     </div>
 
@@ -694,18 +750,9 @@
             const opponent = currentPlayer === 'B' ? 'W' : 'B';
             const capturedCoords = removeDeadStones(opponent, pos.col, pos.row);
             
-            // 判断打劫：只提了一个子，且提子方提子后不止1口气，才形成打劫
+            // 判断打劫：只提了一个子，设置打劫位禁止对方立即提回
             if (capturedCoords.length === 1) {
-                // 检查提子后，提子方的这块棋是否只有1口气（胀牯牛）
-                const myGroup = findGroup(pos.col, pos.row, currentPlayer);
-                const myLiberties = countLiberties(myGroup);
-                if (myLiberties > 1) {
-                    // 正常打劫：提子方不止1口气
-                    koPosition = capturedCoords[0];
-                } else {
-                    // 胀牯牛：提子方也只有1口气，不形成打劫
-                    koPosition = null;
-                }
+                koPosition = capturedCoords[0];
             } else {
                 // 多子提或没提子，清除打劫
                 koPosition = null;
@@ -893,10 +940,58 @@
             showStatus('棋盘已清空');
         }
         
+        function coordToLetter(col) {
+            const letters = 'ABCDEFGHJKLMNOPQRST';
+            return letters[col] || String.fromCharCode(65 + col);
+        }
+
+        function updateNotation() {
+            const container = document.getElementById('notation-content');
+            const countEl = document.getElementById('notation-count');
+            
+            if (gameState.length === 0) {
+                container.innerHTML = '<div style="color:#999;text-align:center;padding:20px;">暂无落子</div>';
+                countEl.textContent = '0手';
+                return;
+            }
+            
+            let html = '';
+            let rowHtml = '';
+            let moveCount = 0;
+            
+            for (let i = 0; i < gameState.length; i++) {
+                const move = gameState[i];
+                const moveNum = i + 1;
+                
+                if (move.isPass) {
+                    rowHtml += `<span class="notation-move ${move.player === 'B' ? 'black' : 'white'}"><span class="num">${moveNum}.</span>停</span>`;
+                } else {
+                    const colStr = coordToLetter(move.col);
+                    const rowStr = BOARD_SIZE - move.row;
+                    rowHtml += `<span class="notation-move ${move.player === 'B' ? 'black' : 'white'}"><span class="num">${moveNum}.</span>${colStr}${rowStr}</span>`;
+                }
+                
+                moveCount++;
+                
+                // 每2手换一行
+                if (moveCount % 2 === 0 || i === gameState.length - 1) {
+                    html += `<div class="notation-row">${rowHtml}</div>`;
+                    rowHtml = '';
+                }
+            }
+            
+            container.innerHTML = html;
+            countEl.textContent = gameState.length + '手';
+            
+            // 滚动到底部
+            container.scrollTop = container.scrollHeight;
+        }
+        
         function updateUI() {
             document.getElementById('move-num').textContent = gameState.length;
             const indicator = document.getElementById('player-indicator');
             indicator.className = 'stone-indicator ' + (currentPlayer === 'B' ? 'black' : 'white');
+            updateNotation();
         }
         
         function saveGame() {
