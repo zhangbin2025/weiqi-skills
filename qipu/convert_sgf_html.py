@@ -7,7 +7,7 @@ SGF围棋打谱网页生成器
 使用方法:
     python3 convert_sgf_html.py input.sgf [output.html]
     python3 convert_sgf_html.py input.sgf --output-dir /path/to/dir
-    
+
 示例:
     python3 convert_sgf_html.py game.sgf                    # 输出到 /tmp/sgf-viewer/
     python3 convert_sgf_html.py game.sgf mygame.html        # 输出到 /tmp/sgf-viewer/mygame.html
@@ -22,34 +22,34 @@ import os
 def extract_main_branch(sgf_content):
     """
     从野狐围棋SGF中提取主分支着法
-    
+
     野狐SGF格式特点:
     - 多行格式，前9行是文件头
     - 从第10行开始，每行是一个分支（主分支或变例）
     - 主分支：每行只有1个着法（简单的嵌套格式）
     - 变化图：每行有多个着法（带AI评论的完整变化）
-    
+
     提取策略:
     1. 跳过前9行（文件头）
     2. 从第10行开始，只提取只有1个着法的行
     3. 当遇到有多个着法的行时，说明是变化图，停止提取
     """
     lines = sgf_content.replace('\r\n', '\n').split('\n')
-    
+
     main_moves = []
     found_first_move = False
-    
+
     for line in lines:
         line = line.strip()
         if not line:
             continue
-        
+
         # 查找所有着法
         moves_in_line = re.findall(r';([BW])\[([a-z]{2})\]', line)
-        
+
         if not moves_in_line:
             continue
-        
+
         # 检查是否是第一手（文件头行）
         if not found_first_move:
             # 第一手可能在文件头行（不以 (; 开头）
@@ -60,7 +60,7 @@ def extract_main_branch(sgf_content):
             })
             found_first_move = True
             continue
-        
+
         # 对于后续行，只取只有1个着法的行（主分支）
         if len(moves_in_line) == 1:
             color, coord = moves_in_line[0]
@@ -73,7 +73,7 @@ def extract_main_branch(sgf_content):
             # 但为了处理可能的意外情况，继续检查后面是否还有单着法行
             # 实际上应该停止，因为后面的都是变化图
             pass
-    
+
     return main_moves
 
 
@@ -84,24 +84,24 @@ def extract_variations(sgf_content, main_moves):
     """
     lines = sgf_content.replace('\r\n', '\n').split('\n')
     variations = {}
-    
+
     for line in lines:
         line = line.strip()
         if not line:
             continue
-        
+
         moves_in_line = re.findall(r';([BW])\[([a-z]{2})\]', line)
-        
+
         # 只处理有多个着法的行（变化图）
         if len(moves_in_line) <= 1:
             continue
-        
+
         comment_match = re.search(r'C\[([^\]]+)\]', line)
         comment = comment_match.group(1) if comment_match else ""
-        
+
         # 找到分叉点
         first_color, first_coord = moves_in_line[0]
-        
+
         for start_idx, main_move in enumerate(main_moves):
             if main_move['color'] == first_color and main_move['coord'] == first_coord:
                 # 检查后续是否分歧
@@ -115,34 +115,34 @@ def extract_variations(sgf_content, main_moves):
                     if main['color'] != var_color or main['coord'] != var_coord:
                         has_diff = True
                         break
-                
+
                 if has_diff or len(moves_in_line) > len(main_moves) - start_idx:
                     move_num = start_idx + 1
                     var_moves = [{'color': c, 'coord': coord} for c, coord in moves_in_line]
-                    
+
                     if move_num not in variations:
                         variations[move_num] = []
-                    
+
                     # 提取胜率作为名称
                     name = f"变化{len(variations[move_num])+1}"
                     win_match = re.search(r'([黑白]).*?(\d+\.?\d*)%', comment)
                     if win_match:
                         name += f" {win_match.group(1)}{win_match.group(2)}%"
-                    
+
                     variations[move_num].append({
                         'name': name,
                         'moves': var_moves,
                         'comment': comment
                     })
                 break
-    
+
     return variations
 
 
 def extract_game_info(sgf_content):
     """提取棋局信息"""
     info = {}
-    
+
     # 提取基本信息
     patterns = {
         'PB': ('black', r'PB\[([^\]]+)\]'),
@@ -155,23 +155,23 @@ def extract_game_info(sgf_content):
         'KM': ('komi', r'KM\[([^\]]+)\]'),
         'SZ': ('board_size', r'SZ\[([^\]]+)\]'),
     }
-    
+
     for key, (name, pattern) in patterns.items():
         match = re.search(pattern, sgf_content)
         if match:
             info[name] = match.group(1)
-    
+
     return info
 
 
 def generate_html(main_moves, game_info, variations, output_path):
     """生成HTML打谱网页"""
-    
+
     import json
-    
+
     # 构建SGF字符串（平面格式）
     sgf_moves = ''.join([f";{m['color']}[{m['coord']}]" for m in main_moves])
-    
+
     # 棋局信息
     black_name = game_info.get('black', '黑棋')
     white_name = game_info.get('white', '白棋')
@@ -180,11 +180,11 @@ def generate_html(main_moves, game_info, variations, output_path):
     game_name = game_info.get('game_name', '围棋棋谱')
     game_date = game_info.get('date', '')
     result = game_info.get('result', '')
-    
+
     # 构建完整的SGF
     board_size = game_info.get('board_size', '19')
     komi = game_info.get('komi', '375')
-    
+
     sgf_data = f"""(;GM[1]FF[4]
 SZ[{board_size}]
 GN[{game_name}]
@@ -194,10 +194,10 @@ PW[{white_name}]
 BR[{black_rank}]
 WR[{white_rank}]
 KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
-    
+
     # 变化图数据
     variations_json = json.dumps(variations, ensure_ascii=False)
-    
+
     # HTML模板
     html_template = f'''<!DOCTYPE html>
 <html lang="zh-CN">
@@ -392,27 +392,20 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             <canvas id="board"></canvas>
         </div>
 
-        <div class="controls">
-            <button class="btn" onclick="goToStart()" title="跳到开头">⏮</button>
-            <button class="btn" onclick="prevMove()" title="上一手">◀</button>
-            <button class="btn btn-primary" id="playBtn" onclick="togglePlay()" title="播放/暂停">▶</button>
-            <button class="btn" onclick="nextMove()" title="下一手">▶</button>
-            <button class="btn" onclick="goToEnd()" title="跳到结尾">⏭</button>
-        </div>
-
-        <div class="settings" id="settingsRow">
-            <div class="setting-item">
-                <input type="checkbox" id="showNumbers" onchange="updateDisplay()">
-                <label for="showNumbers">手数</label>
-            </div>
-            <div class="speed-control">
-                <label>速度</label>
-                <input type="range" id="speedRange" min="200" max="2000" value="800" step="200">
-                <span id="speedValue">0.8s</span>
-            </div>
-            <button class="btn btn-success" onclick="downloadSGF()" title="下载SGF" style="width: 40px; height: 40px; font-size: 18px;">💾</button>
+        <!-- 主控制面板 - 紧凑一行 -->
+        <div id="mainControls" style="display: flex; align-items: center; justify-content: center; gap: 4px; margin: 6px 0; flex-wrap: nowrap;">
+            <button class="btn" onclick="prevMove()" title="上一手" style="width: 28px; height: 28px; font-size: 12px; padding: 0;">◀</button>
+            <input type="range" id="moveSlider" min="0" max="{len(main_moves)}" value="0" style="width: 140px; height: 16px;" oninput="goToMove(this.value)">
+            <button class="btn" onclick="nextMove()" title="下一手" style="width: 28px; height: 28px; font-size: 12px; padding: 0;">▶</button>
+            <div style="width: 1px; height: 20px; background: #ddd; margin: 0 2px;"></div>
+            <button class="btn" id="numToggleBtn" onclick="toggleNumbers()" title="显示/隐藏手数" style="width: 28px; height: 28px; font-size: 10px; padding: 0; background: #f0f0f0;">#</button>
+            <button class="btn" onclick="downloadSGF()" title="下载SGF" style="width: 28px; height: 28px; font-size: 12px; padding: 0; background: #f0f0f0;">💾</button>
+            <button class="btn" id="playBtn" onclick="togglePlay()" title="播放/暂停" style="width: 28px; height: 28px; font-size: 12px; padding: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">▶</button>
         </div>
         
+        <!-- 隐藏的手数显示控制 -->
+        <input type="checkbox" id="showNumbers" style="display: none;">
+
         <!-- 变化图列表面板 -->
         <div id="varPanel" style="margin: 8px 0; padding: 8px 10px; background: #f8f9fa; border-radius: 8px; display: none;">
             <div style="font-weight: bold; margin-bottom: 6px; color: #333; font-size: 13px;">
@@ -420,7 +413,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             </div>
             <div id="varList" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
         </div>
-        
+
         <!-- 变化图查看控制面板 -->
         <div id="varControlPanel" style="display: none; margin: 8px 0; padding: 10px; background: #f0f0f0; border-radius: 8px;">
             <div style="display: flex; justify-content: center; gap: 20px;">
@@ -453,12 +446,12 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         const sgfData = `{sgf_data}`;
 
         const BOARD_SIZE = {board_size};
-        
+
         // 解析 SGF - 支持平面格式（已清理的野狐SGF）
         function parseSGF(sgf) {{
             const moves = [];
             const info = {{}};
-            
+
             // 提取基本信息
             const pbMatch = sgf.match(/PB\\[([^\\]]+)\\]/);
             const pwMatch = sgf.match(/PW\\[([^\\]]+)\\]/);
@@ -467,7 +460,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             const gnMatch = sgf.match(/GN\\[([^\\]]+)\\]/);
             const dtMatch = sgf.match(/DT\\[([^\\]]+)\\]/);
             const reMatch = sgf.match(/RE\\[([^\\]]+)\\]/);
-            
+
             if (pbMatch) info.black = pbMatch[1];
             if (pwMatch) info.white = pwMatch[1];
             if (brMatch) info.blackRank = brMatch[1];
@@ -475,7 +468,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             if (gnMatch) info.gameName = gnMatch[1];
             if (dtMatch) info.date = dtMatch[1];
             if (reMatch) info.result = reMatch[1];
-            
+
             // 提取着法 - 平面格式直接按顺序提取
             const regex = /;([BW])\\[([a-z]{{2}})\\]/g;
             let match;
@@ -485,7 +478,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                 const y = match[2].charCodeAt(1) - 97;
                 moves.push({{ color, x, y }});
             }}
-            
+
             return {{ moves, info }};
         }}
 
@@ -493,7 +486,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         let currentMove = 0;
         let isPlaying = false;
         let playInterval = null;
-        
+
         // 变化图相关变量
         const variations = {variations_json};
         let inVariation = false;
@@ -503,17 +496,17 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         // Canvas 设置
         const canvas = document.getElementById('board');
         const ctx = canvas.getContext('2d');
-        
+
         function resizeCanvas() {{
             const container = document.querySelector('.board-container');
             const maxWidth = Math.min(container.clientWidth - 20, window.innerWidth - 40, 570);
             const size = Math.max(300, maxWidth);
-            
+
             canvas.width = size;
             canvas.height = size;
             canvas.style.width = size + 'px';
             canvas.style.height = size + 'px';
-            
+
             updateDisplay();
         }}
 
@@ -546,7 +539,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             const key = `${{x}},${{y}}`;
             if (group.has(key)) return group;
             if (board[y][x] !== color) return group;
-            
+
             group.add(key);
             for (const [nx, ny] of getNeighbors(x, y)) {{
                 getGroup(board, nx, ny, color, group);
@@ -558,7 +551,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             const color = board[y][x];
             const group = getGroup(board, x, y, color);
             const liberties = new Set();
-            
+
             for (const key of group) {{
                 const [gx, gy] = key.split(',').map(Number);
                 for (const [nx, ny] of getNeighbors(gx, gy)) {{
@@ -567,7 +560,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                     }}
                 }}
             }}
-            
+
             return liberties;
         }}
 
@@ -575,29 +568,29 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         function drawBoard() {{
             const {{ margin, gridSize }} = getGridParams();
             const size = canvas.width;
-            
+
             // 背景
             ctx.fillStyle = '#E3C16F';
             ctx.fillRect(0, 0, size, size);
-            
+
             // 网格线
             ctx.strokeStyle = '#666';
             ctx.lineWidth = 1;
-            
+
             for (let i = 0; i < BOARD_SIZE; i++) {{
                 // 横线
                 ctx.beginPath();
                 ctx.moveTo(margin, margin + i * gridSize);
                 ctx.lineTo(size - margin, margin + i * gridSize);
                 ctx.stroke();
-                
+
                 // 竖线
                 ctx.beginPath();
                 ctx.moveTo(margin + i * gridSize, margin);
                 ctx.lineTo(margin + i * gridSize, size - margin);
                 ctx.stroke();
             }}
-            
+
             // 星位
             const stars = BOARD_SIZE === 19 ? [3, 9, 15] : [2, 6, 10];
             ctx.fillStyle = '#333';
@@ -616,16 +609,16 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             const cx = margin + x * gridSize;
             const cy = margin + y * gridSize;
             const radius = gridSize * 0.42;
-            
+
             ctx.beginPath();
             ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-            
+
             // 渐变效果
             const gradient = ctx.createRadialGradient(
                 cx - radius * 0.3, cy - radius * 0.3, radius * 0.1,
                 cx, cy, radius
             );
-            
+
             if (color === 'black') {{
                 gradient.addColorStop(0, '#666');
                 gradient.addColorStop(1, '#000');
@@ -633,10 +626,10 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                 gradient.addColorStop(0, '#fff');
                 gradient.addColorStop(1, '#ccc');
             }}
-            
+
             ctx.fillStyle = gradient;
             ctx.fill();
-            
+
             // 最后一手标记
             if (isLast) {{
                 ctx.beginPath();
@@ -644,7 +637,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                 ctx.fillStyle = color === 'black' ? '#fff' : '#000';
                 ctx.fill();
             }}
-            
+
             // 手数显示
             if (moveNum && document.getElementById('showNumbers').checked) {{
                 ctx.fillStyle = color === 'black' ? '#fff' : '#000';
@@ -658,18 +651,18 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         // 更新显示
         function updateDisplay() {{
             drawBoard();
-            
+
             const board = createBoard();
             let blackCaptured = 0;
             let whiteCaptured = 0;
-            
+
             for (let i = 0; i < currentMove; i++) {{
                 const move = moves[i];
                 const opponent = move.color === 'black' ? 'white' : 'black';
-                
+
                 // 检查是否可以下子（简化处理，不处理所有规则）
                 board[move.y][move.x] = move.color;
-                
+
                 // 检查提子
                 for (const [nx, ny] of getNeighbors(move.x, move.y)) {{
                     if (board[ny][nx] === opponent) {{
@@ -686,15 +679,15 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                     }}
                 }}
             }}
-            
+
             // 绘制所有棋子
             for (let y = 0; y < BOARD_SIZE; y++) {{
                 for (let x = 0; x < BOARD_SIZE; x++) {{
                     if (board[y][x]) {{
-                        const isLast = (currentMove > 0 && 
-                            moves[currentMove - 1].x === x && 
+                        const isLast = (currentMove > 0 &&
+                            moves[currentMove - 1].x === x &&
                             moves[currentMove - 1].y === y);
-                        
+
                         // 找到这是第几手
                         let moveNum = null;
                         for (let i = 0; i < currentMove; i++) {{
@@ -703,15 +696,15 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                                 break;
                             }}
                         }}
-                        
+
                         drawStone(x, y, board[y][x], isLast, moveNum);
                     }}
                 }}
             }}
-            
+
             // 更新状态信息
             document.getElementById('moveInfo').textContent = `第 ${{currentMove}} 手 / 共 ${{moves.length}} 手`;
-            
+
             if (currentMove > 0) {{
                 const lastMove = moves[currentMove - 1];
                 const coord = String.fromCharCode(97 + lastMove.x) + String.fromCharCode(97 + lastMove.y);
@@ -720,9 +713,9 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             }} else {{
                 document.getElementById('moveDetail').textContent = '点击播放开始打谱';
             }}
-            
+
             if (blackCaptured > 0 || whiteCaptured > 0) {{
-                document.getElementById('capturedInfo').textContent = 
+                document.getElementById('capturedInfo').textContent =
                     `提子: 黑 ${{blackCaptured}} 子, 白 ${{whiteCaptured}} 子`;
             }} else {{
                 document.getElementById('capturedInfo').textContent = '';
@@ -764,7 +757,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                 if (currentMove >= moves.length) {{
                     currentMove = 0;
                 }}
-                const speed = parseInt(document.getElementById('speedRange').value);
+                const speed = 800; // 固定播放速度 0.8秒/手
                 isPlaying = true;
                 btn.textContent = '⏸';
                 playInterval = setInterval(() => {{
@@ -810,27 +803,51 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             }}
         }});
 
-        // 速度显示
-        document.getElementById('speedRange').addEventListener('input', (e) => {{
-            document.getElementById('speedValue').textContent = (e.target.value / 1000) + 's';
-        }});
+        // 手数显示切换
+        function toggleNumbers() {{
+            const checkbox = document.getElementById('showNumbers');
+            checkbox.checked = !checkbox.checked;
+            updateDisplay();
+            updateNumToggleBtn();
+        }}
         
+        function updateNumToggleBtn() {{
+            const btn = document.getElementById('numToggleBtn');
+            const checkbox = document.getElementById('showNumbers');
+            if (checkbox.checked) {{
+                btn.style.background = '#667eea';
+                btn.style.color = 'white';
+            }} else {{
+                btn.style.background = '#f0f0f0';
+                btn.style.color = '#333';
+            }}
+        }}
+        
+        // 手数滑动条控制
+        function goToMove(moveNum) {{
+            const target = parseInt(moveNum);
+            if (target >= 0 && target <= moves.length) {{
+                currentMove = target;
+                updateDisplay();
+            }}
+        }}
+
         // ==================== 变化图功能 ====================
-        
+
         // 更新变化图面板
         function updateVarPanel() {{
             const varPanel = document.getElementById('varPanel');
             const varList = document.getElementById('varList');
-            
+
             if (inVariation || !variations[currentMove]) {{
                 varPanel.style.display = 'none';
                 return;
             }}
-            
+
             varPanel.style.display = 'block';
             document.getElementById('varMoveNum').textContent = currentMove;
             varList.innerHTML = '';
-            
+
             variations[currentMove].forEach((v, i) => {{
                 const btn = document.createElement('button');
                 btn.className = 'btn';
@@ -840,7 +857,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                 varList.appendChild(btn);
             }});
         }}
-        
+
         // 进入变化图
         function enterVariation(v) {{
             inVariation = true;
@@ -850,32 +867,30 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                 y: m.coord.charCodeAt(1) - 97
             }}));
             varIndex = 2; // 默认显示第一手变化（跳过主分支分叉点，直接显示变化后的第一手）
-            
+
             // 隐藏主控制面板和变化图列表
             document.getElementById('mainControls').style.display = 'none';
-            document.getElementById('settingsRow').style.display = 'none';
             document.getElementById('varPanel').style.display = 'none';
             document.getElementById('varControlPanel').style.display = 'block';
-            
+
             updateVarButtons();
             updateDisplay();
         }}
-        
+
         // 退出变化图
         function exitVariation() {{
             inVariation = false;
             varMoves = [];
             varIndex = 0;
-            
+
             // 显示主控制面板
             document.getElementById('mainControls').style.display = 'flex';
-            document.getElementById('settingsRow').style.display = 'flex';
             document.getElementById('varControlPanel').style.display = 'none';
-            
+
             updateVarPanel();
             updateDisplay();
         }}
-        
+
         // 变化图上一步
         function varPrev() {{
             if (varIndex > 0) {{
@@ -884,7 +899,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                 updateDisplay();
             }}
         }}
-        
+
         // 变化图下一步
         function varNext() {{
             if (varIndex < varMoves.length) {{
@@ -893,21 +908,21 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                 updateDisplay();
             }}
         }}
-        
+
         // 更新变化图按钮状态
         function updateVarButtons() {{
             const prevBtn = document.getElementById('varPrevBtn');
             const nextBtn = document.getElementById('varNextBtn');
-            
+
             prevBtn.style.opacity = varIndex <= 0 ? '0.3' : '1';
             prevBtn.style.cursor = varIndex <= 0 ? 'not-allowed' : 'pointer';
             prevBtn.disabled = varIndex <= 0;
-            
+
             nextBtn.style.opacity = varIndex >= varMoves.length ? '0.3' : '1';
             nextBtn.style.cursor = varIndex >= varMoves.length ? 'not-allowed' : 'pointer';
             nextBtn.disabled = varIndex >= varMoves.length;
         }}
-        
+
         // 修改原有的绘制函数支持变化图
         const originalDrawBoard = updateDisplay;
         updateDisplay = function() {{
@@ -915,25 +930,25 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                 // 绘制主分支 + 变化图
                 drawBoard();
                 const board = createBoard();
-                
+
                 // 主分支着法
                 for (let i = 0; i < currentMove && i < moves.length; i++) {{
                     board[moves[i].y][moves[i].x] = moves[i].color;
                 }}
-                
+
                 // 变化图着法
                 for (let i = 0; i < varIndex && i < varMoves.length; i++) {{
                     board[varMoves[i].y][varMoves[i].x] = varMoves[i].color;
                 }}
-                
+
                 // 绘制棋子 - 变化图模式下强制显示手数
                 const {{ margin, gridSize }} = getGridParams();
-                
+
                 // 临时开启手数显示
                 const showNumbersCheckbox = document.getElementById('showNumbers');
                 const originalShowNumbers = showNumbersCheckbox.checked;
                 showNumbersCheckbox.checked = true;
-                
+
                 for (let y = 0; y < BOARD_SIZE; y++) {{
                     for (let x = 0; x < BOARD_SIZE; x++) {{
                         if (board[y][x]) {{
@@ -945,18 +960,18 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                                     break;
                                 }}
                             }}
-                            
+
                             // 变化图模式下不显示最后一手标记（因为有手数显示了）
                             const isLast = false;
-                            
+
                             drawStone(x, y, board[y][x], isLast, varMoveNum);
                         }}
                     }}
                 }}
-                
+
                 // 恢复原来的手数显示设置
                 showNumbersCheckbox.checked = originalShowNumbers;
-                
+
                 // 更新状态
                 const totalMoves = currentMove + varIndex;
                 document.getElementById('moveInfo').textContent = `第 ${{totalMoves}} 手`;
@@ -972,30 +987,30 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             }} else {{
                 originalDrawBoard();
                 updateVarPanel();
+                // 同步滑动条位置
+                document.getElementById('moveSlider').value = currentMove;
             }}
         }};
-        
+
         // 修改键盘控制
         const originalPrev = prevMove;
         const originalNext = nextMove;
         prevMove = function() {{ if (inVariation) varPrev(); else originalPrev(); }};
         nextMove = function() {{ if (inVariation) varNext(); else originalNext(); }};
-        
-        // 给主控制面板加ID
-        document.querySelector('.controls').id = 'mainControls';
 
         // 初始化
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
         updateVarPanel();
+        updateNumToggleBtn();
     </script>
 </body>
 </html>'''
-    
+
     # 写入文件
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html_template)
-    
+
     print(f"✅ 已生成打谱网页: {output_path}")
     print(f"   总手数: {len(main_moves)}")
     print(f"   黑棋: {black_name}")
@@ -1009,13 +1024,13 @@ def main():
         print("示例: python3 sgf_to_html.py game.sgf")
         print("       python3 sgf_to_html.py game.sgf -o /tmp/myviewer")
         sys.exit(1)
-    
+
     input_file = sys.argv[1]
-    
+
     # 解析参数
     output_file = None
     output_dir = None
-    
+
     i = 2
     while i < len(sys.argv):
         if sys.argv[i] in ('--output-dir', '-o'):
@@ -1030,14 +1045,14 @@ def main():
             i += 1
         else:
             i += 1
-    
+
     # 默认输出目录为 /tmp/sgf-viewer
     if output_dir is None:
         output_dir = '/tmp/sgf-viewer'
-    
+
     # 确保输出目录存在
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # 确定输出文件名
     if output_file:
         # 如果指定的是完整路径，直接使用
@@ -1048,7 +1063,7 @@ def main():
     else:
         base_name = os.path.splitext(os.path.basename(input_file))[0]
         output_path = os.path.join(output_dir, base_name + '.html')
-    
+
     # 读取SGF文件
     try:
         with open(input_file, 'r', encoding='utf-8') as f:
@@ -1059,29 +1074,29 @@ def main():
     except Exception as e:
         print(f"❌ 错误: 读取文件失败 - {e}")
         sys.exit(1)
-    
+
     # 提取主分支着法
     print(f"📖 正在解析: {input_file}")
     main_moves = extract_main_branch(sgf_content)
-    
+
     if not main_moves:
         print("❌ 错误: 无法从SGF中提取着法")
         sys.exit(1)
-    
+
     print(f"   提取到 {len(main_moves)} 手主分支着法")
-    
+
     # 提取变化图
     variations = extract_variations(sgf_content, main_moves)
     if variations:
         total = sum(len(v) for v in variations.values())
         print(f"   提取到 {total} 个变化图")
-    
+
     # 提取棋局信息
     game_info = extract_game_info(sgf_content)
-    
+
     # 生成HTML
     generate_html(main_moves, game_info, variations, output_path)
-    
+
     print(f"\n🌐 查看方式:")
     print(f"   python3 -m http.server 8080 --directory {output_dir}")
     print(f"   浏览器访问: http://localhost:8080/{os.path.basename(output_path)}")
