@@ -48,35 +48,40 @@
             justify-content: center;
             margin: 10px 0;
             position: relative;
+            width: 100%;
         }
         #board {
             border-radius: 4px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.15);
             max-width: 100%;
+            width: 100%;
             height: auto;
+            aspect-ratio: 1 / 1;
             display: block;
         }
         .controls {
             display: flex;
-            justify-content: center;
+            justify-content: space-between;
             align-items: center;
-            gap: 8px;
-            margin: 12px 0;
-            flex-wrap: wrap;
+            gap: 4px;
+            margin: 6px 0;
+            flex-wrap: nowrap;
+            padding: 0 2px;
         }
         .btn {
-            width: 44px;
-            height: 44px;
+            width: 32px;
+            height: 32px;
             border: none;
             border-radius: 50%;
             cursor: pointer;
-            font-size: 20px;
+            font-size: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.2s ease;
             background: #f0f0f0;
             color: #333;
+            flex-shrink: 0;
         }
         .btn:active {
             transform: scale(0.95);
@@ -84,9 +89,9 @@
         .btn-primary {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            width: 56px;
-            height: 56px;
-            font-size: 24px;
+            width: 38px;
+            height: 38px;
+            font-size: 16px;
         }
         .btn-success {
             background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
@@ -94,12 +99,13 @@
         }
         .settings {
             display: flex;
-            justify-content: center;
+            justify-content: flex-start;
             align-items: center;
             gap: 15px;
             margin: 10px 0;
             flex-wrap: wrap;
             font-size: 13px;
+            padding: 0 5px;
         }
         .setting-item {
             display: flex;
@@ -175,7 +181,7 @@
                 align-items: center;
             }
             .container {
-                max-width: 600px;
+                max-width: 700px;
                 padding: 25px;
                 border-radius: 20px;
             }
@@ -186,14 +192,17 @@
                 font-size: 14px;
             }
             .btn {
-                width: 50px;
-                height: 50px;
-                font-size: 22px;
+                width: 44px;
+                height: 44px;
+                font-size: 20px;
             }
             .btn-primary {
-                width: 64px;
-                height: 64px;
-                font-size: 28px;
+                width: 56px;
+                height: 56px;
+                font-size: 24px;
+            }
+            .controls {
+                gap: 8px;
             }
         }
 
@@ -219,25 +228,32 @@
             <canvas id="board"></canvas>
         </div>
 
-        <div class="controls">
-            <button class="btn" onclick="goToStart()" title="跳到开头">⏮</button>
-            <button class="btn" onclick="prevMove()" title="上一手">◀</button>
-            <button class="btn btn-primary" id="playBtn" onclick="togglePlay()" title="播放/暂停">▶</button>
-            <button class="btn" onclick="nextMove()" title="下一手">▶</button>
-            <button class="btn" onclick="goToEnd()" title="跳到结尾">⏭</button>
-        </div>
-
-        <div class="settings">
-            <div class="setting-item">
-                <input type="checkbox" id="showNumbers" onchange="updateDisplay()">
-                <label for="showNumbers">手数</label>
+        <!-- 主控制面板 - 手机端确保一行显示 -->
+        <div id="mainControls" style="display: flex; align-items: center; justify-content: space-between; gap: 4px; margin: 6px 0; flex-wrap: nowrap; padding: 0 2px;">
+            <div style="display: flex; align-items: center; gap: 3px; flex: 1;">
+                <button class="btn" onclick="goToStart()" title="跳到开头" style="width: 32px; height: 32px; font-size: 12px; padding: 0; flex-shrink: 0;">⏮</button>
+                <button class="btn" onclick="prevMove()" title="上一手" style="width: 32px; height: 32px; font-size: 14px; padding: 0; flex-shrink: 0;">◀</button>
+                <input type="range" id="moveSlider" min="0" max="{len(main_moves)}" value="0" style="width: 100%; min-width: 60px; height: 18px; flex: 1;" oninput="goToMove(this.value)">
+                <button class="btn" onclick="nextMove()" title="下一手" style="width: 32px; height: 32px; font-size: 14px; padding: 0; flex-shrink: 0;">▶</button>
+                <button class="btn" onclick="goToEnd()" title="跳到结尾" style="width: 32px; height: 32px; font-size: 12px; padding: 0; flex-shrink: 0;">⏭</button>
             </div>
+            <div style="width: 1px; height: 20px; background: #ddd; margin: 0 3px; flex-shrink: 0;"></div>
+            <div style="display: flex; align-items: center; gap: 3px; flex-shrink: 0;">
+                <button class="btn" id="numToggleBtn" onclick="toggleNumbers()" title="显示/隐藏手数" style="width: 32px; height: 32px; font-size: 11px; padding: 0; background: #f0f0f0;">1️⃣</button>
+                <button class="btn btn-success" onclick="downloadSGF()" title="下载SGF" style="width: 32px; height: 32px; font-size: 14px; padding: 0;">💾</button>
+                <button class="btn" id="playBtn" onclick="togglePlay()" title="播放/暂停" style="width: 32px; height: 32px; font-size: 13px; padding: 0; font-weight: bold;">播</button>
+            </div>
+        </div>
+        
+        <!-- 隐藏的手数显示控制 -->
+        <input type="checkbox" id="showNumbers" style="display: none;" onchange="updateNumToggleBtn()">
+
+        <div class="settings" style="justify-content: flex-start; padding: 0 5px;">
             <div class="speed-control">
                 <label>速度</label>
-                <input type="range" id="speedRange" min="200" max="2000" value="800" step="200">
+                <input type="range" id="speedRange" min="200" max="2000" value="800" step="200" style="width: 120px;">
                 <span id="speedValue">0.8s</span>
             </div>
-            <button class="btn btn-success" onclick="downloadSGF()" title="下载SGF" style="width: 40px; height: 40px; font-size: 18px;">💾</button>
         </div>
 
         <div class="status">
@@ -399,8 +415,13 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
         
         function resizeCanvas() {
             const container = document.querySelector('.board-container');
-            const maxWidth = Math.min(container.clientWidth - 20, window.innerWidth - 40, 570);
-            const size = Math.max(300, maxWidth);
+            // 手机端最大化棋盘，确保正方形
+            const isMobile = window.innerWidth < 768;
+            const margin = isMobile ? 4 : 20;
+            const availableWidth = Math.min(container.clientWidth, window.innerWidth) - margin;
+            const availableHeight = window.innerHeight - 250; // 预留空间给其他UI元素
+            const maxSize = Math.min(availableWidth, availableHeight, isMobile ? 760 : 720);
+            const size = Math.max(isMobile ? 320 : 400, maxSize);
             
             canvas.width = size;
             canvas.height = size;
@@ -411,9 +432,11 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
         }
 
         function getGridParams() {
-            const margin = canvas.width * 0.05;
+            const baseMargin = canvas.width * 0.05;
+            const coordMargin = canvas.width * 0.03; // 坐标标签区域
+            const margin = baseMargin + coordMargin; // 实际棋盘边距（包含坐标）
             const gridSize = (canvas.width - 2 * margin) / (BOARD_SIZE - 1);
-            return { margin, gridSize };
+            return { margin, gridSize, baseMargin, coordMargin };
         }
 
         // 创建棋盘状态数组
@@ -518,7 +541,7 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
         }
 
         function initBoardBackground() {
-            const { margin, gridSize } = getGridParams();
+            const { margin, gridSize, baseMargin, coordMargin } = getGridParams();
             
             ctx.fillStyle = '#DEB887';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -538,6 +561,28 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
                 ctx.stroke();
             }
 
+            // 绘制坐标标签
+            ctx.fillStyle = '#333';
+            ctx.font = `bold ${Math.max(10, gridSize * 0.35)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                // 横坐标 (A-S, 跳过 I)
+                const colLabel = String.fromCharCode(65 + i + (i >= 8 ? 1 : 0));
+                // 上方
+                ctx.fillText(colLabel, margin + i * gridSize, baseMargin + coordMargin * 0.3);
+                // 下方
+                ctx.fillText(colLabel, margin + i * gridSize, canvas.height - baseMargin - coordMargin * 0.3);
+                
+                // 纵坐标 (1-19)
+                const rowLabel = (BOARD_SIZE - i).toString();
+                // 左侧
+                ctx.fillText(rowLabel, baseMargin + coordMargin * 0.3, margin + i * gridSize);
+                // 右侧
+                ctx.fillText(rowLabel, canvas.width - baseMargin - coordMargin * 0.3, margin + i * gridSize);
+            }
+
             const stars = [3, 9, 15];
             ctx.fillStyle = '#000';
             const starRadius = Math.max(2, canvas.width / 150);
@@ -554,7 +599,8 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
             const { margin, gridSize } = getGridParams();
             const cx = margin + x * gridSize;
             const cy = margin + y * gridSize;
-            const radius = gridSize * 0.45;
+            // 棋子尺寸
+            const radius = gridSize * 0.48;
 
             ctx.beginPath();
             ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -578,14 +624,16 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
 
             const showNumbers = document.getElementById('showNumbers').checked;
             if (showNumbers && number !== null) {
-                ctx.font = `bold ${gridSize * 0.35}px Arial`;
+                // 增大手数字体
+                ctx.font = `bold ${gridSize * 0.55}px Arial`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillStyle = color === 'black' ? '#fff' : '#000';
                 ctx.fillText(number.toString(), cx, cy);
             }
 
-            if (isLastMove) {
+            // 只有在不显示手数的情况下才显示最后一手标记
+            if (isLastMove && !showNumbers) {
                 ctx.beginPath();
                 ctx.arc(cx, cy, radius * 0.25, 0, Math.PI * 2);
                 ctx.fillStyle = color === 'black' ? '#fff' : '#000';
@@ -622,10 +670,8 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
                 document.getElementById('capturedInfo').textContent = '';
             } else {
                 const move = moves[currentMove - 1];
-                const colorText = move.color === 'black' ? '黑' : '白';
-                const col = String.fromCharCode(65 + move.x);
-                const row = 19 - move.y;
-                document.getElementById('moveDetail').textContent = `${colorText}${currentMove}手: ${col}${row}`;
+                const colorText = move.color === 'black' ? '黑棋' : '白棋';
+                document.getElementById('moveDetail').textContent = colorText;
                 
                 let captureText = '';
                 if (blackCaptured > 0 || whiteCaptured > 0) {
@@ -649,6 +695,26 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        }
+
+        // 手数显示切换
+        function toggleNumbers() {
+            const checkbox = document.getElementById('showNumbers');
+            checkbox.checked = !checkbox.checked;
+            updateDisplay();
+            updateNumToggleBtn();
+        }
+
+        function updateNumToggleBtn() {
+            const btn = document.getElementById('numToggleBtn');
+            const checkbox = document.getElementById('showNumbers');
+            if (checkbox.checked) {
+                btn.style.background = '#667eea';
+                btn.style.color = 'white';
+            } else {
+                btn.style.background = '#f0f0f0';
+                btn.style.color = '#333';
+            }
         }
 
         function goToStart() {
@@ -679,7 +745,7 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
             const btn = document.getElementById('playBtn');
             if (isPlaying) {
                 pausePlay();
-                btn.textContent = '▶';
+                btn.textContent = '播';
             } else {
                 startPlay();
                 btn.textContent = '⏸';
@@ -696,7 +762,7 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
                     updateDisplay();
                 } else {
                     pausePlay();
-                    document.getElementById('playBtn').textContent = '▶';
+                    document.getElementById('playBtn').textContent = '播';
                 }
             }, speed);
         }
@@ -758,6 +824,7 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
         // 初始化
         updateGameInfo();
         resizeCanvas();
+        updateNumToggleBtn();
     </script>
 </body>
 </html>

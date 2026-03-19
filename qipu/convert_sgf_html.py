@@ -125,12 +125,15 @@ def extract_variations(sgf_content, main_moves):
 
                     # 提取胜率作为名称
                     name = f"变化{len(variations[move_num])+1}"
+                    winRate = name
                     win_match = re.search(r'([黑白]).*?(\d+\.?\d*)%', comment)
                     if win_match:
-                        name += f" {win_match.group(1)}{win_match.group(2)}%"
+                        winRate = f"{win_match.group(1)}{win_match.group(2)}%"
+                        name += f" {winRate}"
 
                     variations[move_num].append({
                         'name': name,
+                        'winRate': winRate,
                         'moves': var_moves,
                         'comment': comment
                     })
@@ -164,7 +167,7 @@ def extract_game_info(sgf_content):
     return info
 
 
-def generate_html(main_moves, game_info, variations, output_path):
+def generate_html(main_moves, game_info, variations, output_path, input_base_name='棋谱'):
     """生成HTML打谱网页"""
 
     import json
@@ -204,7 +207,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>{{game_name}}</title>
+    <title>{game_name}</title>
     <style>
         * {{
             margin: 0;
@@ -249,12 +252,15 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             justify-content: center;
             margin: 10px 0;
             position: relative;
+            width: 100%;
         }}
         #board {{
             border-radius: 4px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.15);
             max-width: 100%;
+            width: 100%;
             height: auto;
+            aspect-ratio: 1 / 1;
             display: block;
         }}
         .controls {{
@@ -392,15 +398,19 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             <canvas id="board"></canvas>
         </div>
 
-        <!-- 主控制面板 - 紧凑一行 -->
-        <div id="mainControls" style="display: flex; align-items: center; justify-content: center; gap: 4px; margin: 6px 0; flex-wrap: nowrap;">
-            <button class="btn" onclick="prevMove()" title="上一手" style="width: 28px; height: 28px; font-size: 12px; padding: 0;">◀</button>
-            <input type="range" id="moveSlider" min="0" max="{len(main_moves)}" value="0" style="width: 140px; height: 16px;" oninput="goToMove(this.value)">
-            <button class="btn" onclick="nextMove()" title="下一手" style="width: 28px; height: 28px; font-size: 12px; padding: 0;">▶</button>
-            <div style="width: 1px; height: 20px; background: #ddd; margin: 0 2px;"></div>
-            <button class="btn" id="numToggleBtn" onclick="toggleNumbers()" title="显示/隐藏手数" style="width: 28px; height: 28px; font-size: 10px; padding: 0; background: #f0f0f0;">#</button>
-            <button class="btn" onclick="downloadSGF()" title="下载SGF" style="width: 28px; height: 28px; font-size: 12px; padding: 0; background: #f0f0f0;">💾</button>
-            <button class="btn" id="playBtn" onclick="togglePlay()" title="播放/暂停" style="width: 28px; height: 28px; font-size: 12px; padding: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">▶</button>
+        <!-- 主控制面板 - 手机端确保一行显示 -->
+        <div id="mainControls" style="display: flex; align-items: center; justify-content: space-between; gap: 4px; margin: 6px 0; flex-wrap: nowrap; padding: 0 2px;">
+            <div style="display: flex; align-items: center; gap: 3px; flex: 1;">
+                <button class="btn" onclick="prevMove()" title="上一手" style="width: 32px; height: 32px; font-size: 14px; padding: 0; flex-shrink: 0;">◀</button>
+                <input type="range" id="moveSlider" min="0" max="{len(main_moves)}" value="0" style="width: 100%; min-width: 80px; height: 18px; flex: 1;" oninput="goToMove(this.value)">
+                <button class="btn" onclick="nextMove()" title="下一手" style="width: 32px; height: 32px; font-size: 14px; padding: 0; flex-shrink: 0;">▶</button>
+            </div>
+            <div style="width: 1px; height: 20px; background: #ddd; margin: 0 3px; flex-shrink: 0;"></div>
+            <div style="display: flex; align-items: center; gap: 3px; flex-shrink: 0;">
+                <button class="btn" id="numToggleBtn" onclick="toggleNumbers()" title="显示/隐藏手数" style="width: 32px; height: 32px; font-size: 11px; padding: 0; background: #f0f0f0;">1️⃣</button>
+                <button class="btn" onclick="downloadSGF()" title="下载SGF" style="width: 32px; height: 32px; font-size: 14px; padding: 0; background: #f0f0f0;">💾</button>
+                <button class="btn" id="playBtn" onclick="togglePlay()" title="播放/暂停" style="width: 32px; height: 32px; font-size: 13px; padding: 0; font-weight: bold;">播</button>
+            </div>
         </div>
         
         <!-- 隐藏的手数显示控制 -->
@@ -408,18 +418,15 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
 
         <!-- 变化图列表面板 -->
         <div id="varPanel" style="margin: 8px 0; padding: 8px 10px; background: #f8f9fa; border-radius: 8px; display: none;">
-            <div style="font-weight: bold; margin-bottom: 6px; color: #333; font-size: 13px;">
-                第 <span id="varMoveNum">0</span> 手的变化图
-            </div>
             <div id="varList" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
         </div>
 
         <!-- 变化图查看控制面板 -->
-        <div id="varControlPanel" style="display: none; margin: 8px 0; padding: 10px; background: #f0f0f0; border-radius: 8px;">
-            <div style="display: flex; justify-content: center; gap: 20px;">
-                <button class="btn" id="varPrevBtn" onclick="varPrev()" style="width: 44px; height: 44px; font-size: 20px; background: #667eea; color: white;">◀</button>
-                <button class="btn" onclick="exitVariation()" style="width: 44px; height: 44px; font-size: 20px; background: #ff6b6b; color: white;">↩</button>
-                <button class="btn" id="varNextBtn" onclick="varNext()" style="width: 44px; height: 44px; font-size: 20px; background: #667eea; color: white;">▶</button>
+        <div id="varControlPanel" style="display: none; margin: 8px 0; padding: 12px; background: #f0f0f0; border-radius: 8px;">
+            <div style="display: flex; justify-content: center; gap: 24px;">
+                <button class="btn" id="varPrevBtn" onclick="varPrev()" style="width: 52px; height: 52px; font-size: 24px; background: #667eea; color: white;">◀</button>
+                <button class="btn" onclick="exitVariation()" style="width: 52px; height: 52px; font-size: 24px; background: #ff6b6b; color: white;">↩</button>
+                <button class="btn" id="varNextBtn" onclick="varNext()" style="width: 52px; height: 52px; font-size: 24px; background: #667eea; color: white;">▶</button>
             </div>
         </div>
 
@@ -499,8 +506,13 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
 
         function resizeCanvas() {{
             const container = document.querySelector('.board-container');
-            const maxWidth = Math.min(container.clientWidth - 20, window.innerWidth - 40, 570);
-            const size = Math.max(300, maxWidth);
+            // 手机端最大化棋盘，确保正方形
+            const isMobile = window.innerWidth < 768;
+            const margin = isMobile ? 4 : 20;
+            const availableWidth = Math.min(container.clientWidth, window.innerWidth) - margin;
+            const availableHeight = window.innerHeight - 250; // 预留空间给其他UI元素
+            const maxSize = Math.min(availableWidth, availableHeight, isMobile ? 760 : 720);
+            const size = Math.max(isMobile ? 320 : 400, maxSize);
 
             canvas.width = size;
             canvas.height = size;
@@ -511,7 +523,9 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         }}
 
         function getGridParams() {{
-            const margin = canvas.width * 0.05;
+            const baseMargin = canvas.width * 0.05;
+            const coordMargin = canvas.width * 0.03; // 坐标标签区域
+            const margin = baseMargin + coordMargin; // 实际棋盘边距（包含坐标）
             const gridSize = (canvas.width - 2 * margin) / (BOARD_SIZE - 1);
             return {{ margin, gridSize }};
         }}
@@ -568,12 +582,14 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         function drawBoard() {{
             const {{ margin, gridSize }} = getGridParams();
             const size = canvas.width;
+            const baseMargin = canvas.width * 0.05; // 基础边距
+            const coordMargin = canvas.width * 0.03; // 坐标标签区域
 
             // 背景
             ctx.fillStyle = '#E3C16F';
             ctx.fillRect(0, 0, size, size);
 
-            // 网格线
+            // 网格线 - 使用 margin（已包含坐标区域）
             ctx.strokeStyle = '#666';
             ctx.lineWidth = 1;
 
@@ -589,6 +605,28 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
                 ctx.moveTo(margin + i * gridSize, margin);
                 ctx.lineTo(margin + i * gridSize, size - margin);
                 ctx.stroke();
+            }}
+
+            // 绘制坐标标签
+            ctx.fillStyle = '#333';
+            ctx.font = `bold ${{Math.max(10, gridSize * 0.35)}}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            for (let i = 0; i < BOARD_SIZE; i++) {{
+                // 横坐标 (A-S, 跳过 I)
+                const colLabel = String.fromCharCode(65 + i + (i >= 8 ? 1 : 0));
+                // 上方
+                ctx.fillText(colLabel, margin + i * gridSize, baseMargin + coordMargin * 0.3);
+                // 下方
+                ctx.fillText(colLabel, margin + i * gridSize, size - baseMargin - coordMargin * 0.3);
+                
+                // 纵坐标 (1-19)
+                const rowLabel = (BOARD_SIZE - i).toString();
+                // 左侧
+                ctx.fillText(rowLabel, baseMargin + coordMargin * 0.3, margin + i * gridSize);
+                // 右侧
+                ctx.fillText(rowLabel, size - baseMargin - coordMargin * 0.3, margin + i * gridSize);
             }}
 
             // 星位
@@ -608,7 +646,8 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             const {{ margin, gridSize }} = getGridParams();
             const cx = margin + x * gridSize;
             const cy = margin + y * gridSize;
-            const radius = gridSize * 0.42;
+            // 棋子尺寸
+            const radius = gridSize * 0.48;
 
             ctx.beginPath();
             ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -630,8 +669,10 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             ctx.fillStyle = gradient;
             ctx.fill();
 
-            // 最后一手标记
-            if (isLast) {{
+            const showNumbers = document.getElementById('showNumbers').checked;
+
+            // 最后一手标记 - 只有在不显示手数时才显示
+            if (isLast && !showNumbers) {{
                 ctx.beginPath();
                 ctx.arc(cx, cy, radius * 0.25, 0, Math.PI * 2);
                 ctx.fillStyle = color === 'black' ? '#fff' : '#000';
@@ -639,9 +680,10 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             }}
 
             // 手数显示
-            if (moveNum && document.getElementById('showNumbers').checked) {{
+            if (moveNum && showNumbers) {{
                 ctx.fillStyle = color === 'black' ? '#fff' : '#000';
-                ctx.font = `bold ${{Math.floor(gridSize * 0.5)}}px Arial`;
+                // 增大手数字体
+                ctx.font = `bold ${{Math.floor(gridSize * 0.55)}}px Arial`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(moveNum.toString(), cx, cy);
@@ -707,9 +749,8 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
 
             if (currentMove > 0) {{
                 const lastMove = moves[currentMove - 1];
-                const coord = String.fromCharCode(97 + lastMove.x) + String.fromCharCode(97 + lastMove.y);
-                const colorText = lastMove.color === 'black' ? '黑' : '白';
-                document.getElementById('moveDetail').textContent = `${{colorText}}棋下在 ${{coord.toUpperCase()}}`;
+                const colorText = lastMove.color === 'black' ? '黑棋' : '白棋';
+                document.getElementById('moveDetail').textContent = colorText;
             }} else {{
                 document.getElementById('moveDetail').textContent = '点击播放开始打谱';
             }}
@@ -752,7 +793,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             if (isPlaying) {{
                 clearInterval(playInterval);
                 isPlaying = false;
-                btn.textContent = '▶';
+                btn.textContent = '播';
             }} else {{
                 if (currentMove >= moves.length) {{
                     currentMove = 0;
@@ -776,7 +817,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'game.sgf';
+            a.download = '{input_base_name}.sgf';
             a.click();
             URL.revokeObjectURL(url);
         }}
@@ -845,14 +886,15 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             }}
 
             varPanel.style.display = 'block';
-            document.getElementById('varMoveNum').textContent = currentMove;
             varList.innerHTML = '';
 
             variations[currentMove].forEach((v, i) => {{
                 const btn = document.createElement('button');
                 btn.className = 'btn';
-                btn.style.cssText = 'width: auto; padding: 4px 10px; height: 28px; font-size: 11px; background: #667eea; color: white; border-radius: 4px;';
-                btn.textContent = v.name;
+                btn.style.cssText = 'width: 72px; padding: 4px 0; height: 28px; font-size: 13px; background: #667eea; color: white; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+                // 只显示胜率，不显示"变化X"
+                btn.textContent = v.winRate || v.name.replace(/^变化\\d+\\s*/, '');
+                btn.title = v.winRate || v.name;
                 btn.onclick = () => enterVariation(v);
                 varList.appendChild(btn);
             }});
@@ -1094,8 +1136,11 @@ def main():
     # 提取棋局信息
     game_info = extract_game_info(sgf_content)
 
+    # 获取输入文件名（不含扩展名）
+    input_base_name = os.path.splitext(os.path.basename(input_file))[0]
+
     # 生成HTML
-    generate_html(main_moves, game_info, variations, output_path)
+    generate_html(main_moves, game_info, variations, output_path, input_base_name)
 
     print(f"\n🌐 查看方式:")
     print(f"   python3 -m http.server 8080 --directory {output_dir}")
