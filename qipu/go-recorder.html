@@ -660,26 +660,26 @@
                     continue;
                 }
                 
-                // 跳过已被标记为提掉的
-                if (tempCaptured.has(`${move.col},${move.row}`)) continue;
+                // 如果该位置之前被提过，移除标记（新棋子占据）
+                tempCaptured.delete(`${move.col},${move.row}`);
                 
                 tempGameState.push(move);
                 
-                // 检查是否能吃对方（简化：只检查邻接）
+                // 检查是否能吃对方（需要检查全盘，不能只检查邻接）
                 const opponent = move.player === 'B' ? 'W' : 'B';
-                const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+                const visited = new Set();
                 
-                for (const [dx, dy] of directions) {
-                    const nc = move.col + dx;
-                    const nr = move.row + dy;
-                    const neighbor = tempGameState.find(m => !m.isPass && m.col === nc && m.row === nr && !tempCaptured.has(`${m.col},${m.row}`));
-                    if (neighbor && neighbor.player === opponent) {
-                        const group = findGroupInTemp(nc, nr, opponent, tempGameState, tempCaptured);
-                        if (countLibertiesInTemp(group, tempGameState, tempCaptured) === 0) {
-                            for (const s of group) {
-                                tempCaptured.add(`${s.col},${s.row}`);
-                            }
-                        }
+                for (const m of tempGameState) {
+                    if (m.isPass || m.player !== opponent) continue;
+                    if (tempCaptured.has(`${m.col},${m.row}`)) continue;
+                    const key = `${m.col},${m.row}`;
+                    if (visited.has(key)) continue;
+                    
+                    const group = findGroupInTemp(m.col, m.row, opponent, tempGameState, tempCaptured);
+                    for (const s of group) visited.add(`${s.col},${s.row}`);
+                    
+                    if (countLibertiesInTemp(group, tempGameState, tempCaptured) === 0) {
+                        for (const s of group) tempCaptured.add(`${s.col},${s.row}`);
                     }
                 }
             }
@@ -703,7 +703,15 @@
                 if (visited.has(key)) continue;
                 visited.add(key);
                 
-                const stone = tempState.find(m => !m.isPass && m.col === col && m.row === row && !tempCaptured.has(key));
+                // 从后往前找最新的棋子
+                let stone = null;
+                for (let i = tempState.length - 1; i >= 0; i--) {
+                    const m = tempState[i];
+                    if (!m.isPass && m.col === col && m.row === row && !tempCaptured.has(key)) {
+                        stone = m;
+                        break;
+                    }
+                }
                 if (stone && stone.player === player) {
                     group.push(stone);
                     
@@ -731,7 +739,15 @@
                     const nc = stone.col + dx;
                     const nr = stone.row + dy;
                     if (nc >= 0 && nc < BOARD_SIZE && nr >= 0 && nr < BOARD_SIZE) {
-                        const occupied = tempState.find(m => !m.isPass && m.col === nc && m.row === nr && !tempCaptured.has(`${m.col},${m.row}`));
+                        // 从后往前找最新的棋子
+                        let occupied = false;
+                        for (let i = tempState.length - 1; i >= 0; i--) {
+                            const m = tempState[i];
+                            if (!m.isPass && m.col === nc && m.row === nr && !tempCaptured.has(`${m.col},${m.row}`)) {
+                                occupied = true;
+                                break;
+                            }
+                        }
                         if (!occupied) {
                             liberties.add(`${nc},${nr}`);
                         }
