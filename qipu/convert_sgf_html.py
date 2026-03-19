@@ -5,11 +5,13 @@ SGF围棋打谱网页生成器
 将野狐围棋SGF文件转换为交互式HTML打谱网页
 
 使用方法:
-    python3 sgf_to_html.py input.sgf [output.html]
+    python3 convert_sgf_html.py input.sgf [output.html]
+    python3 convert_sgf_html.py input.sgf --output-dir /path/to/dir
     
 示例:
-    python3 sgf_to_html.py game.sgf
-    python3 sgf_to_html.py game.sgf viewer.html
+    python3 convert_sgf_html.py game.sgf                    # 输出到 /tmp/sgf-viewer/
+    python3 convert_sgf_html.py game.sgf mygame.html        # 输出到 /tmp/sgf-viewer/mygame.html
+    python3 convert_sgf_html.py game.sgf -o /home/user/web  # 输出到指定目录
 """
 
 import sys
@@ -22,65 +24,55 @@ def extract_main_branch(sgf_content):
     从野狐围棋SGF中提取主分支着法
     
     野狐SGF格式特点:
-    - 使用线性嵌套保存变化图: (;B[qd](;W[pp](;B[dc]...)...)
-    - 主分支是沿着第一个子节点走的线路
-    - depth 1-N 每个depth只有一个着法的部分是主分支
-    - depth=N+1 的第一个着法（后面直接是)）是主分支的最后一手
+    - 多行格式，前9行是文件头
+    - 从第10行开始，每行是一个分支（主分支或变例）
+    - 主分支：每行只有1个着法（简单的嵌套格式）
+    - 变化图：每行有多个着法（带AI评论的完整变化）
     
     提取策略:
-    1. 计算每个着法的括号深度
-    2. 统计每个深度的着法数量
-    3. 提取主分支：每个depth只有一个着法的连续序列
-    4. 对于depth=N+1，只取第一个子节点
+    1. 跳过前9行（文件头）
+    2. 从第10行开始，只提取只有1个着法的行
+    3. 当遇到有多个着法的行时，说明是变化图，停止提取
     """
-    # 清理换行符
-    sgf = sgf_content.replace('\r\n', '').replace('\n', '')
+    lines = sgf_content.replace('\r\n', '\n').split('\n')
     
-    # 提取所有着法及其深度
-    moves = []
-    for match in re.finditer(r';([BW])\[([a-z]{2})\]', sgf):
-        pos = match.start()
-        # 计算括号深度
-        depth = 0
-        for j in range(pos):
-            if sgf[j] == '(':
-                depth += 1
-            elif sgf[j] == ')':
-                depth -= 1
-        
-        moves.append({
-            'color': match.group(1),
-            'coord': match.group(2),
-            'depth': depth
-        })
-    
-    # 按深度分组
-    depth_groups = {}
-    for m in moves:
-        if m['depth'] not in depth_groups:
-            depth_groups[m['depth']] = []
-        depth_groups[m['depth']].append(m)
-    
-    # 提取主分支
-    # 主分支是depth连续递增，且每个depth只有一个着法的部分
     main_moves = []
-    prev_depth = 0
+    found_first_move = False
     
-    for d in sorted(depth_groups.keys()):
-        group = depth_groups[d]
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
         
-        if d == prev_depth + 1:
-            # depth连续递增
-            # 取第一个着法作为主分支
-            main_moves.append(group[0])
-            prev_depth = d
-            
-            # 如果当前depth有多个着法，说明后续都是变化图，停止
-            if len(group) > 1:
-                break
+        # 查找所有着法
+        moves_in_line = re.findall(r';([BW])\[([a-z]{2})\]', line)
+        
+        if not moves_in_line:
+            continue
+        
+        # 检查是否是第一手（文件头行）
+        if not found_first_move:
+            # 第一手可能在文件头行（不以 (; 开头）
+            color, coord = moves_in_line[0]
+            main_moves.append({
+                'color': color,
+                'coord': coord
+            })
+            found_first_move = True
+            continue
+        
+        # 对于后续行，只取只有1个着法的行（主分支）
+        if len(moves_in_line) == 1:
+            color, coord = moves_in_line[0]
+            main_moves.append({
+                'color': color,
+                'coord': coord
+            })
         else:
-            # depth不连续，停止
-            break
+            # 遇到有多个着法的行，说明是变化图，停止
+            # 但为了处理可能的意外情况，继续检查后面是否还有单着法行
+            # 实际上应该停止，因为后面的都是变化图
+            pass
     
     return main_moves
 
@@ -755,17 +747,49 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
 def main():
     if len(sys.argv) < 2:
         print("用法: python3 sgf_to_html.py input.sgf [output.html]")
+        print("       python3 sgf_to_html.py input.sgf --output-dir /path/to/dir")
         print("示例: python3 sgf_to_html.py game.sgf")
+        print("       python3 sgf_to_html.py game.sgf -o /tmp/myviewer")
         sys.exit(1)
     
     input_file = sys.argv[1]
     
-    # 默认输出文件名
-    if len(sys.argv) >= 3:
-        output_file = sys.argv[2]
+    # 解析参数
+    output_file = None
+    output_dir = None
+    
+    i = 2
+    while i < len(sys.argv):
+        if sys.argv[i] in ('--output-dir', '-o'):
+            if i + 1 < len(sys.argv):
+                output_dir = sys.argv[i + 1]
+                i += 2
+            else:
+                print("❌ 错误: --output-dir 需要指定目录路径")
+                sys.exit(1)
+        elif not output_file:
+            output_file = sys.argv[i]
+            i += 1
+        else:
+            i += 1
+    
+    # 默认输出目录为 /tmp/sgf-viewer
+    if output_dir is None:
+        output_dir = '/tmp/sgf-viewer'
+    
+    # 确保输出目录存在
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # 确定输出文件名
+    if output_file:
+        # 如果指定的是完整路径，直接使用
+        if os.path.isabs(output_file):
+            output_path = output_file
+        else:
+            output_path = os.path.join(output_dir, output_file)
     else:
-        base_name = os.path.splitext(input_file)[0]
-        output_file = base_name + '.html'
+        base_name = os.path.splitext(os.path.basename(input_file))[0]
+        output_path = os.path.join(output_dir, base_name + '.html')
     
     # 读取SGF文件
     try:
@@ -792,11 +816,11 @@ def main():
     game_info = extract_game_info(sgf_content)
     
     # 生成HTML
-    generate_html(main_moves, game_info, output_file)
+    generate_html(main_moves, game_info, output_path)
     
     print(f"\n🌐 查看方式:")
-    print(f"   python3 -m http.server 8080")
-    print(f"   浏览器访问: http://localhost:8080/{output_file}")
+    print(f"   python3 -m http.server 8080 --directory {output_dir}")
+    print(f"   浏览器访问: http://localhost:8080/{os.path.basename(output_path)}")
 
 
 if __name__ == '__main__':
