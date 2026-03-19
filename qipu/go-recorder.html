@@ -469,9 +469,6 @@
                 }
             }
             
-            // 调试输出
-            console.log(`isSuicide: ${player} at (${col},${row}), toCapture=${Array.from(toCapture).join(';')}`);
-            
             // 临时标记被提的棋子
             for (const key of toCapture) {
                 capturedStones.add(key);
@@ -480,7 +477,6 @@
             // 检查自己是否还有气（考虑提子后空出的位置成为气）
             const myGroup = findGroup(col, row, player);
             const myLiberties = countLiberties(myGroup);
-            console.log(`  myGroup size=${myGroup.length}, liberties=${myLiberties}`);
             
             // 禁入点判断：
             // 1. 如果自己没气，但能提子（四周对方棋子只剩这口气），则允许（胀牯牛）
@@ -512,7 +508,6 @@
             gameState.pop();
             if (wasCaptured) capturedStones.add(posKey);
             
-            console.log(`  isSuicide result: ${suicide}`);
             return suicide;
         }
         
