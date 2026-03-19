@@ -456,7 +456,9 @@
             console.log(`  myGroup size=${myGroup.length}, liberties=${myLiberties}`);
             
             let suicide = false;
-            if (myLiberties === 0) {
+            // 禁入点：没提子且自己也没气
+            // 倒扑/胀牯牛：提了子，即使自己也没气，也是允许的
+            if (myLiberties === 0 && toCapture.size === 0) {
                 suicide = true;
             }
             
