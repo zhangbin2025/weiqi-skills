@@ -422,6 +422,45 @@
             return toRemove.map(s => ({col: s.col, row: s.row}));
         }
         
+        // 检查是否能提对方的棋子（用于打劫判断）
+        function canCaptureOpponent(col, row, player) {
+            const opponent = player === 'B' ? 'W' : 'B';
+            const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+            const posKey = `${col},${row}`;
+            
+            const wasCaptured = capturedStones.has(posKey);
+            if (wasCaptured) capturedStones.delete(posKey);
+            
+            const tempStone = {col, row, player, moveNum: 0, isPass: false};
+            gameState.push(tempStone);
+            
+            let canCapture = false;
+            const checkedGroups = new Set();
+            
+            for (const [dx, dy] of directions) {
+                const nc = col + dx;
+                const nr = row + dy;
+                const neighbor = getStone(nc, nr);
+                if (neighbor && neighbor.player === opponent) {
+                    const key = `${nc},${nr}`;
+                    if (!checkedGroups.has(key)) {
+                        const group = findGroup(nc, nr, opponent);
+                        for (const s of group) {
+                            checkedGroups.add(`${s.col},${s.row}`);
+                        }
+                        if (countLiberties(group) === 0) {
+                            canCapture = true;
+                        }
+                    }
+                }
+            }
+            
+            gameState.pop();
+            if (wasCaptured) capturedStones.add(posKey);
+            
+            return canCapture;
+        }
+        
         // 检查是否是自杀（禁入点）
         function isSuicide(col, row, player) {
             const opponent = player === 'B' ? 'W' : 'B';
@@ -623,14 +662,15 @@
                 return;
             }
             
-            // 检查是否自杀
-            if (isSuicide(pos.col, pos.row, currentPlayer)) {
+            // 检查是否自杀（同时检查能否提子）
+            const canCapture = canCaptureOpponent(pos.col, pos.row, currentPlayer);
+            if (isSuicide(pos.col, pos.row, currentPlayer) && !canCapture) {
                 showStatus('禁入点');
                 return;
             }
             
-            // 检查是否违反打劫规则
-            if (koPosition && koPosition.col === pos.col && koPosition.row === pos.row) {
+            // 检查是否违反打劫规则：打劫位且不能提子，才禁止
+            if (koPosition && koPosition.col === pos.col && koPosition.row === pos.row && !canCapture) {
                 showStatus('打劫');
                 return;
             }
