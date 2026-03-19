@@ -376,9 +376,27 @@
         }
         
         // 执行吃子，标记被吃的棋子，返回被吃坐标列表
-        function removeDeadStones(opponent) {
+        function removeDeadStones(opponent, newCol, newRow) {
             const toRemove = [];
             const visited = new Set();
+            
+            // 首先检查新落子位置的对方棋子（被覆盖的）
+            // 从后往前找，跳过最新落的子
+            for (let i = gameState.length - 2; i >= 0; i--) {
+                const move = gameState[i];
+                if (!move.isPass && move.player === opponent && move.col === newCol && move.row === newRow) {
+                    // 找到被覆盖的对方棋子
+                    const key = `${newCol},${newRow}`;
+                    if (!visited.has(key) && !capturedStones.has(key)) {
+                        const group = findGroup(newCol, newRow, opponent);
+                        for (const s of group) visited.add(`${s.col},${s.row}`);
+                        if (countLiberties(group) === 0) {
+                            toRemove.push(...group);
+                        }
+                    }
+                    break;
+                }
+            }
             
             for (const move of gameState) {
                 if (move.isPass || move.player !== opponent) continue;
@@ -634,7 +652,7 @@
             
             // 执行吃子
             const opponent = currentPlayer === 'B' ? 'W' : 'B';
-            const capturedCoords = removeDeadStones(opponent);
+            const capturedCoords = removeDeadStones(opponent, pos.col, pos.row);
             
             // 判断打劫：只提了一个子，且提子方提子后不止1口气，才形成打劫
             if (capturedCoords.length === 1) {
