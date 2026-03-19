@@ -258,7 +258,6 @@
 
         <div class="status">
             <div class="move-info" id="moveInfo">第 0 手</div>
-            <div class="move-detail" id="moveDetail">点击播放开始打谱</div>
             <div class="captured-info" id="capturedInfo"></div>
         </div>
 
@@ -432,8 +431,8 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
         }
 
         function getGridParams() {
-            const baseMargin = canvas.width * 0.05;
-            const coordMargin = canvas.width * 0.03; // 坐标标签区域
+            const baseMargin = canvas.width * 0.02; // 减小基础边距
+            const coordMargin = canvas.width * 0.018; // 减小坐标标签区域
             const margin = baseMargin + coordMargin; // 实际棋盘边距（包含坐标）
             const gridSize = (canvas.width - 2 * margin) / (BOARD_SIZE - 1);
             return { margin, gridSize, baseMargin, coordMargin };
@@ -563,7 +562,7 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
 
             // 绘制坐标标签
             ctx.fillStyle = '#333';
-            ctx.font = `bold ${Math.max(10, gridSize * 0.35)}px Arial`;
+            ctx.font = `bold ${Math.max(8, gridSize * 0.28)}px Arial`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             
@@ -665,23 +664,14 @@ KM[375]HA[0]RU[Chinese]AP[GNU Go:3.8]RE[W+R]TM[600]TC[2]TT[30]AP[foxwq]RL[0];B[q
             
             document.getElementById('moveInfo').textContent = `第 ${currentMove} 手 / 共 ${moves.length} 手`;
             
-            if (currentMove === 0) {
-                document.getElementById('moveDetail').textContent = '点击播放开始打谱';
-                document.getElementById('capturedInfo').textContent = '';
-            } else {
-                const move = moves[currentMove - 1];
-                const colorText = move.color === 'black' ? '黑棋' : '白棋';
-                document.getElementById('moveDetail').textContent = colorText;
-                
-                let captureText = '';
-                if (blackCaptured > 0 || whiteCaptured > 0) {
-                    const parts = [];
-                    if (blackCaptured > 0) parts.push(`黑提${blackCaptured}子`);
-                    if (whiteCaptured > 0) parts.push(`白提${whiteCaptured}子`);
-                    captureText = parts.join(' ');
-                }
-                document.getElementById('capturedInfo').textContent = captureText;
+            let captureText = '';
+            if (blackCaptured > 0 || whiteCaptured > 0) {
+                const parts = [];
+                if (blackCaptured > 0) parts.push(`黑提${blackCaptured}子`);
+                if (whiteCaptured > 0) parts.push(`白提${whiteCaptured}子`);
+                captureText = parts.join(' ');
             }
+            document.getElementById('capturedInfo').textContent = captureText;
         }
 
         function downloadSGF() {

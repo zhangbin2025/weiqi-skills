@@ -222,13 +222,13 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             display: flex;
             justify-content: center;
             align-items: flex-start;
-            padding: 10px;
+            padding: 6px;
         }}
         .container {{
             background: white;
-            border-radius: 16px;
+            border-radius: 12px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-            padding: 15px;
+            padding: 8px;
             max-width: 100%;
             width: 100%;
         }}
@@ -422,17 +422,16 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         </div>
 
         <!-- 变化图查看控制面板 -->
-        <div id="varControlPanel" style="display: none; margin: 8px 0; padding: 12px; background: #f0f0f0; border-radius: 8px;">
-            <div style="display: flex; justify-content: center; gap: 24px;">
-                <button class="btn" id="varPrevBtn" onclick="varPrev()" style="width: 52px; height: 52px; font-size: 24px; background: #667eea; color: white;">◀</button>
-                <button class="btn" onclick="exitVariation()" style="width: 52px; height: 52px; font-size: 24px; background: #ff6b6b; color: white;">↩</button>
-                <button class="btn" id="varNextBtn" onclick="varNext()" style="width: 52px; height: 52px; font-size: 24px; background: #667eea; color: white;">▶</button>
+        <div id="varControlPanel" style="display: none; margin: 8px 0; padding: 10px; background: #f0f0f0; border-radius: 8px;">
+            <div style="display: flex; justify-content: center; gap: 16px;">
+                <button class="btn" id="varPrevBtn" onclick="varPrev()" style="width: 32px; height: 32px; font-size: 14px; background: #667eea; color: white;">◀</button>
+                <button class="btn" onclick="exitVariation()" style="width: 32px; height: 32px; font-size: 14px; background: #ff6b6b; color: white;">✕</button>
+                <button class="btn" id="varNextBtn" onclick="varNext()" style="width: 32px; height: 32px; font-size: 14px; background: #667eea; color: white;">▶</button>
             </div>
         </div>
 
         <div class="status">
             <div class="move-info" id="moveInfo">第 0 手</div>
-            <div class="move-detail" id="moveDetail">点击播放开始打谱</div>
             <div class="captured-info" id="capturedInfo"></div>
         </div>
 
@@ -523,11 +522,11 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         }}
 
         function getGridParams() {{
-            const baseMargin = canvas.width * 0.05;
-            const coordMargin = canvas.width * 0.03; // 坐标标签区域
+            const baseMargin = canvas.width * 0.02; // 减小基础边距
+            const coordMargin = canvas.width * 0.018; // 减小坐标标签区域
             const margin = baseMargin + coordMargin; // 实际棋盘边距（包含坐标）
             const gridSize = (canvas.width - 2 * margin) / (BOARD_SIZE - 1);
-            return {{ margin, gridSize }};
+            return {{ margin, gridSize, baseMargin, coordMargin }};
         }}
 
         // 创建棋盘状态数组
@@ -580,10 +579,8 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
 
         // 绘制棋盘
         function drawBoard() {{
-            const {{ margin, gridSize }} = getGridParams();
+            const {{ margin, gridSize, baseMargin, coordMargin }} = getGridParams();
             const size = canvas.width;
-            const baseMargin = canvas.width * 0.05; // 基础边距
-            const coordMargin = canvas.width * 0.03; // 坐标标签区域
 
             // 背景
             ctx.fillStyle = '#E3C16F';
@@ -609,7 +606,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
 
             // 绘制坐标标签
             ctx.fillStyle = '#333';
-            ctx.font = `bold ${{Math.max(10, gridSize * 0.35)}}px Arial`;
+            ctx.font = `bold ${{Math.max(8, gridSize * 0.28)}}px Arial`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             
@@ -746,14 +743,6 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
 
             // 更新状态信息
             document.getElementById('moveInfo').textContent = `第 ${{currentMove}} 手 / 共 ${{moves.length}} 手`;
-
-            if (currentMove > 0) {{
-                const lastMove = moves[currentMove - 1];
-                const colorText = lastMove.color === 'black' ? '黑棋' : '白棋';
-                document.getElementById('moveDetail').textContent = colorText;
-            }} else {{
-                document.getElementById('moveDetail').textContent = '点击播放开始打谱';
-            }}
 
             if (blackCaptured > 0 || whiteCaptured > 0) {{
                 document.getElementById('capturedInfo').textContent =
