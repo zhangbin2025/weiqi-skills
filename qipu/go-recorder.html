@@ -668,9 +668,18 @@
             const opponent = currentPlayer === 'B' ? 'W' : 'B';
             const capturedCoords = removeDeadStones(opponent);
             
-            // 判断打劫：只提了一个子，形成打劫局面
+            // 判断打劫：只提了一个子，且提子方提子后不止1口气，才形成打劫
             if (capturedCoords.length === 1) {
-                koPosition = capturedCoords[0];
+                // 检查提子后，提子方的这块棋是否只有1口气（胀牯牛）
+                const myGroup = findGroup(pos.col, pos.row, currentPlayer);
+                const myLiberties = countLiberties(myGroup);
+                if (myLiberties > 1) {
+                    // 正常打劫：提子方不止1口气
+                    koPosition = capturedCoords[0];
+                } else {
+                    // 胀牯牛：提子方也只有1口气，不形成打劫
+                    koPosition = null;
+                }
             } else {
                 // 多子提或没提子，清除打劫
                 koPosition = null;
