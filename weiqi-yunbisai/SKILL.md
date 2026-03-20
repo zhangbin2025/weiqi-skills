@@ -55,14 +55,14 @@ python3 scripts/query.py --group-id 67890 --ranking --quiet
 ```
 📋 找到 10 场比赛
 
-• [64755] **2026年广东省第二十一届"弈智杯"业余围棋段级位赛** | 城市: 广州市 | 日期: 2026-03-29
-• [64746] **"弈聚羊城，共筑心梦"2026年广州市残疾人围棋友谊赛** | 城市: 广州市 | 日期: 2026-03-21
+• [12345] **2026年某省第X届"XX杯"业余围棋段级位赛** | 城市: 某市 | 日期: 2026-03-29
+• [12346] **2026年某市围棋友谊赛** | 城市: 某市 | 日期: 2026-03-21
 ...
 
 📋 排名列表
 
-1. **林晋毅** | 积分: 12 | 对手分: 48 | 累进分: 42 | 6胜0负
-2. **张宏韬** | 积分: 10 | 对手分: 44 | 累进分: 40 | 5胜1负
+1. **选手A** | 积分: 12 | 对手分: 48 | 累进分: 42 | 6胜0负
+2. **选手B** | 积分: 10 | 对手分: 44 | 累进分: 40 | 5胜1负
 ...
 ```
 
@@ -73,8 +73,8 @@ python3 scripts/query.py --group-id 67890 --ranking --quiet
 
 📋 前10名预览:
 
-1. **陈扬** | 积分: 16 | 对手分: 88 | 累进分: 72 | 8胜0负
-2. **王异新** | 积分: 14 | 对手分: 96 | 累进分: 70 | 7胜1负
+1. **选手A** | 积分: 16 | 对手分: 88 | 累进分: 72 | 8胜0负
+2. **选手B** | 积分: 14 | 对手分: 96 | 累进分: 70 | 7胜1负
 ...
 
 ... 还有 57 名选手
@@ -128,7 +128,7 @@ python3 scripts/query.py --group-id 67890 --ranking --quiet
 
 **示例**:
 ```bash
-curl -s "https://data-center.yunbisai.com/api/lswl-events?page=1&eventType=2&month=1&areaNum=%E5%B9%BF%E4%B8%9C%E7%9C%81&PageSize=50"
+curl -s "https://data-center.yunbisai.com/api/lswl-events?page=1&eventType=2&month=1&areaNum=%E6%9F%90%E7%9C%81&PageSize=50"
 ```
 
 **返回**: event_id, title, city_name, play_num 等
@@ -148,7 +148,7 @@ curl -s "https://data-center.yunbisai.com/api/lswl-events?page=1&eventType=2&mon
 **示例**:
 ```bash
 curl -s -H "Referer: https://www.yunbisai.com/" \
-  "https://open.yunbisai.com/api/event/feel/list?event_id=64497&page=1&pagesize=500"
+  "https://open.yunbisai.com/api/event/feel/list?event_id=12345&page=1&pagesize=500"
 ```
 
 **返回**: group_id, groupname, 选手列表, 排名, 积分
@@ -177,7 +177,7 @@ curl -s -H "Referer: https://www.yunbisai.com/" \
 **示例**:
 ```bash
 curl -s -H "Referer: https://www.yunbisai.com/" \
-  "https://open.yunbisai.com/api/event/feel/list?event_id=64497&group_id=316089&page=1&pagesize=200"
+  "https://open.yunbisai.com/api/event/feel/list?event_id=12345&group_id=67890&page=1&pagesize=200"
 ```
 
 ---
@@ -194,7 +194,7 @@ curl -s -H "Referer: https://www.yunbisai.com/" \
 **示例**:
 ```bash
 curl -s -A "Mozilla/5.0" \
-  "https://api.yunbisai.com//request/Group/Againstplan?groupid=316089&bout=1"
+  "https://api.yunbisai.com//request/Group/Againstplan?groupid=67890&bout=1"
 ```
 
 **返回关键字段**:
@@ -307,7 +307,7 @@ for bout in range(1, total_bout + 1):
 |------|------|------|------|------|
 | 选手A | 示例杯 | 儿童组 (12345) | 14分 (7胜2负) | 第7名 |
 | 选手B | 示例杯 | 少年组 (12346) | 14分 (7胜3负) | - |
-| 选手C | XX争霸赛 | 5段组 (12347) | 14分 (7胜1负) | 第10名 |
+| 选手C | 示例赛 | 5段组 (12347) | 14分 (7胜1负) | 第10名 |
 
 ### 分组排行榜案例
 
