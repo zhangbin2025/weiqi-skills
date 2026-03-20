@@ -430,19 +430,125 @@ class YunbisaiClient:
         
         return sorted_players, {"count": len(sorted_players), "seconds": round(elapsed, 3)}
     
-    def print_ranking(self, rankings: List[Dict], top_n: int = None):
-        """打印排名表"""
-        print("\n" + "=" * 70)
-        print(f"{'排名':<6}{'姓名':<12}{'积分':<8}{'对手分':<10}{'累进分':<10}{'战绩':<12}")
-        print("-" * 70)
+    def print_ranking(self, rankings: List[Dict], top_n: int = None, output_file: str = None):
+        """打印排名表 - 智能格式：≤10行用单行格式，>10行输出HTML文件+显示前10名预览"""
+        rankings_to_print = rankings[:top_n] if top_n else rankings
+        total = len(rankings_to_print)
         
-        for i, p in enumerate(rankings[:top_n] if top_n else rankings, 1):
-            record = f"{p['wins']}胜{p['losses']}负"
-            if p['draws'] > 0:
-                record += f"{p['draws']}和"
-            print(f"{i:<6}{p['name']:<12}{int(p['score']):<8}{int(p['opponent_score']):<10}{int(p['progressive_score']):<10}{record:<12}")
-        
-        print("=" * 70)
+        if total <= 10:
+            # 单行 Markdown 格式
+            print("\n📋 排名列表\n")
+            for i, p in enumerate(rankings_to_print, 1):
+                record = f"{p['wins']}胜{p['losses']}负"
+                if p['draws'] > 0:
+                    record += f"{p['draws']}和"
+                print(f"{i}. **{p['name']}** | 积分: {int(p['score'])} | 对手分: {int(p['opponent_score'])} | 累进分: {int(p['progressive_score'])} | {record}")
+            print()
+        else:
+            # HTML 格式输出到文件（手机端优化）
+            html_path = output_file or f"/tmp/ranking_{int(time.time())}.html"
+            html_content = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>排名表</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f5f5f5; line-height: 1.6; }}
+        .container {{ max-width: 100%; margin: 0 auto; background: white; min-height: 100vh; }}
+        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 16px; text-align: center; }}
+        .header h1 {{ font-size: 22px; margin-bottom: 8px; font-weight: 600; }}
+        .header .subtitle {{ font-size: 14px; opacity: 0.9; }}
+        .stats {{ display: flex; justify-content: center; gap: 30px; padding: 15px; background: #f8f9fa; border-bottom: 1px solid #eee; }}
+        .stat {{ text-align: center; }}
+        .stat-value {{ font-size: 20px; font-weight: bold; color: #667eea; }}
+        .stat-label {{ font-size: 12px; color: #666; margin-top: 2px; }}
+        .list {{ padding: 0; }}
+        .item {{ display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid #f0f0f0; background: white; }}
+        .item:nth-child(even) {{ background: #fafafa; }}
+        .rank {{ width: 44px; text-align: center; font-size: 14px; font-weight: bold; color: #999; flex-shrink: 0; }}
+        .rank.gold {{ color: #d4af37; font-size: 13px; }}
+        .rank.silver {{ color: #c0c0c0; font-size: 13px; }}
+        .rank.bronze {{ color: #cd7f32; font-size: 13px; }}
+        .info {{ flex: 1; margin-left: 12px; min-width: 0; }}
+        .name {{ font-size: 16px; font-weight: 600; color: #333; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+        .details {{ font-size: 13px; color: #666; display: flex; gap: 12px; flex-wrap: wrap; }}
+        .score {{ font-weight: bold; color: #e74c3c; }}
+        @media (max-width: 375px) {{
+            .header h1 {{ font-size: 20px; }}
+            .name {{ font-size: 15px; }}
+            .details {{ font-size: 12px; gap: 8px; }}
+            .rank {{ width: 35px; font-size: 15px; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏆 比赛排名</h1>
+            <div class="subtitle">5段及以上组</div>
+        </div>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value">{total}</div>
+                <div class="stat-label">参赛人数</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">8</div>
+                <div class="stat-label">比赛轮次</div>
+            </div>
+        </div>
+        <div class="list">
+'''
+            for i, p in enumerate(rankings_to_print, 1):
+                record = f"{p['wins']}胜{p['losses']}负"
+                if p['draws'] > 0:
+                    record += f"{p['draws']}和"
+                rank_class = 'rank'
+                if i == 1:
+                    rank_class += ' gold'
+                    rank_text = '🥇'
+                elif i == 2:
+                    rank_class += ' silver'
+                    rank_text = '🥈'
+                elif i == 3:
+                    rank_class += ' bronze'
+                    rank_text = '🥉'
+                else:
+                    rank_text = str(i)
+                html_content += f'''            <div class="item">
+                <div class="{rank_class}">{rank_text}</div>
+                <div class="info">
+                    <div class="name">{p['name']}</div>
+                    <div class="details">
+                        <span class="score">积分 {int(p['score'])}</span>
+                        <span>对手分 {int(p['opponent_score'])}</span>
+                        <span>累进分 {int(p['progressive_score'])}</span>
+                        <span>{record}</span>
+                    </div>
+                </div>
+            </div>
+'''
+            html_content += '''        </div>
+    </div>
+</body>
+</html>'''
+            
+            with open(html_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            print(f"\n📊 排名数据已导出到 HTML 文件: {html_path}")
+            print(f"   共 {total} 条记录\n")
+            
+            # 显示前10名预览
+            print("📋 前10名预览:\n")
+            for i, p in enumerate(rankings_to_print[:10], 1):
+                record = f"{p['wins']}胜{p['losses']}负"
+                if p['draws'] > 0:
+                    record += f"{p['draws']}和"
+                print(f"{i}. **{p['name']}** | 积分: {int(p['score'])} | 对手分: {int(p['opponent_score'])} | 累进分: {int(p['progressive_score'])} | {record}")
+            print(f"\n... 还有 {total - 10} 名选手\n")
     
     def print_perf_report(self):
         """打印性能报告"""
@@ -462,7 +568,9 @@ def main():
     parser.add_argument('--group-id', '-g', type=int, help='分组ID')
     parser.add_argument('--area', '-a', default='广东省', help='地区（默认：广东省）')
     parser.add_argument('--month', '-m', type=int, default=1, help='最近多少个月（默认：1）')
+    parser.add_argument('--limit', '-l', type=int, help='限制显示条数（≤15时用单行格式）')
     parser.add_argument('--ranking', '-r', action='store_true', help='计算排名')
+    parser.add_argument('--matchups', '-u', type=int, help='查询第N轮对阵表')
     parser.add_argument('--json', '-j', action='store_true', help='输出JSON格式')
     parser.add_argument('--quiet', '-q', action='store_true', help='静默模式（减少输出）')
     
@@ -479,11 +587,99 @@ def main():
             result["data"]["_perf"] = perf
             
             if not args.json:
-                print(f"\n找到 {len(events)} 场比赛：")
-                for e in events[:10]:  # 只显示前10场
-                    print(f"  [{e.get('event_id')}] {e.get('title')} - {e.get('city_name')}")
-                if len(events) > 10:
-                    print(f"  ... 还有 {len(events) - 10} 场")
+                total_events = len(events)
+                display_events = events[:args.limit] if args.limit else events
+                display_count = len(display_events)
+                
+                if display_count <= 10:
+                    # 单行 Markdown 格式
+                    limit_hint = f" (前{display_count}场)" if args.limit and total_events > display_count else ""
+                    print(f"\n📋 找到 {total_events} 场比赛{limit_hint}\n")
+                    for e in display_events:
+                        event_id = e.get('event_id')
+                        title = e.get('title')
+                        city = e.get('city_name')
+                        date = e.get('max_time', '')[:10]
+                        print(f"• [{event_id}] **{title}** | 城市: {city} | 日期: {date}")
+                    if args.limit and total_events > display_count:
+                        print(f"\n... 还有 {total_events - display_count} 场")
+                    print()
+                else:
+                    # HTML 格式输出到文件（手机端优化）
+                    html_path = f"/tmp/events_{int(time.time())}.html"
+                    html_content = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>比赛列表</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f5f5f5; line-height: 1.6; }}
+        .container {{ max-width: 100%; margin: 0 auto; background: white; min-height: 100vh; }}
+        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 16px; text-align: center; position: sticky; top: 0; z-index: 100; }}
+        .header h1 {{ font-size: 22px; margin-bottom: 8px; font-weight: 600; }}
+        .header .subtitle {{ font-size: 14px; opacity: 0.9; }}
+        .list {{ padding: 0; }}
+        .item {{ display: block; padding: 16px; border-bottom: 1px solid #f0f0f0; background: white; text-decoration: none; color: inherit; }}
+        .item:active {{ background: #f5f5f5; }}
+        .title {{ font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px; line-height: 1.4; }}
+        .meta {{ display: flex; gap: 16px; font-size: 13px; color: #666; flex-wrap: wrap; }}
+        .meta span {{ display: flex; align-items: center; gap: 4px; }}
+        .city {{ color: #667eea; font-weight: 500; }}
+        .date {{ color: #27ae60; }}
+        .id {{ color: #999; font-family: monospace; font-size: 12px; }}
+        .empty {{ text-align: center; padding: 60px 20px; color: #999; }}
+        @media (max-width: 375px) {{
+            .header h1 {{ font-size: 20px; }}
+            .title {{ font-size: 15px; }}
+            .meta {{ gap: 12px; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏆 围棋比赛列表</h1>
+            <div class="subtitle">共 {total_events} 场比赛</div>
+        </div>
+        <div class="list">
+'''
+                    for e in events:
+                        event_id = e.get('event_id')
+                        title = e.get('title')
+                        city = e.get('city_name')
+                        date = e.get('max_time', '')[:10]
+                        players = e.get('play_num') or '-'
+                        html_content += f'''            <div class="item">
+                <div class="title">{title}</div>
+                <div class="meta">
+                    <span class="city">📍 {city}</span>
+                    <span class="date">📅 {date}</span>
+                    <span class="id">ID: {event_id}</span>
+                </div>
+            </div>
+'''
+                    html_content += '''        </div>
+    </div>
+</body>
+</html>'''
+                    
+                    with open(html_path, 'w', encoding='utf-8') as f:
+                        f.write(html_content)
+                    
+                    print(f"\n📊 比赛列表已导出到 HTML 文件: {html_path}")
+                    print(f"   共 {total_events} 场比赛\n")
+                    
+                    # 显示前10条预览
+                    print("📋 前10场预览:\n")
+                    for e in events[:10]:
+                        event_id = e.get('event_id')
+                        title = e.get('title')
+                        city = e.get('city_name')
+                        date = e.get('max_time', '')[:10]
+                        print(f"• [{event_id}] **{title}** | 城市: {city} | 日期: {date}")
+                    print(f"\n... 还有 {total_events - 10} 场比赛\n")
         
         # 查询分组
         elif args.event_id and not args.group_id:
@@ -492,13 +688,243 @@ def main():
             result["data"]["_perf"] = perf
             
             if not args.json:
-                print(f"\n比赛 {args.event_id} 共有 {len(groups)} 个分组：")
-                for g in groups:
-                    print(f"  [{g.get('group_id')}] {g.get('groupname')} - {g.get('participantname')} 排名: {g.get('rank_num')}")
+                total_groups = len(groups)
+                if total_groups <= 10:
+                    # 单行 Markdown 格式
+                    print(f"\n📋 比赛 {args.event_id} 共有 {total_groups} 个分组\n")
+                    for g in groups:
+                        group_id = g.get('group_id')
+                        group_name = g.get('groupname')
+                        print(f"• [{group_id}] **{group_name}**")
+                    print()
+                else:
+                    # 尝试从第一轮对阵表计算人数
+                    group_counts = {}
+                    for g in groups:
+                        gid = g.get('group_id')
+                        try:
+                            match_data, _ = client.get_against_plan(gid, 1)
+                            if match_data:
+                                rows = match_data.get('rows', [])
+                                # 计算实际参赛人数（处理轮空情况）
+                                count = 0
+                                for m in rows:
+                                    if m.get('p1'):
+                                        count += 1
+                                    if m.get('p2'):
+                                        count += 1
+                                group_counts[gid] = count
+                        except:
+                            pass
+                    
+                    # HTML 格式输出到文件（手机端优化）
+                    html_path = f"/tmp/groups_{int(time.time())}.html"
+                    html_content = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>分组列表</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f5f5f5; line-height: 1.6; }}
+        .container {{ max-width: 100%; margin: 0 auto; background: white; min-height: 100vh; }}
+        .header {{ background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%); color: white; padding: 20px 16px; text-align: center; position: sticky; top: 0; z-index: 100; }}
+        .header h1 {{ font-size: 22px; margin-bottom: 8px; font-weight: 600; }}
+        .header .subtitle {{ font-size: 14px; opacity: 0.9; }}
+        .list {{ padding: 0; }}
+        .item {{ display: flex; align-items: center; padding: 14px 16px; border-bottom: 1px solid #f0f0f0; background: white; }}
+        .item:nth-child(even) {{ background: #fafafa; }}
+        .group-num {{ width: 32px; height: 32px; background: #e8f5e9; color: #27ae60; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px; flex-shrink: 0; }}
+        .info {{ flex: 1; margin-left: 12px; min-width: 0; }}
+        .group-name {{ font-size: 15px; font-weight: 500; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }}
+        .meta {{ font-size: 12px; color: #999; display: flex; gap: 12px; }}
+        .count {{ color: #27ae60; font-weight: 500; }}
+        @media (max-width: 375px) {{
+            .header h1 {{ font-size: 20px; }}
+            .group-name {{ font-size: 15px; }}
+            .group-num {{ width: 36px; height: 36px; font-size: 13px; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 比赛分组</h1>
+            <div class="subtitle">共 {total_groups} 个分组</div>
+        </div>
+        <div class="list">
+'''
+                    for i, g in enumerate(groups, 1):
+                        group_id = g.get('group_id')
+                        group_name = g.get('groupname')
+                        # 优先使用从对阵表计算的人数
+                        players_count = group_counts.get(group_id, g.get('playernum') or g.get('participant_count') or '-')
+                        html_content += f'''            <div class="item">
+                <div class="group-num">{i}</div>
+                <div class="info">
+                    <div class="group-name">{group_name}</div>
+                    <div class="meta">
+                        <span>ID: {group_id}</span>
+                        <span class="count">👥 {players_count}人</span>
+                    </div>
+                </div>
+            </div>
+'''
+                    html_content += '''        </div>
+    </div>
+</body>
+</html>'''
+                    
+                    with open(html_path, 'w', encoding='utf-8') as f:
+                        f.write(html_content)
+                    
+                    print(f"\n📊 分组列表已导出到 HTML 文件: {html_path}")
+                    print(f"   共 {total_groups} 个分组\n")
+                    
+                    # 显示前10条预览
+                    print("📋 前10个分组预览:\n")
+                    for g in groups[:10]:
+                        group_id = g.get('group_id')
+                        group_name = g.get('groupname')
+                        print(f"• [{group_id}] **{group_name}**")
+                    print(f"\n... 还有 {total_groups - 10} 个分组\n")
         
         # 查询对阵并计算排名
         elif args.group_id:
-            if args.ranking:
+            if args.matchups:
+                # 查询指定轮次对阵表
+                match_data, perf = client.get_against_plan(args.group_id, args.matchups)
+                result["data"]["matchups"] = match_data
+                result["data"]["_perf"] = perf
+                
+                if not args.json and match_data:
+                    rows = match_data.get('rows', [])
+                    total_bouts = match_data.get('total_bout', 0)
+                    total_matches = len(rows)
+                    
+                    if total_matches <= 10:
+                        # 单行 Markdown 格式
+                        print(f"\n📋 第{args.matchups}轮对阵表 (共{total_matches}台)\n")
+                        for m in rows:
+                            p1 = m.get('p1') or '轮空'
+                            p2 = m.get('p2') or '轮空'
+                            seat = m.get('seatnum')
+                            print(f"台{seat}: {p1} vs {p2}")
+                        print()
+                    else:
+                        # HTML 格式输出到文件（手机端优化）
+                        html_path = f"/tmp/matchups_{int(time.time())}.html"
+                        html_content = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>第{args.matchups}轮对阵表</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f5f5f5; line-height: 1.6; }}
+        .container {{ max-width: 100%; margin: 0 auto; background: white; min-height: 100vh; }}
+        .header {{ background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%); color: white; padding: 20px 16px; text-align: center; position: sticky; top: 0; z-index: 100; }}
+        .header h1 {{ font-size: 22px; margin-bottom: 8px; font-weight: 600; }}
+        .header .subtitle {{ font-size: 14px; opacity: 0.9; }}
+        .stats {{ display: flex; justify-content: center; gap: 30px; padding: 15px; background: #f8f9fa; border-bottom: 1px solid #eee; }}
+        .stat {{ text-align: center; }}
+        .stat-value {{ font-size: 20px; font-weight: bold; color: #ff6b6b; }}
+        .stat-label {{ font-size: 12px; color: #666; margin-top: 2px; }}
+        .list {{ padding: 0; }}
+        .item {{ display: flex; align-items: center; padding: 14px 16px; border-bottom: 1px solid #f0f0f0; background: white; }}
+        .item:nth-child(even) {{ background: #fafafa; }}
+        .table-num {{ width: 44px; text-align: center; font-size: 13px; color: #999; flex-shrink: 0; }}
+        .table-num .num {{ font-size: 18px; font-weight: bold; color: #ff6b6b; }}
+        .match {{ flex: 1; margin: 0 12px; min-width: 0; }}
+        .player {{ font-size: 15px; font-weight: 500; color: #333; padding: 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+        .player.black::before {{ content: "⚫ "; }}
+        .player.white::before {{ content: "⚪ "; }}
+        .vs {{ font-size: 12px; color: #ccc; text-align: center; padding: 2px 0; }}
+        .result {{ width: 50px; text-align: center; font-size: 14px; font-weight: bold; flex-shrink: 0; }}
+        .result.win {{ color: #27ae60; }}
+        .result.loss {{ color: #e74c3c; }}
+        .result.pending {{ color: #999; }}
+        @media (max-width: 375px) {{
+            .header h1 {{ font-size: 20px; }}
+            .player {{ font-size: 14px; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚔️ 第{args.matchups}轮对阵表</h1>
+            <div class="subtitle">分组ID: {args.group_id}</div>
+        </div>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value">{total_matches}</div>
+                <div class="stat-label">对局数</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{total_bouts}</div>
+                <div class="stat-label">总轮次</div>
+            </div>
+        </div>
+        <div class="list">
+'''
+                        for m in rows:
+                            seat = m.get('seatnum')
+                            p1 = m.get('p1') or '轮空'
+                            p2 = m.get('p2') or '轮空'
+                            score1 = m.get('p1_score')
+                            score2 = m.get('p2_score')
+                            
+                            if score1 is None or score2 is None:
+                                result_text = '未开始'
+                                result_class = 'pending'
+                            else:
+                                s1 = int(float(score1))
+                                s2 = int(float(score2))
+                                if s1 > s2:
+                                    result_text = '黑胜'
+                                    result_class = 'win'
+                                elif s2 > s1:
+                                    result_text = '白胜'
+                                    result_class = 'loss'
+                                else:
+                                    result_text = '平局'
+                                    result_class = 'pending'
+                            
+                            html_content += f'''            <div class="item">
+                <div class="table-num"><div class="num">{seat}</div>台</div>
+                <div class="match">
+                    <div class="player black">{p1}</div>
+                    <div class="vs">VS</div>
+                    <div class="player white">{p2}</div>
+                </div>
+                <div class="result {result_class}">{result_text}</div>
+            </div>
+'''
+                        html_content += '''        </div>
+    </div>
+</body>
+</html>'''
+                        
+                        with open(html_path, 'w', encoding='utf-8') as f:
+                            f.write(html_content)
+                        
+                        print(f"\n📊 对阵表已导出到 HTML 文件: {html_path}")
+                        print(f"   共 {total_matches} 台对局\n")
+                        
+                        # 显示前10条预览
+                        print(f"📋 第{args.matchups}轮对阵预览:\n")
+                        for m in rows[:10]:
+                            p1 = m.get('p1') or '轮空'
+                            p2 = m.get('p2') or '轮空'
+                            seat = m.get('seatnum')
+                            print(f"台{seat}: {p1} vs {p2}")
+                        if total_matches > 10:
+                            print(f"\n... 还有 {total_matches - 10} 台对局\n")
+            
+            elif args.ranking:
                 matches, total_bouts, perf_matches = client.get_all_rounds(args.group_id)
                 rankings, perf_ranking = client.calculate_ranking(matches)
                 
@@ -517,9 +943,89 @@ def main():
                 result["data"]["_perf"] = perf
                 
                 if not args.json:
-                    print(f"\n分组 {args.group_id} 共有 {len(players)} 名选手：")
-                    for p in players[:10]:
-                        print(f"  {p.get('participantname')} - 排名: {p.get('rank_num')}, 积分: {p.get('integral')}")
+                    total_players = len(players)
+                    if total_players <= 10:
+                        # 单行 Markdown 格式
+                        print(f"\n📋 分组 {args.group_id} 共有 {total_players} 名选手\n")
+                        for p in players:
+                            name = p.get('participantname')
+                            rank = p.get('rank_num')
+                            score = p.get('integral')
+                            print(f"• **{name}** | 排名: {rank} | 积分: {score}")
+                        print()
+                    else:
+                        # HTML 格式输出到文件（手机端优化）
+                        html_path = f"/tmp/players_{int(time.time())}.html"
+                        html_content = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>选手列表</title>
+    <style>
+                        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+                        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f5f5f5; line-height: 1.6; }}
+                        .container {{ max-width: 100%; margin: 0 auto; background: white; min-height: 100vh; }}
+                        .header {{ background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%); color: white; padding: 20px 16px; text-align: center; position: sticky; top: 0; z-index: 100; }}
+                        .header h1 {{ font-size: 22px; margin-bottom: 8px; font-weight: 600; }}
+                        .header .subtitle {{ font-size: 14px; opacity: 0.9; }}
+                        .list {{ padding: 0; }}
+                        .item {{ display: flex; align-items: center; padding: 14px 16px; border-bottom: 1px solid #f0f0f0; background: white; }}
+                        .item:nth-child(even) {{ background: #fafafa; }}
+                        .rank {{ width: 36px; height: 36px; background: #f3e5f5; color: #9b59b6; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; flex-shrink: 0; }}
+                        .rank.top3 {{ background: #ffebee; color: #e74c3c; }}
+                        .info {{ flex: 1; margin-left: 12px; display: flex; justify-content: space-between; align-items: center; }}
+                        .name {{ font-size: 16px; font-weight: 500; color: #333; }}
+                        .score {{ font-size: 18px; font-weight: bold; color: #e74c3c; }}
+                        @media (max-width: 375px) {{
+                            .header h1 {{ font-size: 20px; }}
+                            .name {{ font-size: 15px; }}
+                            .score {{ font-size: 16px; }}
+                        }}
+                    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>👥 选手列表</h1>
+            <div class="subtitle">共 {total_players} 名选手</div>
+        </div>
+        <div class="list">
+'''
+                        for i, p in enumerate(players, 1):
+                            rank = p.get('rank_num')
+                            name = p.get('participantname')
+                            score = p.get('integral')
+                            rank_class = 'rank'
+                            if rank and int(rank) <= 3:
+                                rank_class += ' top3'
+                            html_content += f'''            <div class="item">
+                <div class="{rank_class}">{rank}</div>
+                <div class="info">
+                    <div class="name">{name}</div>
+                    <div class="score">{score}分</div>
+                </div>
+            </div>
+'''
+                        html_content += '''        </div>
+    </div>
+</body>
+</html>'''
+                        
+                        with open(html_path, 'w', encoding='utf-8') as f:
+                            f.write(html_content)
+                        
+                        print(f"\n📊 选手列表已导出到 HTML 文件: {html_path}")
+                        print(f"   共 {total_players} 名选手\n")
+                        
+                        # 显示前10条预览
+                        print("📋 前10名选手预览:\n")
+                        for p in players[:10]:
+                            name = p.get('participantname')
+                            rank = p.get('rank_num')
+                            score = p.get('integral')
+                            print(f"• **{name}** | 排名: {rank} | 积分: {score}")
+                        print(f"\n... 还有 {total_players - 10} 名选手\n")
         
         # 输出性能报告
         if not args.json and not args.quiet:
