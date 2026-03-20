@@ -148,7 +148,7 @@ if [ -f "$YESTERDAY_FILE" ]; then
     yesterday_ids=$(extract_event_ids "$YESTERDAY_FILE")
     
     # 找出新增的比赛
-    new_events=$(comm -23 <(echo "$today_ids") <(echo "$yesterday_ids"))
+    new_events=$(comm -23 <(echo "$today_ids") <(echo "$yesterday_ids") | grep -v '^$')
     new_count=$(echo "$new_events" | grep -c '^[0-9]' 2>/dev/null || echo 0)
     
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Found $new_count new events" >> "$LOG_FILE"
