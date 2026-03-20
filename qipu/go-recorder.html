@@ -350,12 +350,13 @@
         function countLiberties(group) {
             const liberties = new Set();
             const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-            
+
             for (const stone of group) {
                 for (const [dx, dy] of directions) {
                     const nc = stone.col + dx;
                     const nr = stone.row + dy;
                     if (nc >= 0 && nc < BOARD_SIZE && nr >= 0 && nr < BOARD_SIZE) {
+                        // 检查该位置是否有有效棋子（考虑capturedStones，被提的位置是空的）
                         if (!getStone(nc, nr)) {
                             liberties.add(`${nc},${nr}`);
                         }
@@ -370,18 +371,18 @@
             const group = [];
             const visited = new Set();
             const stack = [{col: startCol, row: startRow}];
-            
+
             while (stack.length > 0) {
                 const {col, row} = stack.pop();
                 const key = `${col},${row}`;
-                
+
                 if (visited.has(key)) continue;
                 visited.add(key);
-                
+
                 const stone = getStone(col, row);
                 if (stone && stone.player === player) {
                     group.push(stone);
-                    
+
                     const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
                     for (const [dx, dy] of directions) {
                         const nc = col + dx;
@@ -392,7 +393,7 @@
                     }
                 }
             }
-            
+
             return group;
         }
         
@@ -430,18 +431,18 @@
             const opponent = player === 'B' ? 'W' : 'B';
             const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
             const posKey = `${col},${row}`;
-            
-            // 临时从 capturedStones 移除该坐标（如果有），否则 getStone 会返回 null
+
+            // 临时从 capturedStones 移除该坐标（如果有）
             const wasCaptured = capturedStones.has(posKey);
             if (wasCaptured) capturedStones.delete(posKey);
-            
+
             // 临时添加棋子
             const tempStone = {col, row, player, moveNum: 0, isPass: false};
             gameState.push(tempStone);
-            
-            // 先检查是否能吃对方，同时记录被提的棋子
-            const toCapture = new Set();
-            const checkedGroups = new Set();
+
+            // 先检查是否能提对方棋子
+            let canCapture = false;
+            const checked = new Set();
             
             for (const [dx, dy] of directions) {
                 const nc = col + dx;
@@ -449,65 +450,28 @@
                 const neighbor = getStone(nc, nr);
                 if (neighbor && neighbor.player === opponent) {
                     const key = `${nc},${nr}`;
-                    if (!checkedGroups.has(key)) {
+                    if (!checked.has(key)) {
                         const group = findGroup(nc, nr, opponent);
                         for (const s of group) {
-                            checkedGroups.add(`${s.col},${s.row}`);
+                            checked.add(`${s.col},${s.row}`);
                         }
-                        if (countLiberties(group) === 0) {
-                            for (const s of group) {
-                                toCapture.add(`${s.col},${s.row}`);
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // 调试输出
-            console.log(`isSuicide: ${player} at (${col},${row}), toCapture=${Array.from(toCapture).join(';')}`);
-            
-            // 临时标记被提的棋子
-            for (const key of toCapture) {
-                capturedStones.add(key);
-            }
-            
-            // 检查自己是否还有气（考虑提子后空出的位置成为气）
-            const myGroup = findGroup(col, row, player);
-            const myLiberties = countLiberties(myGroup);
-            console.log(`  myGroup size=${myGroup.length}, liberties=${myLiberties}`);
-            
-            // 禁入点判断：
-            // 1. 如果自己没气，但能提子（四周对方棋子只剩这口气），则允许（胀牯牛）
-            // 2. 如果自己没气，且不能提子，则是禁入点
-            let suicide = false;
-            if (myLiberties === 0) {
-                // 检查四周是否有可提的对方棋子
-                let canCapture = false;
-                for (const [dx, dy] of directions) {
-                    const nc = col + dx, nr = row + dy;
-                    const neighbor = getStone(nc, nr);
-                    if (neighbor && neighbor.player === opponent) {
-                        const group = findGroup(nc, nr, opponent);
                         if (countLiberties(group) === 0) {
                             canCapture = true;
-                            break;
                         }
                     }
                 }
-                if (!canCapture) {
-                    suicide = true;
-                }
             }
-            
+
+            // 检查自己是否还有气
+            const myGroup = findGroup(col, row, player);
+            const myLiberties = countLiberties(myGroup);
+
             // 恢复状态
-            for (const key of toCapture) {
-                capturedStones.delete(key);
-            }
             gameState.pop();
             if (wasCaptured) capturedStones.add(posKey);
-            
-            console.log(`  isSuicide result: ${suicide}`);
-            return suicide;
+
+            // 如果没气且不能提子，则是禁入点
+            return myLiberties === 0 && !canCapture;
         }
         
         function init() {
@@ -638,17 +602,14 @@
             }
             
             // 检查是否违反打劫规则
-            if (koPosition && koPosition.col === pos.col && koPosition.row === pos.row) {
+            if (koPosition && parseInt(koPosition.col) === parseInt(pos.col) && parseInt(koPosition.row) === parseInt(pos.row)) {
                 showStatus('打劫');
                 return;
             }
             
             // 如果该位置之前被提过，从 capturedStones 移除
             capturedStones.delete(`${pos.col},${pos.row}`);
-            
-            // 记录落子前的打劫位，用于判断是否是打劫提子
-            const prevKo = koPosition;
-            
+
             // 落子
             gameState.push({
                 col: pos.col,
@@ -657,21 +618,57 @@
                 moveNum: gameState.length + 1,
                 isPass: false
             });
-            
-            // 执行吃子
+
+            // 执行吃子（提对方没气的棋子）
             const opponent = currentPlayer === 'B' ? 'W' : 'B';
             const capturedCoords = removeDeadStones(opponent);
-            
-            // 判断打劫：只提了一个子，且提子方提子后不止1口气，才形成打劫
+
+            // 如果刚落的子自己被提（应该发生在自杀规则没拦住时），移除它
+            if (capturedStones.has(`${pos.col},${pos.row}`)) {
+                // 这个子被提了，从 gameState 移除
+                gameState.pop();
+                showStatus('此落子导致己方被提，已撤销');
+                drawStones();
+                saveGame();
+                return;
+            }
+
+            // 判断打劫：只提了一个子，且对方能立即提回来，才形成打劫
             if (capturedCoords.length === 1) {
-                // 检查提子后，提子方的这块棋是否只有1口气（胀牯牛）
+                const capturedPos = capturedCoords[0];
+                // 检查是否形成打劫：只提一个子，且对方能提回来，且对方提回来的也是一颗子
+                const opponent = currentPlayer === 'B' ? 'W' : 'B';
+                const oppCol = capturedPos.col;
+                const oppRow = capturedPos.row;
+                
+                // 检查对方能否提回来（对方落子后，当前子是否没气）
+                const tempKey = `${oppCol},${oppRow}`;
+                const wasCaptured = capturedStones.has(tempKey);
+                if (wasCaptured) capturedStones.delete(tempKey);
+                
+                // 临时添加对方的子
+                const tempOppStone = {col: oppCol, row: oppRow, player: opponent, moveNum: 0, isPass: false};
+                gameState.push(tempOppStone);
+                
+                // 检查当前子是否没气了（能被对方提）
                 const myGroup = findGroup(pos.col, pos.row, currentPlayer);
                 const myLiberties = countLiberties(myGroup);
-                if (myLiberties > 1) {
-                    // 正常打劫：提子方不止1口气
-                    koPosition = capturedCoords[0];
+                const canBeCaptured = myLiberties === 0;
+                
+                // 检查对方提回来的子数是否也是一颗
+                let capturesOneStone = false;
+                if (canBeCaptured) {
+                    capturesOneStone = myGroup.length === 1;
+                }
+                
+                // 恢复临时状态
+                gameState.pop();
+                if (wasCaptured) capturedStones.add(tempKey);
+                
+                // 形成打劫的条件：只提一个子，且对方能提回来，且对方提回来的也是一颗子
+                if (canBeCaptured && capturesOneStone) {
+                    koPosition = {col: parseInt(capturedPos.col), row: parseInt(capturedPos.row)};
                 } else {
-                    // 胀牯牛：提子方也只有1口气，不形成打劫
                     koPosition = null;
                 }
             } else {
@@ -872,11 +869,12 @@
                 gameState: gameState,
                 currentPlayer: currentPlayer,
                 captured: Array.from(capturedStones),
+                koPosition: koPosition,
                 timestamp: new Date().toISOString()
             };
             localStorage.setItem('go-game-save', JSON.stringify(data));
         }
-        
+
         function loadGame() {
             const saved = localStorage.getItem('go-game-save');
             if (saved) {
@@ -884,7 +882,9 @@
                     const data = JSON.parse(saved);
                     gameState = data.gameState || [];
                     currentPlayer = data.currentPlayer || 'B';
-                    capturedStones = new Set(data.captured || []);
+                    // 重新计算被提棋子，而不是直接加载（避免残留错误数据）
+                    recaptureStones();
+                    koPosition = data.koPosition || null;
                     updateUI();
                     drawStones();
                 } catch (e) {
@@ -967,7 +967,7 @@
             document.body.appendChild(textArea);
             textArea.focus();
             textArea.select();
-            
+
             try {
                 const successful = document.execCommand('copy');
                 if (successful) {
@@ -978,10 +978,47 @@
             } catch (err) {
                 showStatus('复制失败：' + err);
             }
-            
+
             document.body.removeChild(textArea);
         }
-        
+
+        function copyDebugInfo() {
+            const sgf = generateSGF();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(sgf).then(function() {
+                    showStatus('SGF已复制');
+                }).catch(function(err) {
+                    fallbackCopyDebugToClipboard(sgf);
+                });
+            } else {
+                fallbackCopyDebugToClipboard(sgf);
+            }
+        }
+
+        function fallbackCopyDebugToClipboard(text) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-9999px';
+            textArea.style.top = '0';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showStatus('SGF已复制');
+                } else {
+                    showStatus('复制失败');
+                }
+            } catch (err) {
+                showStatus('复制失败：' + err);
+            }
+
+            document.body.removeChild(textArea);
+        }
+
         function showStatus(msg) {
             console.log(msg);
             const toast = document.getElementById('toast');
