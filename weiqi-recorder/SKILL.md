@@ -27,15 +27,9 @@ tags: ["围棋", "weiqi", "go", "记谱", "棋盘", "网页工具"]
 
 ### 提供记谱工具给用户
 
-**重要**：QQ 文件传输有缓存机制，直接发送同一文件可能显示旧文件名。发送前复制到 /tmp 并添加时间戳注释（改变文件内容即可绕过缓存）：
+直接发送 `assets/weiqi_recorder.html` 文件给用户，或指导用户在浏览器中打开该文件。
 
-```bash
-cp weiqi-recorder/assets/weiqi_recorder.html /tmp/weiqi_recorder.html && echo "<!-- $(date +%s) -->" >> /tmp/weiqi_recorder.html
-```
-
-然后发送 `/tmp/weiqi_recorder.html`
-
-或直接指导用户在浏览器中打开 `assets/weiqi_recorder.html` 文件。
+**注意**：由于 QQ 等 IM 工具的文件缓存机制，如果文件内容没有变化，可能会显示旧的文件名。如需避免缓存问题，可在发送前修改文件内容（如添加一个时间戳注释）。
 
 ### 使用方式
 
