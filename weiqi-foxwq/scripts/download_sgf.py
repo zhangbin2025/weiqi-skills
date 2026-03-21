@@ -27,8 +27,13 @@ except ImportError:
     BS4_AVAILABLE = False
     print("⚠️  BeautifulSoup 未安装，将使用正则解析作为备选")
 
-# 禁用SSL验证（部分网站需要）
-ssl._create_default_https_context = ssl._create_unverified_context
+# SSL上下文配置（用于处理特定网站的证书问题）
+def get_ssl_context():
+    """创建不验证证书的SSL上下文（用于兼容部分网站）"""
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
 
 # ===== 性能计时工具 =====
 class PerformanceTimer:
@@ -92,7 +97,9 @@ def fetch_url(url):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as response:
+        # 使用自定义SSL上下文以兼容部分网站的证书配置
+        ssl_context = get_ssl_context()
+        with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
             return response.read().decode('utf-8')
     except Exception as e:
         print(f"❌ 获取失败 {url}: {e}")
