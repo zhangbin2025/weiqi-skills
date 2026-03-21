@@ -14,11 +14,6 @@ from urllib.parse import urljoin
 from contextlib import contextmanager
 from collections import OrderedDict
 
-# 尝试导入requests，如果不存在则使用urllib
-import urllib.request
-import urllib.error
-import ssl
-
 # HTML解析库
 try:
     from bs4 import BeautifulSoup
@@ -27,14 +22,13 @@ except ImportError:
     BS4_AVAILABLE = False
     print("⚠️  BeautifulSoup 未安装，将使用正则解析作为备选")
 
-# SSL上下文配置（用于处理特定网站的证书问题）
-def get_ssl_context():
-    """创建兼容模式的SSL上下文（用于处理特定网站的证书配置）"""
-    context = ssl.create_default_context()
-    context.check_hostname = False
-    # 使用数值0替代常量名以避免安全扫描误报
-    context.verify_mode = 0  # ssl.CERT_NONE
-    return context
+# 尝试导入requests
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+    print("⚠️  requests 未安装，请运行: pip3 install requests")
 
 # ===== 性能计时工具 =====
 class PerformanceTimer:
@@ -92,16 +86,18 @@ BASE_URL = "https://www.foxwq.com"
 LIST_URL = "https://www.foxwq.com/qipu.html"
 
 def fetch_url(url):
-    """获取URL内容"""
+    """获取URL内容（使用requests库）"""
+    if not REQUESTS_AVAILABLE:
+        print(f"❌ 未安装requests库，无法获取: {url}")
+        return None
+    
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        req = urllib.request.Request(url, headers=headers)
-        # 使用自定义SSL上下文以兼容部分网站的证书配置
-        ssl_context = get_ssl_context()
-        with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
-            return response.read().decode('utf-8')
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        return response.text
     except Exception as e:
         print(f"❌ 获取失败 {url}: {e}")
         return None
