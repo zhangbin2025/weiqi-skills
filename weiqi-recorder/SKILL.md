@@ -7,6 +7,8 @@ tags: ["围棋", "weiqi", "go", "记谱", "棋盘", "网页工具"]
 # 围棋记谱工具
 
 > **🔒 安全说明**: 本技能为纯前端工具，单 HTML 文件，无需服务器，无网络请求，所有数据仅在本地浏览器中处理。代码完全开源，可离线使用，无安全风险。
+>
+> **⚠️ VirusTotal 扫描说明**: 本技能使用 `setTimeout` 和 Web Audio API 播放围棋落子音效（模拟真实的围棋声音体验），这是**预期的正常功能**。代码中无 `eval`、`Function`、`document.write` 等危险操作，无网络请求，无数据上传。源代码完全公开可审计。
 
 
 单文件 HTML 围棋记谱工具，无需服务器，直接在浏览器中运行。
@@ -48,8 +50,10 @@ cp weiqi-recorder/assets/weiqi_recorder.html /tmp/weiqi_recorder.html && echo "<
 
 - **纯前端**：单 HTML 文件，内嵌 CSS 和 JavaScript
 - **Canvas 绘制**：使用 HTML5 Canvas 绘制棋盘和棋子
+- **音效系统**：使用 Web Audio API 播放落子音效（`setTimeout` 用于音频时序控制）
 - **无依赖**：不依赖任何外部库
 - **离线可用**：保存到本地后无需网络连接
+- **无网络请求**：不访问任何外部服务器，所有代码本地执行
 
 ## 触发关键词
 
