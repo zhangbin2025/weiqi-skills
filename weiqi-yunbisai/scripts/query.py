@@ -382,31 +382,37 @@ class YunbisaiClient:
         for match in matches:
             p1_id = match.get('p1id')
             p2_id = match.get('p2id')
-            p1_score = float(match.get('p1_score') or 0)
-            p2_score = float(match.get('p2_score') or 0)
+            p1_score_raw = match.get('p1_score')
+            p2_score_raw = match.get('p2_score')
+            p1_score = float(p1_score_raw) if p1_score_raw is not None else None
+            p2_score = float(p2_score_raw) if p2_score_raw is not None else None
+            
+            # 判断比赛是否已结束（有明确结果，不是双方都是0）
+            match_finished = (p1_score is not None and p2_score is not None and 
+                              not (p1_score == 0 and p2_score == 0))
             
             # 处理p1
-            if p1_id and p1_id in players:
+            if p1_id and p1_id in players and match_finished:
                 if p2_id and match.get('p2') and p2_id in players:
                     players[p1_id]['opponents'].append(p2_id)
                 if p1_score == 2.0:
                     players[p1_id]['wins'] += 1
                 elif p1_score == 0.0:
                     players[p1_id]['losses'] += 1
-                else:
+                elif p1_score == 1.0:
                     players[p1_id]['draws'] += 1
                 players[p1_id]['score'] += p1_score
                 players[p1_id]['progressive'].append(players[p1_id]['score'])
             
             # 处理p2
-            if p2_id and p2_id in players:
+            if p2_id and p2_id in players and match_finished:
                 if p1_id and match.get('p1') and p1_id in players:
                     players[p2_id]['opponents'].append(p1_id)
                 if p2_score == 2.0:
                     players[p2_id]['wins'] += 1
                 elif p2_score == 0.0:
                     players[p2_id]['losses'] += 1
-                else:
+                elif p2_score == 1.0:
                     players[p2_id]['draws'] += 1
                 players[p2_id]['score'] += p2_score
                 players[p2_id]['progressive'].append(players[p2_id]['score'])
@@ -538,17 +544,27 @@ class YunbisaiClient:
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
-            print(f"\n📊 排名数据已导出到 HTML 文件: {html_path}")
+            print(f"\n📊 排名数据已导出到 HTML 文件")
             print(f"   共 {total} 条记录\n")
+            print(f"<qqfile>{html_path}</qqfile>\n")
             
-            # 显示前10名预览
+            # 显示前10名预览（单行 Markdown 格式）
             print("📋 前10名预览:\n")
             for i, p in enumerate(rankings_to_print[:10], 1):
                 record = f"{p['wins']}胜{p['losses']}负"
                 if p['draws'] > 0:
                     record += f"{p['draws']}和"
-                print(f"{i}. **{p['name']}** | 积分: {int(p['score'])} | 对手分: {int(p['opponent_score'])} | 累进分: {int(p['progressive_score'])} | {record}")
-            print(f"\n... 还有 {total - 10} 名选手\n")
+                # 单行格式
+                rank_emoji = ""
+                if i == 1:
+                    rank_emoji = "🥇 "
+                elif i == 2:
+                    rank_emoji = "🥈 "
+                elif i == 3:
+                    rank_emoji = "🥉 "
+                print(f"{i}. {rank_emoji}**{p['name']}** | 积分: {int(p['score'])} | 对手分: {int(p['opponent_score'])} | 累进分: {int(p['progressive_score'])} | {record}")
+            if total > 10:
+                print(f"\n... 还有 {total - 10} 名选手\n")
     
     def print_perf_report(self):
         """打印性能报告"""
@@ -877,13 +893,18 @@ def main():
                             score1 = m.get('p1_score')
                             score2 = m.get('p2_score')
                             
+                            # 判断比赛状态：None 或双方都0表示未开始
                             if score1 is None or score2 is None:
                                 result_text = '未开始'
                                 result_class = 'pending'
                             else:
                                 s1 = int(float(score1))
                                 s2 = int(float(score2))
-                                if s1 > s2:
+                                # 双方都0表示比赛还未结束，不算结果
+                                if s1 == 0 and s2 == 0:
+                                    result_text = '进行中'
+                                    result_class = 'pending'
+                                elif s1 > s2:
                                     result_text = '黑胜'
                                     result_class = 'win'
                                 elif s2 > s1:
@@ -911,16 +932,17 @@ def main():
                         with open(html_path, 'w', encoding='utf-8') as f:
                             f.write(html_content)
                         
-                        print(f"\n📊 对阵表已导出到 HTML 文件: {html_path}")
+                        print(f"\n📊 对阵表已导出到 HTML 文件")
                         print(f"   共 {total_matches} 台对局\n")
+                        print(f"<qqfile>{html_path}</qqfile>\n")
                         
-                        # 显示前10条预览
+                        # 显示前10条预览（单行 Markdown 格式）
                         print(f"📋 第{args.matchups}轮对阵预览:\n")
                         for m in rows[:10]:
                             p1 = m.get('p1') or '轮空'
                             p2 = m.get('p2') or '轮空'
                             seat = m.get('seatnum')
-                            print(f"台{seat}: {p1} vs {p2}")
+                            print(f"• 台{seat}: **{p1}** vs **{p2}**")
                         if total_matches > 10:
                             print(f"\n... 还有 {total_matches - 10} 台对局\n")
             
@@ -1015,17 +1037,19 @@ def main():
                         with open(html_path, 'w', encoding='utf-8') as f:
                             f.write(html_content)
                         
-                        print(f"\n📊 选手列表已导出到 HTML 文件: {html_path}")
+                        print(f"\n📊 选手列表已导出到 HTML 文件")
                         print(f"   共 {total_players} 名选手\n")
+                        print(f"<qqfile>{html_path}</qqfile>\n")
                         
-                        # 显示前10条预览
+                        # 显示前10条预览（单行 Markdown 格式）
                         print("📋 前10名选手预览:\n")
                         for p in players[:10]:
                             name = p.get('participantname')
                             rank = p.get('rank_num')
                             score = p.get('integral')
                             print(f"• **{name}** | 排名: {rank} | 积分: {score}")
-                        print(f"\n... 还有 {total_players - 10} 名选手\n")
+                        if total_players > 10:
+                            print(f"\n... 还有 {total_players - 10} 名选手\n")
         
         # 输出性能报告
         if not args.json and not args.quiet:
