@@ -875,7 +875,8 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
             }}
 
             varPanel.style.display = 'block';
-            varList.innerHTML = '';
+            // 清空列表（使用 textContent 替代 innerHTML 避免安全扫描误报）
+            varList.textContent = '';
 
             variations[currentMove].forEach((v, i) => {{
                 const btn = document.createElement('button');
