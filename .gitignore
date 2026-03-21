@@ -20,3 +20,6 @@ venv/
 Thumbs.db
 weiqi-foxwq/scripts/downloads/
 yunbisai/
+skills/
+.clawhub/
+publish_skills.sh
