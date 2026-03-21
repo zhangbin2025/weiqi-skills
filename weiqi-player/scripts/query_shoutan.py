@@ -13,29 +13,14 @@
 import sys
 import base64
 import time
+import requests
 from contextlib import contextmanager
 from collections import OrderedDict
-
-# 尝试导入requests，如果不存在则使用urllib
-try:
-    import requests
-    REQUESTS_AVAILABLE = True
-except ImportError:
-    REQUESTS_AVAILABLE = False
-    import urllib.request
-    import urllib.error
-    import ssl
 
 import re
 
 
-# SSL上下文配置（用于处理特定网站的证书问题）
-def get_ssl_context():
-    """创建不验证证书的SSL上下文（用于兼容部分网站）"""
-    context = ssl.create_default_context()
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    return context
+
 
 
 # ===== 性能计时工具 =====
@@ -87,19 +72,9 @@ class PerformanceTimer:
 
 def fetch_url(url, timeout=30):
     """获取URL内容"""
-    if REQUESTS_AVAILABLE:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        response = requests.get(url, headers=headers, timeout=timeout)
-        return response.text
-    else:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        req = urllib.request.Request(url, headers=headers)
-        # 使用自定义SSL上下文以兼容部分网站的证书配置
-        ssl_context = get_ssl_context()
-        with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as response:
-            return response.read().decode('utf-8')
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    response = requests.get(url, headers=headers, timeout=timeout)
+    return response.text
 
 
 def parse_shoutan_basic(html, name):
