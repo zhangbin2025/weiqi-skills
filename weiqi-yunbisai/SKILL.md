@@ -99,6 +99,20 @@ python3 scripts/query.py --group-id 67890 --ranking --quiet
 - 👆 **点击反馈**：点击时有视觉反馈效果
 - 🚫 **禁止缩放**：优化移动端浏览体验
 
+### 📤 文件发送方式
+
+当通过 QQ 等即时通讯工具发送时，使用 `<qqmedia>` 标签发送 HTML 文件：
+
+```
+对阵表已生成：
+<qqmedia>/tmp/matchups_xxx.html</qqmedia>
+```
+
+**注意**：
+- 必须使用 `<qqmedia>绝对路径</qqmedia>` 格式
+- 文件大小需小于 10MB
+- 系统会根据扩展名自动识别为文件类型
+
 ### 性能报告示例
 
 ```
