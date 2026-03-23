@@ -140,7 +140,7 @@ playwright install chromium  # 约 100MB
 🎯 野狐围棋分享链接SGF下载器
 
 对局信息:
-  Chess ID: 397752985125276
+  Chess ID: 123456789012345
   提取模式: auto
 
 🔍 尝试通过API获取棋谱...
@@ -151,8 +151,8 @@ playwright install chromium  # 约 100MB
    检测到让子: 5子
 
 📋 对局详情:
-  黑棋: yoyam 
-  白棋: AIDreamyGo 
+  黑棋: 棋手A 
+  白棋: 棋手B 
   手数: 307
 
 💾 SGF已保存: /tmp/foxwq_handicap.sgf
@@ -169,7 +169,7 @@ playwright install chromium  # 约 100MB
 **生成的SGF让子棋格式**:
 ```
 (;GM[1]FF[4]CA[UTF-8]SZ[19]
-PB[yoyam]PW[AIDreamyGo]
+PB[棋手A]PW[棋手B]
 HA[5]
 ;AB[dd]
 ;AB[pp]
