@@ -17,6 +17,7 @@ SGF围棋打谱网页生成器
 import sys
 import re
 import os
+import html
 
 
 def extract_main_branch(sgf_content):
@@ -221,18 +222,18 @@ def generate_html(main_moves, game_info, variations, output_path, input_base_nam
     # 构建SGF字符串（平面格式）
     sgf_moves = ''.join([f";{m['color']}[{m['coord']}]" for m in main_moves])
 
-    # 棋局信息
-    black_name = game_info.get('black', '黑棋')
-    white_name = game_info.get('white', '白棋')
-    black_rank = game_info.get('black_rank', '')
-    white_rank = game_info.get('white_rank', '')
-    game_name = game_info.get('game_name', '围棋棋谱')
-    game_date = game_info.get('date', '')
-    result = game_info.get('result', '')
+    # 棋局信息（HTML转义防止XSS）
+    black_name = html.escape(game_info.get('black', '黑棋'))
+    white_name = html.escape(game_info.get('white', '白棋'))
+    black_rank = html.escape(game_info.get('black_rank', ''))
+    white_rank = html.escape(game_info.get('white_rank', ''))
+    game_name = html.escape(game_info.get('game_name', '围棋棋谱'))
+    game_date = html.escape(game_info.get('date', ''))
+    result = html.escape(game_info.get('result', ''))
     handicap = game_info.get('handicap', '0')
     handicap_stones = game_info.get('handicap_stones', [])
 
-    # 构建完整的SGF
+    # 构建完整的SGF（SGF属性值需要转义]和\字符）
     board_size = game_info.get('board_size', '19')
     komi = game_info.get('komi', '375')
 
@@ -242,18 +243,20 @@ def generate_html(main_moves, game_info, variations, output_path, input_base_nam
         coord = chr(97 + stone['x']) + chr(97 + stone['y'])
         handicap_sgf += f"AB[{coord}]"
 
-    sgf_data = f"""(;GM[1]FF[4]
+    # SGF内容需要转义HTML特殊字符后再嵌入
+    sgf_raw = f"""(;GM[1]FF[4]
 SZ[{board_size}]
-GN[{game_name}]
-DT[{game_date}]
-PB[{black_name}]
-PW[{white_name}]
-BR[{black_rank}]
-WR[{white_rank}]
-KM[{komi}]{handicap_sgf}RU[Chinese]RE[{result}]{sgf_moves})"""
+GN[{game_info.get('game_name', '围棋棋谱')}]
+DT[{game_info.get('date', '')}]
+PB[{game_info.get('black', '黑棋')}]
+PW[{game_info.get('white', '白棋')}]
+BR[{game_info.get('black_rank', '')}]
+WR[{game_info.get('white_rank', '')}]
+KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})"""
+    sgf_data = html.escape(sgf_raw)
 
-    # 变化图数据
-    variations_json = json.dumps(variations, ensure_ascii=False)
+    # 变化图数据（JSON转义后再HTML转义）
+    variations_json = html.escape(json.dumps(variations, ensure_ascii=False))
 
     # HTML模板
     html_template = f'''<!DOCTYPE html>
@@ -502,8 +505,12 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{result}]{sgf_moves})"""
     </div>
 
     <script>
-        // SGF 数据
-        const sgfData = `{sgf_data}`;
+        // SGF 数据（HTML解码）
+        const sgfData = (() => {{
+            const textarea = document.createElement('textarea');
+            textarea.innerHTML = `{sgf_data}`;
+            return textarea.value;
+        }})();
 
         const BOARD_SIZE = {board_size};
 
@@ -551,8 +558,12 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{result}]{sgf_moves})"""
         let isPlaying = false;
         let playInterval = null;
 
-        // 变化图相关变量
-        const variations = {variations_json};
+        // 变化图相关变量（HTML解码后解析JSON）
+        const variations = JSON.parse((() => {{
+            const textarea = document.createElement('textarea');
+            textarea.innerHTML = `{variations_json}`;
+            return textarea.value;
+        }})());
         let inVariation = false;
         let varMoves = [];
         let varIndex = 0;
@@ -864,7 +875,7 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{result}]{sgf_moves})"""
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = '{input_base_name}.sgf';
+            a.download = '{html.escape(input_base_name)}.sgf';
             a.click();
             URL.revokeObjectURL(url);
         }}
