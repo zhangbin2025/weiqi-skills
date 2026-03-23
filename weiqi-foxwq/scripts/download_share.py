@@ -226,14 +226,19 @@ def extract_player_names(data):
 
 async def extract_via_websocket(url, timeout=15, debug=False):
     """
-    通过WebSocket提取棋谱
-    适用于进行中的对局
+    通过WebSocket提取棋谱（可选功能，仅用于进行中的对局）
+    
+    注意: 此功能需要可选依赖 playwright
+    历史棋谱请使用 --mode api 模式，无需安装 playwright
     """
     try:
         from playwright.async_api import async_playwright
     except ImportError:
-        print("❌ 需要安装 playwright: pip3 install playwright")
-        print("   然后运行: playwright install chromium")
+        print("⚠️  未安装可选依赖: playwright")
+        print("   如需提取进行中的对局，请运行:")
+        print("   pip3 install playwright && playwright install chromium")
+        print()
+        print("   💡 提示: 历史棋谱可使用 --mode api 模式，无需 playwright")
         return None, None, 0
     
     moves = []
