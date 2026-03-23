@@ -189,12 +189,22 @@ def extract_game_info(sgf_content):
         'RE': ('result', r'RE\[([^\]]+)\]'),
         'KM': ('komi', r'KM\[([^\]]+)\]'),
         'SZ': ('board_size', r'SZ\[([^\]]+)\]'),
+        'HA': ('handicap', r'HA\[(\d+)\]'),
     }
 
     for key, (name, pattern) in patterns.items():
         match = re.search(pattern, sgf_content)
         if match:
             info[name] = match.group(1)
+
+    # 提取让子位置 (AB = Add Black)
+    handicap_stones = []
+    ab_matches = re.findall(r'AB\[([a-z]{2})\]', sgf_content)
+    for coord in ab_matches:
+        x = ord(coord[0]) - 97
+        y = ord(coord[1]) - 97
+        handicap_stones.append({'x': x, 'y': y})
+    info['handicap_stones'] = handicap_stones
 
     return info
 
@@ -215,10 +225,18 @@ def generate_html(main_moves, game_info, variations, output_path, input_base_nam
     game_name = game_info.get('game_name', '围棋棋谱')
     game_date = game_info.get('date', '')
     result = game_info.get('result', '')
+    handicap = game_info.get('handicap', '0')
+    handicap_stones = game_info.get('handicap_stones', [])
 
     # 构建完整的SGF
     board_size = game_info.get('board_size', '19')
     komi = game_info.get('komi', '375')
+
+    # 添加让子标记到SGF
+    handicap_sgf = f"HA[{handicap}]" if int(handicap) > 0 else ""
+    for stone in handicap_stones:
+        coord = chr(97 + stone['x']) + chr(97 + stone['y'])
+        handicap_sgf += f"AB[{coord}]"
 
     sgf_data = f"""(;GM[1]FF[4]
 SZ[{board_size}]
@@ -228,7 +246,7 @@ PB[{black_name}]
 PW[{white_name}]
 BR[{black_rank}]
 WR[{white_rank}]
-KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
+KM[{komi}]{handicap_sgf}RU[Chinese]RE[{result}]{sgf_moves})"""
 
     # 变化图数据
     variations_json = json.dumps(variations, ensure_ascii=False)
@@ -423,7 +441,7 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
     <div class="container">
         <div class="header">
             <h1 id="gameTitle">{game_name.replace('<绝艺讲解>', '').replace('绝艺讲解', '')}</h1>
-            <div class="info" id="gameInfo">{black_name} vs {white_name} · {result}</div>
+            <div class="info" id="gameInfo">{black_name} vs {white_name} {'· 让' + handicap + '子' if int(handicap) > 0 else ''} · {result}</div>
         </div>
 
         <div class="board-container">
@@ -484,6 +502,10 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         const sgfData = `{sgf_data}`;
 
         const BOARD_SIZE = {board_size};
+
+        // 让子信息
+        const handicapStones = {json.dumps(handicap_stones)};
+        const handicapCount = {handicap};
 
         // 解析 SGF - 支持平面格式（已清理的野狐SGF）
         function parseSGF(sgf) {{
@@ -1112,6 +1134,35 @@ KM[{komi}]HA[0]RU[Chinese]RE[{result}]{sgf_moves})"""
         // 初始化
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
+        
+        // 绘制让子
+        function drawHandicapStones() {{
+            if (handicapStones && handicapStones.length > 0) {{
+                for (const stone of handicapStones) {{
+                    drawStone(stone.x, stone.y, 'black', false, null);
+                }}
+            }}
+        }}
+        
+        // 在初始绘制后添加让子
+        const _originalDrawBoard = drawBoard;
+        drawBoard = function() {{
+            _originalDrawBoard();
+            drawHandicapStones();
+        }};
+        
+        // 修改createBoard函数以包含让子
+        const _originalCreateBoard = createBoard;
+        createBoard = function() {{
+            const board = _originalCreateBoard();
+            if (handicapStones && handicapStones.length > 0) {{
+                for (const stone of handicapStones) {{
+                    board[stone.y][stone.x] = 'black';
+                }}
+            }}
+            return board;
+        }};
+        
         updateVarPanel();
         updateNumToggleBtn();
     </script>
