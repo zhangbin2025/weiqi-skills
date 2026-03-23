@@ -23,56 +23,88 @@ def extract_main_branch(sgf_content):
     """
     从野狐围棋SGF中提取主分支着法
 
-    野狐SGF格式特点:
-    - 多行格式，前9行是文件头
-    - 从第10行开始，每行是一个分支（主分支或变例）
-    - 主分支：每行只有1个着法（简单的嵌套格式）
-    - 变化图：每行有多个着法（带AI评论的完整变化）
+    支持两种格式:
+    1. 嵌套格式（野狐原始格式）：多行，每行一个分支
+    2. 平面格式（已清理）：所有着法在一行，用分号分隔
 
     提取策略:
-    1. 跳过前9行（文件头）
-    2. 从第10行开始，只提取只有1个着法的行
-    3. 当遇到有多个着法的行时，说明是变化图，停止提取
+    1. 检测SGF格式类型
+    2. 平面格式：按顺序提取所有着法，直到遇到变例分支
+    3. 嵌套格式：按行处理，只取单着法的行
     """
-    lines = sgf_content.replace('\r\n', '\n').split('\n')
+    sgf_content = sgf_content.replace('\r\n', '\n')
+    lines = sgf_content.split('\n')
 
     main_moves = []
-    found_first_move = False
 
+    # 检测格式：如果第一行包含大量着法，认为是平面格式
+    first_non_empty = ''
     for line in lines:
-        line = line.strip()
-        if not line:
-            continue
+        stripped = line.strip()
+        if stripped:
+            first_non_empty = stripped
+            break
 
-        # 查找所有着法
-        moves_in_line = re.findall(r';([BW])\[([a-z]{2})\]', line)
+    moves_in_first = re.findall(r';([BW])\[([a-z]{2})\]', first_non_empty)
+    is_flat_format = len(moves_in_first) > 10  # 平面格式：第一行有很多着法
 
-        if not moves_in_line:
-            continue
+    if is_flat_format:
+        # 平面格式：直接按顺序提取所有着法
+        # 但需要处理可能的变化图分支（以 '(' 开头的新分支）
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
 
-        # 检查是否是第一手（文件头行）
-        if not found_first_move:
-            # 第一手可能在文件头行（不以 (; 开头）
-            color, coord = moves_in_line[0]
-            main_moves.append({
-                'color': color,
-                'coord': coord
-            })
-            found_first_move = True
-            continue
+            # 查找所有着法及其位置
+            for match in re.finditer(r';([BW])\[([a-z]{2})\]', line):
+                pos = match.start()
 
-        # 对于后续行，只取只有1个着法的行（主分支）
-        if len(moves_in_line) == 1:
-            color, coord = moves_in_line[0]
-            main_moves.append({
-                'color': color,
-                'coord': coord
-            })
-        else:
-            # 遇到有多个着法的行，说明是变化图，停止
-            # 但为了处理可能的意外情况，继续检查后面是否还有单着法行
-            # 实际上应该停止，因为后面的都是变化图
-            pass
+                # 检查这个着法是否在变例分支内（前面有未闭合的括号）
+                # 简单方法：计算该位置前的 '(' 和 ')' 数量
+                prefix = line[:pos]
+                open_parens = prefix.count('(')
+                close_parens = prefix.count(')')
+
+                # SGF格式: (;GM...;B[pd]...) 主分支着法在 depth=1
+                # 变例分支是嵌套的 (...)，depth > 1
+                if open_parens - close_parens == 1:
+                    color = match.group(1)
+                    coord = match.group(2)
+                    main_moves.append({
+                        'color': color,
+                        'coord': coord
+                    })
+    else:
+        # 嵌套格式（原始野狐格式）：按行处理
+        found_first_move = False
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            moves_in_line = re.findall(r';([BW])\[([a-z]{2})\]', line)
+
+            if not moves_in_line:
+                continue
+
+            if not found_first_move:
+                color, coord = moves_in_line[0]
+                main_moves.append({
+                    'color': color,
+                    'coord': coord
+                })
+                found_first_move = True
+                continue
+
+            # 只取只有1个着法的行（主分支）
+            if len(moves_in_line) == 1:
+                color, coord = moves_in_line[0]
+                main_moves.append({
+                    'color': color,
+                    'coord': coord
+                })
 
     return main_moves
 
