@@ -160,6 +160,36 @@ def extract_moves_from_binary(data):
         i += 1
     return moves
 
+def extract_handicap_from_binary(data):
+    """从二进制数据中提取让子数
+    
+    野狐WebSocket协议中GameRule结构:
+    - 08 xx: boardsize (19 = 0x13)
+    - 10 xx: playingType
+    - 18 xx: handicap (让子数)
+    - 20 xx: komi
+    """
+    try:
+        # 方法1: 查找 GameRule 模式 (08 13 10 01 18 xx)
+        # boardsize=19(0x13), playingType=1, handicap=xx
+        for i in range(len(data) - 6):
+            if (data[i] == 0x08 and data[i+1] == 0x13 and  # boardsize = 19
+                data[i+2] == 0x10 and data[i+3] == 0x01 and  # playingType = 1
+                data[i+4] == 0x18):  # handicap field
+                handicap = data[i+5]
+                if 2 <= handicap <= 9:
+                    return handicap
+        
+        # 方法2: 查找 HA[数字] 文本模式（SGF格式）
+        text = data.decode('utf-8', errors='ignore')
+        ha_match = re.search(r'HA\[(\d+)\]', text)
+        if ha_match:
+            return int(ha_match.group(1))
+        
+        return 0
+    except Exception:
+        return 0
+
 def extract_player_names(data):
     """从二进制数据中提取玩家名"""
     names = []
@@ -194,7 +224,7 @@ def extract_player_names(data):
     except Exception as e:
         return names
 
-async def extract_via_websocket(url, timeout=15):
+async def extract_via_websocket(url, timeout=15, debug=False):
     """
     通过WebSocket提取棋谱
     适用于进行中的对局
@@ -204,10 +234,12 @@ async def extract_via_websocket(url, timeout=15):
     except ImportError:
         print("❌ 需要安装 playwright: pip3 install playwright")
         print("   然后运行: playwright install chromium")
-        return None, None
+        return None, None, 0
     
     moves = []
     player_names = []
+    handicap = 0
+    raw_data = None
     
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -218,12 +250,16 @@ async def extract_via_websocket(url, timeout=15):
         
         def handle_ws(ws):
             async def on_message(data):
-                nonlocal moves, player_names
+                nonlocal moves, player_names, handicap, raw_data
                 if isinstance(data, bytes):
-                    if len(data) > 1000 and not moves:
-                        moves = extract_moves_from_binary(data)
+                    if len(data) > 1000:
+                        raw_data = data
+                        if not moves:
+                            moves = extract_moves_from_binary(data)
                         if not player_names:
                             player_names = extract_player_names(data)
+                        if handicap == 0:
+                            handicap = extract_handicap_from_binary(data)
             
             ws.on("framereceived", lambda d: asyncio.create_task(on_message(d)))
         
@@ -235,10 +271,35 @@ async def extract_via_websocket(url, timeout=15):
         
         await browser.close()
     
-    return moves, player_names
+    # 调试模式：保存原始数据供分析
+    if debug and raw_data:
+        debug_file = f"/tmp/foxwq_ws_debug_{datetime.now().strftime('%H%M%S')}.bin"
+        with open(debug_file, 'wb') as f:
+            f.write(raw_data)
+        print(f"   调试数据已保存: {debug_file}")
+        
+        # 输出前200字节的十六进制供分析
+        print(f"   原始数据前200字节:")
+        hex_str = ' '.join(f'{b:02x}' for b in raw_data[:200])
+        print(f"   {hex_str}")
+        
+        # 尝试解码文本部分
+        text = raw_data.decode('utf-8', errors='ignore')
+        if text:
+            print(f"   可解码文本片段:")
+            for line in text.split('\x00')[:10]:
+                if len(line) > 3 and len(line) < 100:
+                    print(f"     {line}")
+    
+    return moves, player_names, handicap
 
-def create_sgf(moves, pb="黑棋", pw="白棋"):
-    """创建SGF格式棋谱"""
+def create_sgf(moves, pb="黑棋", pw="白棋", handicap=0):
+    """创建SGF格式棋谱
+    
+    让子棋规则：
+    - 黑棋先摆好让子（AB标记）
+    - 第一手由白棋下
+    """
     if not moves:
         return None
     
@@ -246,8 +307,34 @@ def create_sgf(moves, pb="黑棋", pw="白棋"):
     sgf = f"(;GM[1]FF[4]CA[UTF-8]SZ[19]\n"
     sgf += f"PB[{pb}]PW[{pw}]\n"
     
+    # 添加让子信息
+    if handicap >= 2:
+        sgf += f"HA[{handicap}]\n"
+        # 添加让子落子（标准星位）
+        handicap_coords = {
+            2: [(3, 3), (15, 15)],  # 4-4 对角
+            3: [(3, 3), (15, 15), (3, 15)],  # 4-4 + 4-16
+            4: [(3, 3), (15, 15), (3, 15), (15, 3)],  # 4-4 四角
+            5: [(3, 3), (15, 15), (3, 15), (15, 3), (9, 9)],  # 4-4 + 天元
+            6: [(3, 3), (15, 15), (3, 15), (15, 3), (9, 3), (9, 15)],  # 4-4 + 边星
+            7: [(3, 3), (15, 15), (3, 15), (15, 3), (9, 3), (9, 15), (9, 9)],  # 6子 + 天元
+            8: [(3, 3), (15, 15), (3, 15), (15, 3), (9, 3), (9, 15), (3, 9), (15, 9)],  # 4-4 + 边星
+            9: [(3, 3), (15, 15), (3, 15), (15, 3), (9, 3), (9, 15), (3, 9), (15, 9), (9, 9)],  # 九星
+        }
+        if handicap in handicap_coords:
+            for hx, hy in handicap_coords[handicap]:
+                sgf += f";AB[{coord_map[hx]}{coord_map[hy]}]\n"
+    
+    # 处理让子棋的着法顺序
+    # 有让子时：第一手是白棋（因为黑棋已经摆好让子）
+    # 无让子时：第一手是黑棋
     for i, (x, y) in enumerate(moves):
-        color = "B" if i % 2 == 0 else "W"
+        if handicap >= 2:
+            # 让子棋：白棋先下
+            color = "W" if i % 2 == 0 else "B"
+        else:
+            # 普通对局：黑棋先下
+            color = "B" if i % 2 == 0 else "W"
         if 0 <= x < 19 and 0 <= y < 19:
             sgf += f";{color}[{coord_map[x]}{coord_map[y]}]\n"
     
@@ -332,20 +419,24 @@ def extract_from_share_link(url, output_path=None, mode='auto'):
         print("🌐 尝试通过WebSocket获取棋谱...")
         print("   (适用于进行中的对局)")
         
-        moves, player_names = asyncio.run(extract_via_websocket(url))
+        moves, player_names, handicap = asyncio.run(extract_via_websocket(url))
         
         if moves:
             print("✅ WebSocket获取成功！")
             pb = player_names[0] if len(player_names) > 0 else "黑棋"
             pw = player_names[1] if len(player_names) > 1 else "白棋"
             
+            if handicap > 0:
+                print(f"   检测到让子: {handicap}子")
+            
             with timer.step("生成SGF"):
-                sgf = create_sgf(moves, pb, pw)
+                sgf = create_sgf(moves, pb, pw, handicap)
             
             game_info = {
                 'pb': pb,
                 'pw': pw,
-                'movenum': len(moves)
+                'movenum': len(moves),
+                'handicap': handicap
             }
         else:
             print("❌ WebSocket获取失败")
