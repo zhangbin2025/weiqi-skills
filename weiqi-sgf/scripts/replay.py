@@ -198,12 +198,16 @@ def extract_game_info(sgf_content):
             info[name] = match.group(1)
 
     # 提取让子位置 (AB = Add Black)
+    # 支持格式: AB[pd] 或 AB[pd][dp][dd][pp][jj] (多个让子)
     handicap_stones = []
-    ab_matches = re.findall(r'AB\[([a-z]{2})\]', sgf_content)
-    for coord in ab_matches:
-        x = ord(coord[0]) - 97
-        y = ord(coord[1]) - 97
-        handicap_stones.append({'x': x, 'y': y})
+    ab_match = re.search(r'AB((?:\[[a-z]{2}\])+)', sgf_content)
+    if ab_match:
+        # 提取所有 [xx] 中的坐标
+        coords = re.findall(r'\[([a-z]{2})\]', ab_match.group(1))
+        for coord in coords:
+            x = ord(coord[0]) - 97
+            y = ord(coord[1]) - 97
+            handicap_stones.append({'x': x, 'y': y})
     info['handicap_stones'] = handicap_stones
 
     return info
