@@ -23,3 +23,13 @@ yunbisai/
 skills/
 .clawhub/
 publish_skills.sh
+
+# Personal workspace files (local only)
+.openclaw/
+AGENTS.md
+MEMORY.md
+SOUL.md
+TOOLS.md
+USER.md
+HEARTBEAT.md
+IDENTITY.md
