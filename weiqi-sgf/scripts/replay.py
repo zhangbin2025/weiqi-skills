@@ -199,16 +199,28 @@ def extract_game_info(sgf_content):
             info[name] = match.group(1)
 
     # 提取让子位置 (AB = Add Black)
-    # 支持格式: AB[pd] 或 AB[pd][dp][dd][pp][jj] (多个让子)
+    # 支持格式1: AB[pd][dp][dd][pp][jj] (连续多个，HA标签在同一行)
+    # 支持格式2: ;AB[dd];AB[pp];AB[dp];AB[pd];AB[jj] (分散多个，每行一个)
     handicap_stones = []
-    ab_match = re.search(r'AB((?:\[[a-z]{2}\])+)', sgf_content)
-    if ab_match:
-        # 提取所有 [xx] 中的坐标
-        coords = re.findall(r'\[([a-z]{2})\]', ab_match.group(1))
-        for coord in coords:
-            x = ord(coord[0]) - 97
-            y = ord(coord[1]) - 97
-            handicap_stones.append({'x': x, 'y': y})
+    
+    # 先尝试匹配分散格式 ;AB[xx]; (野狐围棋实时对局格式)
+    for match in re.finditer(r';AB\[([a-z]{2})\]', sgf_content):
+        coord = match.group(1)
+        x = ord(coord[0]) - 97
+        y = ord(coord[1]) - 97
+        handicap_stones.append({'x': x, 'y': y})
+    
+    # 如果分散格式没找到，尝试匹配连续格式 AB[xx][yy][zz]
+    if not handicap_stones:
+        ab_match = re.search(r'AB((?:\[[a-z]{2}\])+)', sgf_content)
+        if ab_match:
+            # 提取所有 [xx] 中的坐标
+            coords = re.findall(r'\[([a-z]{2})\]', ab_match.group(1))
+            for coord in coords:
+                x = ord(coord[0]) - 97
+                y = ord(coord[1]) - 97
+                handicap_stones.append({'x': x, 'y': y})
+    
     info['handicap_stones'] = handicap_stones
 
     return info
