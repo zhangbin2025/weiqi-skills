@@ -441,67 +441,6 @@ def cmd_tag(args):
         return {"success": True, "id": args.id, "tags": game.get('tags', [])}
 
 
-def cmd_export(args):
-    """导出棋谱"""
-    db = ensure_db()
-    table = db.table('games')
-    
-    if not args.id:
-        return {"success": False, "error": "需要指定 --id"}
-    
-    Game = Query()
-    games = table.search(Game.id == args.id)
-    
-    if not games:
-        return {"success": False, "error": f"未找到ID: {args.id}"}
-    
-    game = games[0]
-    
-    # 默认输出路径
-    if not args.output:
-        args.output = f"/tmp/game_{args.id}.html"
-    
-    output_path = Path(args.output)
-    
-    if args.format == 'sgf':
-        # 导出为SGF文件
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(game['sgf'])
-    
-    elif args.format == 'html':
-        # 导出为打谱网页（调用 weiqi-sgf）
-        try:
-            # 先保存临时SGF
-            tmp_sgf = f"/tmp/export_{args.id}.sgf"
-            with open(tmp_sgf, 'w', encoding='utf-8') as f:
-                f.write(game['sgf'])
-            
-            # 调用 weiqi-sgf 生成HTML
-            import subprocess
-            replay_script = Path.home() / ".openclaw/workspace/weiqi-sgf/scripts/replay.py"
-            result = subprocess.run(
-                ['python3', str(replay_script), tmp_sgf, str(output_path)],
-                capture_output=True,
-                text=True
-            )
-            
-            if result.returncode != 0:
-                return {"success": False, "error": f"生成HTML失败: {result.stderr}"}
-            
-            # 清理临时文件
-            os.remove(tmp_sgf)
-            
-        except Exception as e:
-            return {"success": False, "error": f"导出失败: {e}"}
-    
-    return {
-        "success": True,
-        "id": args.id,
-        "format": args.format,
-        "output": str(output_path)
-    }
-
-
 def cmd_delete(args):
     """删除棋谱"""
     db = ensure_db()
@@ -643,12 +582,6 @@ def main():
     tag_parser.add_argument('--add', help='添加标签')
     tag_parser.add_argument('--remove', help='移除标签')
     
-    # export
-    export_parser = subparsers.add_parser('export', help='导出棋谱')
-    export_parser.add_argument('--id', required=True, help='棋谱ID')
-    export_parser.add_argument('--format', choices=['sgf', 'html'], default='html', help='导出格式')
-    export_parser.add_argument('--output', help='输出路径')
-    
     # delete
     delete_parser = subparsers.add_parser('delete', help='删除棋谱')
     delete_parser.add_argument('--id', required=True, help='棋谱ID')
@@ -671,7 +604,6 @@ def main():
         'list': cmd_list,
         'update': cmd_update,
         'tag': cmd_tag,
-        'export': cmd_export,
         'delete': cmd_delete,
         'stats': cmd_stats,
     }

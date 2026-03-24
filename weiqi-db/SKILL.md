@@ -17,7 +17,6 @@ tags: ["围棋", "weiqi", "go", "棋谱", "数据库", "SGF", "管理"]
 - **灵活查询**: JSON表达式查询语法，支持精确匹配和模糊搜索
 - **元数据编辑**: 支持自动解析SGF + 手动覆盖补充
 - **标签系统**: 多标签分类管理
-- **导出功能**: 一键生成打谱网页
 
 ## 安装依赖
 
@@ -97,12 +96,6 @@ python3 db.py tag --id "xxx" --add "名局" --json
 
 # 移除标签
 python3 db.py tag --id "xxx" --remove "测试" --json
-```
-
-### 导出打谱网页
-
-```bash
-python3 db.py export --id "xxx" --format html --output /tmp/game.html --json
 ```
 
 ### 删除棋谱
@@ -188,12 +181,10 @@ python3 db.py tag --id "xxx" --add "名局" --json
 - **存储**: TinyDB (JSON-based，单文件)
 - **去重**: 基于 SGF 内容哈希值
 - **搜索**: 内存索引 + 遍历过滤（适合 <10k 数据量）
-- **导出**: 集成 weiqi-sgf 生成打谱网页
 
 ## 相关技能
 
 - [weiqi-foxwq](../weiqi-foxwq) - 野狐棋谱下载
-- [weiqi-sgf](../weiqi-sgf) - SGF转HTML打谱
 - [weiqi-yunbisai](../weiqi-yunbisai) - 云比赛网查询
 
 ## 版本更新
