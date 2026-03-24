@@ -8,6 +8,7 @@ import requests
 import json
 import time
 import sys
+import html
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
@@ -549,12 +550,12 @@ class YunbisaiClient:
                 html_content += f'''            <div class="item">
                 <div class="{rank_class}">{rank_text}</div>
                 <div class="info">
-                    <div class="name">{p['name']}</div>
+                    <div class="name">{html.escape(str(p['name']))}</div>
                     <div class="details">
                         <span class="score">积分 {int(p['score'])}</span>
                         <span>对手分 {int(p['opponent_score'])}</span>
                         <span>累进分 {int(p['progressive_score'])}</span>
-                        <span>{record}</span>
+                        <span>{html.escape(record)}</span>
                     </div>
                 </div>
             </div>
@@ -683,9 +684,9 @@ def main():
 '''
                     for e in events:
                         event_id = e.get('event_id')
-                        title = e.get('title')
-                        city = e.get('city_name')
-                        date = e.get('max_time', '')[:10]
+                        title = html.escape(str(e.get('title', '')))
+                        city = html.escape(str(e.get('city_name', '')))
+                        date = html.escape(str(e.get('max_time', ''))[:10])
                         players = e.get('play_num') or '-'
                         html_content += f'''            <div class="item">
                 <div class="title">{title}</div>
@@ -793,7 +794,7 @@ def main():
 '''
                     for i, g in enumerate(groups, 1):
                         group_id = g.get('group_id')
-                        group_name = g.get('groupname')
+                        group_name = html.escape(str(g.get('groupname', '')))
                         # 优先使用从对阵表计算的人数
                         players_count = group_counts.get(group_id, g.get('playernum') or g.get('participant_count') or '-')
                         html_content += f'''            <div class="item">
@@ -908,11 +909,11 @@ def main():
 '''
                         for m in rows:
                             seat = m.get('seatnum')
-                            p1 = m.get('p1') or '轮空'
-                            p2 = m.get('p2') or '轮空'
+                            p1 = html.escape(str(m.get('p1') or '轮空'))
+                            p2 = html.escape(str(m.get('p2') or '轮空'))
                             score1 = m.get('p1_score')
                             score2 = m.get('p2_score')
-                            
+
                             if score1 is None or score2 is None:
                                 result_text = '未开始'
                                 result_class = 'pending'
@@ -928,7 +929,7 @@ def main():
                                 else:
                                     result_text = '平局'
                                     result_class = 'pending'
-                            
+
                             html_content += f'''            <div class="item">
                 <div class="table-num"><div class="num">{seat}</div>台</div>
                 <div class="match">
@@ -1030,7 +1031,7 @@ def main():
 '''
                         for i, p in enumerate(players, 1):
                             rank = p.get('rank_num')
-                            name = p.get('participantname')
+                            name = html.escape(str(p.get('participantname', '')))
                             score = p.get('integral')
                             rank_class = 'rank'
                             if rank and int(rank) <= 3:
