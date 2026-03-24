@@ -524,6 +524,27 @@ def cmd_delete(args):
     }
 
 
+def cmd_clear(args):
+    """清空数据库 - 直接重写文件确保彻底清空"""
+    DB_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # 直接重写 JSON 文件，绕过 TinyDB 的缓存机制
+    empty_db = {"games": {}}
+    with open(DB_PATH, 'w', encoding='utf-8') as f:
+        json.dump(empty_db, f, ensure_ascii=False, indent=2)
+    
+    # 验证清空结果
+    db = TinyDB(DB_PATH)
+    table = db.table('games')
+    count = len(table.all())
+    
+    return {
+        "success": True,
+        "message": "数据库已清空",
+        "remaining_records": count
+    }
+
+
 def cmd_stats(args):
     """统计信息"""
     db = ensure_db()
@@ -583,6 +604,9 @@ def main():
     # init
     subparsers.add_parser('init', help='初始化数据库')
     
+    # clear
+    subparsers.add_parser('clear', help='清空所有棋谱')
+    
     # add
     add_parser = subparsers.add_parser('add', help='添加棋谱')
     add_parser.add_argument('--file', help='单个SGF文件')
@@ -640,6 +664,7 @@ def main():
     # 执行命令
     commands = {
         'init': cmd_init,
+        'clear': cmd_clear,
         'add': cmd_add,
         'query': cmd_query,
         'list': cmd_list,
