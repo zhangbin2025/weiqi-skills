@@ -193,4 +193,3 @@ python3 db.py tag --id "xxx" --add "名局" --json
 - ✅ 初始版本发布
 - ✅ 支持 SGF 导入、元数据编辑、标签管理
 - ✅ JSON 查询语法，AI 友好接口
-- ✅ 导出打谱网页功能
