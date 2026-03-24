@@ -478,8 +478,9 @@ def cmd_export(args):
             
             # 调用 weiqi-sgf 生成HTML
             import subprocess
+            replay_script = Path.home() / ".openclaw/workspace/weiqi-sgf/scripts/replay.py"
             result = subprocess.run(
-                ['python3', '/root/.openclaw/workspace/weiqi-sgf/scripts/replay.py', tmp_sgf, str(output_path)],
+                ['python3', str(replay_script), tmp_sgf, str(output_path)],
                 capture_output=True,
                 text=True
             )

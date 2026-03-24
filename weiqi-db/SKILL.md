@@ -42,23 +42,23 @@ python3 db.py init
 python3 db.py add --file game.sgf --json
 
 # 添加整个目录
-python3 db.py add --dir /tmp/foxwq_downloads/2026-03-23/ --tag "野狐" --json
+python3 db.py add --dir <TEMP_DIR>/foxwq_downloads/2026-03-23/ --tag "野狐" --json
 
 # 添加时补充/覆盖元数据
-python3 db.py add --file game.sgf --black "柯洁" --white "申真谞" --event "三星杯" --json
+python3 db.py add --file game.sgf --black "棋手A" --white "棋手B" --event "示例赛事" --json
 ```
 
 ### 查询棋谱
 
 ```bash
 # 查询棋手（自动匹配黑棋或白棋）
-python3 db.py query --where '{"player": "朴廷桓"}' --json
+python3 db.py query --where '{"player": "示例棋手"}' --json
 
 # 查询赛事
-python3 db.py query --where '{"event": "三星杯"}' --json
+python3 db.py query --where '{"event": "示例赛事"}' --json
 
 # 模糊搜索赛事
-python3 db.py query --where '{"event~": "KB联赛"}' --json
+python3 db.py query --where '{"event~": "联赛"}' --json
 
 # 按标签查询
 python3 db.py query --where '{"tags": "名局"}' --json
@@ -70,10 +70,10 @@ python3 db.py query --where '{"date>=": "2026-01-01"}' --json
 python3 db.py query --where '{"keyword": "中盘胜"}' --json
 
 # 组合条件
-python3 db.py query --where '{"player": "朴廷桓", "tags": "名局"}' --json
+python3 db.py query --where '{"player": "示例棋手", "tags": "名局"}' --json
 
 # AND/OR 组合
-python3 db.py query --where '{"$and": [{"player": "朴廷桓"}, {"date": "2026-03-23"}]}' --json
+python3 db.py query --where '{"$and": [{"player": "示例棋手"}, {"date": "2026-03-23"}]}' --json
 ```
 
 ### 列出所有棋谱
@@ -86,7 +86,7 @@ python3 db.py list --limit 10 --json
 ### 更新元数据
 
 ```bash
-python3 db.py update --id "2026032383118500" --set '{"black": "修正名", "event": "倡棋杯"}' --json
+python3 db.py update --id "2026032383118500" --set '{"black": "修正名", "event": "测试赛事"}' --json
 ```
 
 ### 标签管理
@@ -121,11 +121,11 @@ python3 db.py stats --json
 
 | 语法 | 含义 | 示例 |
 |------|------|------|
-| `{"player": "朴廷桓"}` | 棋手名（搜 black 或 white） | 找该棋手的所有对局 |
-| `{"black": "柯洁"}` | 只搜执黑 | 找柯洁执黑的对局 |
-| `{"white": "申真谞"}` | 只搜执白 | 找申真谞执白的对局 |
-| `{"event": "三星杯"}` | 赛事精确匹配 | 找特定比赛 |
-| `{"event~": "三星"}` | 赛事模糊匹配（~后缀） | 找含"三星"的比赛 |
+| `{"player": "示例棋手"}` | 棋手名（搜 black 或 white） | 找该棋手的所有对局 |
+| `{"black": "黑方"}` | 只搜执黑 | 找黑方执黑的对局 |
+| `{"white": "白方"}` | 只搜执白 | 找白方执白的对局 |
+| `{"event": "示例赛事"}` | 赛事精确匹配 | 找特定比赛 |
+| `{"event~": "示例"}` | 赛事模糊匹配（~后缀） | 找含"示例"的比赛 |
 | `{"tags": "名局"}` | 包含标签 | 找标为"名局"的棋 |
 | `{"date": "2026-03-23"}` | 日期精确匹配 | 找特定日期 |
 | `{"date>=": "2026-01-01"}` | 日期大于等于 | 日期范围查询 |
@@ -144,16 +144,16 @@ python3 db.py stats --json
     {
       "id": "2026032383118500",
       "sgf": "(;GM[1]FF[4]...)",
-      "black": "姜升旼",
-      "white": "金恩持",
+      "black": "棋手A",
+      "white": "棋手B",
       "black_rank": "九段",
       "white_rank": "九段",
       "date": "2026-03-23",
-      "event": "2026韩国KB围棋联赛",
+      "event": "示例围棋联赛",
       "result": "白中盘胜",
       "komi": "375",
       "movenum": 198,
-      "tags": ["韩国联赛", "绝艺讲解"],
+      "tags": ["联赛", "AI讲解"],
       "hash": "a1b2c3d4...",
       "created": "2026-03-24T12:07:45"
     }
@@ -163,14 +163,14 @@ python3 db.py stats --json
 
 ## AI 使用示例
 
-**用户**: "找朴廷桓的棋"
+**用户**: "找某棋手的棋"
 ```bash
-python3 db.py query --where '{"player": "朴廷桓"}' --json
+python3 db.py query --where '{"player": "示例棋手"}' --json
 ```
 
-**用户**: "三星杯决赛的名局"
+**用户**: "某杯赛决赛的名局"
 ```bash
-python3 db.py query --where '{"event~": "三星杯", "tags": "名局"}' --json
+python3 db.py query --where '{"event~": "杯赛", "tags": "名局"}' --json
 ```
 
 **用户**: "昨天下的棋"
