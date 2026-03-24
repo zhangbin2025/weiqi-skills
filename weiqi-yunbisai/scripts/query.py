@@ -149,8 +149,9 @@ class YunbisaiClient:
             try:
                 data = self._request(url, params)
                 api_calls += 1
-                if data.get("error") == 0:
-                    rows = data.get("datArr", {}).get("rows", [])
+                # 处理两种返回格式：带areaNum时返回{rows: []}，不带时返回{datArr: {rows: []}}
+                if data.get("error") == 0 or "datArr" in data or "rows" in data:
+                    rows = data.get("datArr", {}).get("rows") if "datArr" in data else data.get("rows", [])
                     all_events.extend(rows)
                     
                     # 如果有关键词，实时过滤并检查是否可以提前退出
@@ -166,7 +167,8 @@ class YunbisaiClient:
                             self._log(f"  ✓ 第 {page} 页找到匹配项，提前结束搜索")
                             break
                     
-                    total_pages = data.get("datArr", {}).get("TotalPage", 1)
+                    # 处理两种返回格式
+                    total_pages = data.get("datArr", {}).get("TotalPage", 1) if "datArr" in data else data.get("TotalPage", 1)
                     progress = f" ({len(matched_events)} 匹配)" if keyword and matched_events else ""
                     self._log(f"  获取第 {page}/{total_pages} 页，本页 {len(rows)} 条数据{progress}")
                     

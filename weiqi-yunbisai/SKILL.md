@@ -39,6 +39,12 @@ pip3 install requests
 # 查询广东省最近1个月的比赛
 python3 scripts/query.py
 
+# 查询浙江省最近3个月的比赛
+python3 scripts/query.py --area "浙江省" --month 3
+
+# 关键词搜索（在所有比赛中搜索含"秦山"的比赛）
+python3 scripts/query.py --area "浙江省" --month 6 --keyword "秦山"
+
 # 查询指定比赛的分组
 python3 scripts/query.py --event-id 12345
 
@@ -54,6 +60,22 @@ python3 scripts/query.py --event-id 12345 --group-id 67890 --ranking --json
 # 静默模式（减少日志输出）
 python3 scripts/query.py --group-id 67890 --ranking --quiet
 ```
+
+### 区域搜索说明
+
+**重要**：搜索特定省份比赛时，使用 `--area` 参数：
+
+```bash
+# ✅ 正确用法 - 使用完整省份名称
+python3 scripts/query.py --area "浙江省" --month 3
+python3 scripts/query.py --area "广东省" --month 1
+
+# ✅ 配合关键词快速定位比赛
+python3 scripts/query.py --area "浙江省" --keyword "秦山核电"
+```
+
+**区域代码参考**：
+- `广东省`、`浙江省`、`江苏省`、`山东省` ...
 
 ### 输出格式规则
 
