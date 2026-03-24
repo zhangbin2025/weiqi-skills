@@ -18,11 +18,9 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
-weiqi-foxwq/scripts/downloads/
-yunbisai/
+
+# Local directories
 skills/
-.clawhub/
-publish_skills.sh
 
 # Personal workspace files (local only)
 .openclaw/
