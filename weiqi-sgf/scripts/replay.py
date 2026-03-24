@@ -476,6 +476,7 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
             </div>
             <div style="width: 1px; height: 20px; background: #ddd; margin: 0 3px; flex-shrink: 0;"></div>
             <div style="display: flex; align-items: center; gap: 3px; flex-shrink: 0;">
+                <button class="btn" id="soundToggleBtn" onclick="toggleSound()" title="音效开关" style="width: 32px; height: 32px; font-size: 14px; padding: 0; background: #f0f0f0;">🔊</button>
                 <button class="btn" id="numToggleBtn" onclick="toggleNumbers()" title="显示/隐藏手数" style="width: 32px; height: 32px; font-size: 11px; padding: 0; background: #f0f0f0;">1️⃣</button>
                 <button class="btn" onclick="downloadSGF()" title="下载SGF" style="width: 32px; height: 32px; font-size: 14px; padding: 0; background: #f0f0f0;">💾</button>
                 <button class="btn" id="playBtn" onclick="togglePlay()" title="播放/暂停" style="width: 32px; height: 32px; font-size: 13px; padding: 0; font-weight: bold;">播</button>
@@ -583,6 +584,185 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
         // Canvas 设置
         const canvas = document.getElementById('board');
         const ctx = canvas.getContext('2d');
+
+        // ==================== 音效系统 ====================
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let soundEnabled = true;
+        let audioUnlocked = false;
+        let noiseBuffer = null;
+
+        // 创建噪声缓冲区（用于真实围棋音效）
+        function createNoiseBuffer() {{
+            const bufferSize = audioCtx.sampleRate * 0.1;
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {{
+                data[i] = Math.random() * 2 - 1;
+            }}
+            return buffer;
+        }}
+
+        // 解锁音频上下文（浏览器自动播放策略要求用户交互）
+        function unlockAudio() {{
+            if (!audioUnlocked && audioCtx.state === 'suspended') {{
+                audioCtx.resume().then(() => {{
+                    audioUnlocked = true;
+                }});
+            }}
+            if (!noiseBuffer) {{
+                noiseBuffer = createNoiseBuffer();
+            }}
+        }}
+        document.addEventListener('click', unlockAudio, {{ once: true }});
+        document.addEventListener('touchstart', unlockAudio, {{ once: true }});
+        document.addEventListener('keydown', unlockAudio, {{ once: true }});
+
+        // 落子音效 - 木石碰撞声（使用噪声合成）
+        function playStoneSound() {{
+            if (!soundEnabled) return;
+            if (audioCtx.state === 'suspended') {{
+                audioCtx.resume();
+            }}
+            if (!noiseBuffer) {{
+                noiseBuffer = createNoiseBuffer();
+            }}
+            
+            // 白噪声 + bandpass 滤波器模拟木石碰撞
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = noiseBuffer;
+            
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 2500;
+            filter.Q.value = 1;
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.06);
+            
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            noise.start(audioCtx.currentTime);
+            noise.stop(audioCtx.currentTime + 0.06);
+            
+            // 添加谐波增强木质感
+            const osc = audioCtx.createOscillator();
+            osc.type = 'triangle';
+            osc.frequency.value = 400;
+            
+            const oscGain = audioCtx.createGain();
+            oscGain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            oscGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+            
+            osc.connect(oscGain);
+            oscGain.connect(audioCtx.destination);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.05);
+        }}
+
+        // 吃子音效 - 提子声（更低沉、稍长，带石子散落效果）
+        function playCaptureSound() {{
+            if (!soundEnabled) return;
+            if (audioCtx.state === 'suspended') {{
+                audioCtx.resume();
+            }}
+            if (!noiseBuffer) {{
+                noiseBuffer = createNoiseBuffer();
+            }}
+            
+            // 主提子声：低通滤波的白噪声
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = noiseBuffer;
+            
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 1200;
+            filter.frequency.linearRampToValueAtTime(600, audioCtx.currentTime + 0.15);
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.6, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.18);
+            
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            noise.start(audioCtx.currentTime);
+            noise.stop(audioCtx.currentTime + 0.18);
+            
+            // 添加随机微响声模拟石子散落
+            for (let i = 0; i < 3; i++) {{
+                setTimeout(() => {{
+                    if (audioCtx.state === 'running' && soundEnabled) {{
+                        const microNoise = audioCtx.createBufferSource();
+                        microNoise.buffer = noiseBuffer;
+                        const microFilter = audioCtx.createBiquadFilter();
+                        microFilter.type = 'highpass';
+                        microFilter.frequency.value = 3000;
+                        const microGain = audioCtx.createGain();
+                        microGain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                        microGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.03);
+                        microNoise.connect(microFilter);
+                        microFilter.connect(microGain);
+                        microGain.connect(audioCtx.destination);
+                        microNoise.start(audioCtx.currentTime);
+                        microNoise.stop(audioCtx.currentTime + 0.03);
+                    }}
+                }}, 50 + i * 30);
+            }}
+        }}
+
+        // 多颗提子音效 - 增强版提子声
+        function playMultiCaptureSound(count) {{
+            if (!soundEnabled || count <= 0) return;
+            
+            // 播放主提子音
+            playCaptureSound();
+            
+            // 额外添加更多石子散落声
+            const now = audioCtx.currentTime;
+            const extraCount = Math.min(count - 1, 4);
+            for (let i = 0; i < extraCount; i++) {{
+                setTimeout(() => {{
+                    if (audioCtx.state === 'running' && soundEnabled) {{
+                        const noise = audioCtx.createBufferSource();
+                        noise.buffer = noiseBuffer;
+                        const filter = audioCtx.createBiquadFilter();
+                        filter.type = 'bandpass';
+                        filter.frequency.value = 2000 - i * 200;
+                        const gain = audioCtx.createGain();
+                        gain.gain.setValueAtTime(0.3 - i * 0.05, audioCtx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+                        noise.connect(filter);
+                        filter.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        noise.start(audioCtx.currentTime);
+                        noise.stop(audioCtx.currentTime + 0.08);
+                    }}
+                }}, i * 60);
+            }}
+        }}
+
+        // 切换音效开关
+        function toggleSound() {{
+            soundEnabled = !soundEnabled;
+            updateSoundBtn();
+        }}
+
+        function updateSoundBtn() {{
+            const btn = document.getElementById('soundToggleBtn');
+            if (soundEnabled) {{
+                btn.textContent = '🔊';
+                btn.style.background = '#f0f0f0';
+                btn.style.color = '#333';
+            }} else {{
+                btn.textContent = '🔇';
+                btn.style.background = '#ff6b6b';
+                btn.style.color = 'white';
+            }}
+        }}
 
         function resizeCanvas() {{
             const container = document.querySelector('.board-container');
@@ -768,6 +948,10 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
             }}
         }}
 
+        // 跟踪上一次的提子数量用于音效判断
+        let lastBlackCaptured = 0;
+        let lastWhiteCaptured = 0;
+
         // 更新显示
         function updateDisplay() {{
             drawBoard();
@@ -799,6 +983,28 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
                     }}
                 }}
             }}
+
+            // 播放音效（仅在向前移动时）
+            const newBlackCaptured = blackCaptured - lastBlackCaptured;
+            const newWhiteCaptured = whiteCaptured - lastWhiteCaptured;
+            const totalNewCaptured = newBlackCaptured + newWhiteCaptured;
+
+            if (totalNewCaptured > 0) {{
+                // 有提子
+                if (totalNewCaptured >= 3) {{
+                    playMultiCaptureSound(totalNewCaptured);
+                }} else {{
+                    playCaptureSound();
+                }}
+            }} else if (currentMove > 0 && currentMove > (window.lastMoveNum || 0)) {{
+                // 单纯落子（向前移动）
+                playStoneSound();
+            }}
+
+            // 更新记录
+            lastBlackCaptured = blackCaptured;
+            lastWhiteCaptured = whiteCaptured;
+            window.lastMoveNum = currentMove;
 
             // 绘制所有棋子
             for (let y = 0; y < BOARD_SIZE; y++) {{
@@ -971,6 +1177,10 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
             }});
         }}
 
+        // 变化图提子跟踪
+        let varLastBlackCaptured = 0;
+        let varLastWhiteCaptured = 0;
+
         // 进入变化图
         function enterVariation(v) {{
             inVariation = true;
@@ -980,6 +1190,11 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
                 y: m.coord.charCodeAt(1) - 97
             }}));
             varIndex = 2; // 默认显示第一手变化（跳过主分支分叉点，直接显示变化后的第一手）
+
+            // 重置变化图提子记录
+            varLastBlackCaptured = 0;
+            varLastWhiteCaptured = 0;
+            window.varLastMoveNum = 2;
 
             // 隐藏主控制面板和变化图列表
             document.getElementById('mainControls').style.display = 'none';
@@ -999,6 +1214,11 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
             // 显示主控制面板
             document.getElementById('mainControls').style.display = 'flex';
             document.getElementById('varControlPanel').style.display = 'none';
+
+            // 重置主分支音效记录
+            lastBlackCaptured = 0;
+            lastWhiteCaptured = 0;
+            window.lastMoveNum = currentMove;
 
             updateVarPanel();
             updateDisplay();
@@ -1073,7 +1293,7 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
                 for (let i = 0; i < varIndex && i < varMoves.length; i++) {{
                     const move = varMoves[i];
                     board[move.y][move.x] = move.color;
-                    
+
                     // 检查提子
                     const opponent = move.color === 'black' ? 'white' : 'black';
                     for (const [nx, ny] of getNeighbors(move.x, move.y)) {{
@@ -1091,6 +1311,25 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
                         }}
                     }}
                 }}
+
+                // 变化图音效
+                const varNewBlackCaptured = blackCaptured - varLastBlackCaptured;
+                const varNewWhiteCaptured = whiteCaptured - varLastWhiteCaptured;
+                const varTotalNewCaptured = varNewBlackCaptured + varNewWhiteCaptured;
+
+                if (varTotalNewCaptured > 0) {{
+                    if (varTotalNewCaptured >= 3) {{
+                        playMultiCaptureSound(varTotalNewCaptured);
+                    }} else {{
+                        playCaptureSound();
+                    }}
+                }} else if (varIndex > 0 && varIndex > (window.varLastMoveNum || 0)) {{
+                    playStoneSound();
+                }}
+
+                varLastBlackCaptured = blackCaptured;
+                varLastWhiteCaptured = whiteCaptured;
+                window.varLastMoveNum = varIndex;
 
                 // 绘制棋子 - 变化图模式下强制显示手数
                 const {{ margin, gridSize }} = getGridParams();
@@ -1192,6 +1431,7 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
         
         updateVarPanel();
         updateNumToggleBtn();
+        updateSoundBtn();
     </script>
 </body>
 </html>'''

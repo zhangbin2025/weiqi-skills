@@ -43,6 +43,12 @@ tags: ["围棋", "weiqi", "go", "棋谱", "SGF", "打谱", "HTML", "网页"]
 - [x] 最后一步标识（不显示手数时显示圆点标记）
 - [x] 提子数量统计
 
+### 音效系统 🆕
+- [x] 落子音效 - 清脆的"嗒"声
+- [x] 吃子音效 - 提子时的"啪"声
+- [x] 多颗提子音效 - 连珠炮般的回响效果
+- [x] 音效开关 - 可随时开启/关闭
+
 ### 导出功能
 - [x] SGF 文件下载按钮
 
@@ -83,6 +89,7 @@ python3 replay.py game.sgf mygame.html
 | ◀ | 上一手 |
 | 滑动条 | 进度跳转（0 ~ 总手数） |
 | ▶ | 下一手 |
+| 🔊/🔇 | 音效开关 |
 | 1️⃣ | 手数显示开关 |
 | 💾 | 下载SGF |
 | 播/⏸ | 播放 / 暂停 |
@@ -169,6 +176,29 @@ captureStones(board, x, y, moveColor)
 - Canvas 2D 绘图
 - 径向渐变实现棋子立体感
 - 动态重绘支持任意手数跳转
+
+### 音效系统
+使用 Web Audio API 实时生成音效，无需外部音频文件：
+
+```javascript
+// 落子音效 - 短促的"嗒"声
+oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+oscillator.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.05);
+
+// 吃子音效 - 清脆的"啪"声  
+oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime);
+oscillator.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.08);
+
+// 多颗提子音效 - 连珠炮效果
+for (let i = 0; i < count; i++) {
+    // 依次触发多个音调递减的短音
+}
+```
+
+**特点：**
+- 纯浏览器生成，无需网络加载音频文件
+- 响应式触发：前进时播放，后退时不播放
+- 区分音效：落子、提子、多颗提子各有不同音效
 
 ## 使用指令
 > "把 xxx.sgf 生成打谱网页"
