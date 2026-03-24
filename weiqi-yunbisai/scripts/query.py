@@ -361,20 +361,43 @@ class YunbisaiClient:
             return [], 0, {"count": 0, "seconds": round(elapsed, 3)}
         
         total_bouts = int(first_round.get("total_bout", 0) or 0)
-        all_matches.extend(first_round.get("rows", []))
+        # 为第1轮的对局添加轮次信息
+        first_rows = first_round.get("rows", [])
+        for row in first_rows:
+            row['bout'] = 1
+        all_matches.extend(first_rows)
         
         self._log(f"  总轮数: {total_bouts}")
         
         # 获取剩余轮次
+        completed_rounds = 1  # 第1轮已添加
         for bout in range(2, total_bouts + 1):
             round_data, _ = self.get_against_plan(group_id, bout)
-            if round_data:
-                all_matches.extend(round_data.get("rows", []))
+            if not round_data:
+                break
+            
+            rows = round_data.get("rows", [])
+            
+            # 检查该轮是否已经完成（不是所有对局的 p1_score 和 p2_score 都是 0.0）
+            is_round_completed = any(
+                float(m.get('p1_score') or 0) != 0.0 or float(m.get('p2_score') or 0) != 0.0
+                for m in rows
+            )
+            
+            if not is_round_completed:
+                self._log(f"  第 {bout} 轮尚未完成，停止获取")
+                break
+            
+            # 为该轮的对局添加轮次信息
+            for row in rows:
+                row['bout'] = bout
+            all_matches.extend(rows)
+            completed_rounds += 1
         
         elapsed = timer.stop()
-        self._log(f"✓ 共获取 {len(all_matches)} 场对局（{total_bouts}轮），耗时 {elapsed:.3f}s")
+        self._log(f"✓ 共获取 {len(all_matches)} 场对局（{completed_rounds}/{total_bouts}轮），耗时 {elapsed:.3f}s")
         
-        return all_matches, total_bouts, {"count": len(all_matches), "rounds": total_bouts, "seconds": round(elapsed, 3)}
+        return all_matches, completed_rounds, {"count": len(all_matches), "rounds": completed_rounds, "total_rounds": total_bouts, "seconds": round(elapsed, 3)}
     
     def calculate_ranking(self, matches: List[Dict]) -> Tuple[List[Dict], Dict]:
         """
@@ -407,41 +430,65 @@ class YunbisaiClient:
                         'draws': 0,
                         'score': 0,
                         'opponents': [],
-                        'progressive': []
+                        'progressive': [],
+                        'games': []  # 存储每轮对局详情
                     }
         
         # 逐轮解析
         for match in matches:
             p1_id = match.get('p1id')
             p2_id = match.get('p2id')
+            p1_name = match.get('p1', '')
+            p2_name = match.get('p2', '')
             p1_score = float(match.get('p1_score') or 0)
             p2_score = float(match.get('p2_score') or 0)
+            bout = match.get('bout', 0)  # 轮次
             
             # 处理p1
             if p1_id and p1_id in players:
-                if p2_id and match.get('p2') and p2_id in players:
+                if p2_id and p2_name and p2_id in players:
                     players[p1_id]['opponents'].append(p2_id)
                 if p1_score == 2.0:
                     players[p1_id]['wins'] += 1
+                    result = '胜'
                 elif p1_score == 0.0:
                     players[p1_id]['losses'] += 1
+                    result = '负'
                 else:
                     players[p1_id]['draws'] += 1
+                    result = '和'
                 players[p1_id]['score'] += p1_score
                 players[p1_id]['progressive'].append(players[p1_id]['score'])
+                # 记录对局详情
+                players[p1_id]['games'].append({
+                    'round': bout,
+                    'opponent': p2_name or '轮空',
+                    'result': result,
+                    'score': p1_score
+                })
             
             # 处理p2
             if p2_id and p2_id in players:
-                if p1_id and match.get('p1') and p1_id in players:
+                if p1_id and p1_name and p1_id in players:
                     players[p2_id]['opponents'].append(p1_id)
                 if p2_score == 2.0:
                     players[p2_id]['wins'] += 1
+                    result = '胜'
                 elif p2_score == 0.0:
                     players[p2_id]['losses'] += 1
+                    result = '负'
                 else:
                     players[p2_id]['draws'] += 1
+                    result = '和'
                 players[p2_id]['score'] += p2_score
                 players[p2_id]['progressive'].append(players[p2_id]['score'])
+                # 记录对局详情
+                players[p2_id]['games'].append({
+                    'round': bout,
+                    'opponent': p1_name or '轮空',
+                    'result': result,
+                    'score': p2_score
+                })
         
         # 计算对手分和累进分
         for pid, p in players.items():
@@ -507,6 +554,13 @@ class YunbisaiClient:
         .name {{ font-size: 16px; font-weight: 600; color: #333; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
         .details {{ font-size: 13px; color: #666; display: flex; gap: 12px; flex-wrap: wrap; }}
         .score {{ font-weight: bold; color: #e74c3c; }}
+        .item {{ cursor: pointer; }}
+        .item:active {{ background: #f0f0f0; }}
+        .games-detail {{ display: none; padding: 10px 16px; background: #f8f9fa; border-bottom: 1px solid #e0e0e0; }}
+        .games-table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+        .games-table th {{ background: #667eea; color: white; padding: 6px; text-align: center; }}
+        .games-table td {{ padding: 6px; border-bottom: 1px solid #eee; text-align: center; }}
+        .games-table tr:nth-child(even) {{ background: #f0f0f0; }}
         @media (max-width: 375px) {{
             .header h1 {{ font-size: 20px; }}
             .name {{ font-size: 15px; }}
@@ -549,7 +603,16 @@ class YunbisaiClient:
                     rank_text = '🥉'
                 else:
                     rank_text = str(i)
-                html_content += f'''            <div class="item">
+                
+                # 构建对局详情HTML
+                games_html = '<div class="games-detail" id="games-' + str(i) + '">'
+                games_html += '<table class="games-table">'
+                games_html += '<tr><th>轮次</th><th>对手</th><th>结果</th></tr>'
+                for game in sorted(p.get('games', []), key=lambda x: x.get('round', 0)):
+                    games_html += f"<tr><td>第{game.get('round', '-')}轮</td><td>{html.escape(str(game.get('opponent', '-')))}</td><td>{game.get('result', '-')}</td></tr>"
+                games_html += '</table></div>'
+                
+                html_content += f'''            <div class="item" onclick="toggleGames({i})">
                 <div class="{rank_class}">{rank_text}</div>
                 <div class="info">
                     <div class="name">{html.escape(str(p['name']))}</div>
@@ -561,9 +624,23 @@ class YunbisaiClient:
                     </div>
                 </div>
             </div>
+            {games_html}
 '''
             html_content += '''        </div>
     </div>
+    <script>
+        function toggleGames(idx) {
+            var detail = document.getElementById('games-' + idx);
+            if (detail.style.display === 'block') {
+                detail.style.display = 'none';
+            } else {
+                // 先关闭所有其他详情
+                var allDetails = document.querySelectorAll('.games-detail');
+                allDetails.forEach(function(d) { d.style.display = 'none'; });
+                detail.style.display = 'block';
+            }
+        }
+    </script>
 </body>
 </html>'''
             
