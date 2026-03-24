@@ -9,7 +9,7 @@
 | [weiqi-foxwq](weiqi-foxwq/) | 野狐棋谱下载 | 1.1.0 |
 | [weiqi-player](weiqi-player/) | 棋手等级分/段位查询 | 1.0.8 |
 | [weiqi-recorder](weiqi-recorder/) | 网页记谱工具 | 1.0.4 |
-| [weiqi-sgf](weiqi-sgf/) | SGF转HTML打谱网页 | 1.1.2 |
+| [weiqi-sgf](weiqi-sgf/) | SGF转HTML打谱网页 | 1.1.3 |
 | [weiqi-yunbisai](weiqi-yunbisai/) | 云比赛网比赛查询 | 1.1.0 |
 
 ## 快速开始
