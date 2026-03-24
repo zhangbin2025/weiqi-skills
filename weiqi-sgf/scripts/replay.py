@@ -131,6 +131,8 @@ def extract_variations(sgf_content, main_moves):
 
         comment_match = re.search(r'C\[([^\]]+)\]', line)
         comment = comment_match.group(1) if comment_match else ""
+        # 清理评论中的特殊字符，避免JSON解析错误
+        comment = comment.replace('\\', '/').replace('"', '')
 
         # 找到分叉点
         first_color, first_coord = moves_in_line[0]
@@ -1514,7 +1516,7 @@ def main():
 
     print(f"   提取到 {len(main_moves)} 手主分支着法")
 
-    # 提取变化图
+    # 提取变化图（包含全部）
     variations = extract_variations(sgf_content, main_moves)
     if variations:
         total = sum(len(v) for v in variations.values())
