@@ -74,7 +74,14 @@ python3 download_sgf.py 2026-03-16
 
 # 下载昨天（默认）
 python3 download_sgf.py
+
+# 自定义下载目录（环境变量）
+FOXWQ_DOWNLOAD_DIR=/my/custom/path python3 download_sgf.py
 ```
+
+**默认下载路径**: `/tmp/foxwq_downloads/<日期>/`
+
+可通过 `FOXWQ_DOWNLOAD_DIR` 环境变量修改下载目录。
 
 ## 安装依赖
 
@@ -188,7 +195,7 @@ HA[5]
 📊 下载统计
 ✅ 下载成功: 9 局
 
-📁 文件保存至: ./downloads/2026-03-16/
+📁 文件保存至: /tmp/foxwq_downloads/2026-03-16/
 
 ⏱️ 总耗时: 0.412s
 ```

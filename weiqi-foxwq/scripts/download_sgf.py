@@ -81,7 +81,7 @@ class PerformanceTimer:
 timer = PerformanceTimer()
 
 # 配置
-WORK_DIR = "./downloads"
+WORK_DIR = os.environ.get('FOXWQ_DOWNLOAD_DIR', '/tmp/foxwq_downloads')
 BASE_URL = "https://www.foxwq.com"
 LIST_URL = "https://www.foxwq.com/qipu.html"
 
