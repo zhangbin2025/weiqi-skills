@@ -8,7 +8,7 @@ tags: ["围棋", "weiqi", "go", "棋谱", "数据库", "SGF", "管理"]
 
 > **🔒 安全说明**: 本技能为纯本地工具，所有数据存储在用户主目录下的 `~/.weiqi-db/database.json`，不涉及任何网络请求或外部服务。
 
-本地围棋棋谱数据库，统一收纳来自野狐、云比赛网、本地SGF文件等来源的棋谱，支持全文搜索、标签管理、元数据编辑。
+本地围棋棋谱数据库，统一收纳来自野狐、本地SGF文件等来源的棋谱，支持全文搜索、标签管理、元数据编辑。
 
 ## 核心特性
 
@@ -184,8 +184,8 @@ python3 db.py tag --id "xxx" --add "名局" --json
 
 ## 相关技能
 
-- [weiqi-foxwq](../weiqi-foxwq) - 野狐棋谱下载
-- [weiqi-yunbisai](../weiqi-yunbisai) - 云比赛网查询
+- [weiqi-foxwq](../weiqi-foxwq) - 野狐棋谱下载（棋谱来源）
+- [weiqi-yunbisai](../weiqi-yunbisai) - 云比赛网查询（比赛信息查询，不提供棋谱下载）
 
 ## 版本更新
 
