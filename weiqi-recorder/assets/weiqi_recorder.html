@@ -12,71 +12,97 @@
             -webkit-tap-highlight-color: transparent;
         }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-            background: #e8e8e8;
-            padding: 10px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 6px;
             display: flex;
             flex-direction: column;
             align-items: center;
             min-height: 100vh;
             touch-action: manipulation;
         }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            padding: 8px;
+            max-width: 100%;
+            width: 100%;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 8px;
+        }
+        .header h1 {
+            font-size: 15px;
+            color: #333;
+            margin-bottom: 2px;
+            line-height: 1.2;
+        }
         .stone-indicator {
             width: 20px;
             height: 20px;
             border-radius: 50%;
-            border: 1px solid #666;
         }
         .stone-indicator.black {
-            background: #222;
+            background: radial-gradient(circle at 30% 30%, #666, #000);
         }
         .stone-indicator.white {
-            background: #fff;
+            background: radial-gradient(circle at 30% 30%, #fff, #ccc);
+            border: 1px solid #ddd;
         }
         .board-container {
+            display: flex;
+            justify-content: center;
+            margin: 10px 0;
             position: relative;
-            background: #d4a574;
-            border-radius: 4px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-            padding: 4px;
-            max-width: 100%;
+            width: 100%;
         }
         #board {
-            display: block;
+            background: #E3C16F;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
             max-width: 100%;
+            width: 100%;
             height: auto;
+            aspect-ratio: 1 / 1;
+            display: block;
             touch-action: none;
         }
         .toolbar {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-top: 12px;
+            gap: 8px;
+            margin: 12px 0;
             padding: 0 10px;
-            width: 100%;
-            max-width: 600px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 8px;
         }
         .btn-group {
             display: flex;
             gap: 10px;
         }
         .toolbar button {
-            width: 36px;
-            height: 36px;
+            width: 32px;
+            height: 32px;
             border: none;
             border-radius: 50%;
             cursor: pointer;
             font-size: 18px;
-            background: #666;
-            color: white;
-            transition: all 0.15s;
+            font-weight: bold;
+            background: #f0f0f0;
+            color: #333;
+            transition: all 0.2s ease;
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 0;
         }
         .toolbar button:active {
-            transform: scale(0.92);
-            background: #444;
+            transform: scale(0.95);
         }
         .move-display {
             display: flex;
@@ -106,23 +132,27 @@
     </style>
 </head>
 <body>
-
-    
-    <div class="board-container">
-        <canvas id="board"></canvas>
-    </div>
-    
-    <div class="toolbar">
-        <div class="move-display">
-            <div id="player-indicator" class="stone-indicator black"></div>
-            <span id="move-num">0</span>手
+    <div class="container">
+        <div class="header">
+            <h1>围棋记谱</h1>
         </div>
-        <div class="btn-group">
-            <button onclick="undoMove()">↶</button>
-            <button onclick="passMove()">⊘</button>
-            <button onclick="clearBoard()">+</button>
-            <button onclick="exportSGF()">↓</button>
-            <button onclick="copySGF()" title="复制SGF到剪贴板">⧉</button>
+        
+        <div class="board-container">
+            <canvas id="board"></canvas>
+        </div>
+        
+        <div class="toolbar">
+            <div class="btn-group">
+                <button onclick="undoMove()">↶</button>
+                <button onclick="passMove()">⊘</button>
+                <button onclick="clearBoard()">+</button>
+                <button onclick="exportSGF()">↓</button>
+                <button onclick="copySGF()" title="复制SGF到剪贴板">⧉</button>
+            </div>
+            <div class="move-display">
+                <div id="player-indicator" class="stone-indicator black"></div>
+                <span id="move-num">0</span>手
+            </div>
         </div>
     </div>
     
@@ -486,10 +516,10 @@
         }
         
         function drawBoard() {
-            ctx.fillStyle = '#d4a574';
+            ctx.fillStyle = '#E3C16F';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            ctx.strokeStyle = '#333';
+            ctx.strokeStyle = '#666';
             ctx.lineWidth = 1;
             
             for (let i = 0; i < BOARD_SIZE; i++) {
@@ -536,12 +566,24 @@
                 const radius = GRID_SIZE * 0.46;
                 
                 if (move.player === 'B') {
-                    ctx.fillStyle = '#222';
+                    const gradient = ctx.createRadialGradient(
+                        x - radius * 0.3, y - radius * 0.3, radius * 0.1,
+                        x, y, radius
+                    );
+                    gradient.addColorStop(0, '#666');
+                    gradient.addColorStop(1, '#000');
+                    ctx.fillStyle = gradient;
                     ctx.beginPath();
                     ctx.arc(x, y, radius, 0, Math.PI * 2);
                     ctx.fill();
                 } else {
-                    ctx.fillStyle = '#fff';
+                    const gradient = ctx.createRadialGradient(
+                        x - radius * 0.3, y - radius * 0.3, radius * 0.1,
+                        x, y, radius
+                    );
+                    gradient.addColorStop(0, '#fff');
+                    gradient.addColorStop(1, '#ccc');
+                    ctx.fillStyle = gradient;
                     ctx.beginPath();
                     ctx.arc(x, y, radius, 0, Math.PI * 2);
                     ctx.fill();
@@ -1043,5 +1085,6 @@
         
         init();
     </script>
+</div>
 </body>
 </html>
