@@ -1259,6 +1259,11 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
         function enterTrialMode() {{
             // 播放中时不能试下
             if (isPlaying) return;
+            // 变化图模式下暂不支持试下
+            if (inVariation) {{
+                alert('变化图模式下暂不支持试下功能');
+                return;
+            }}
             inTrialMode = true;
             trialMoves = [];
             trialIndex = 0;
