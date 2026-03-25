@@ -6,11 +6,12 @@
 
 | 技能包 | 功能 | 版本 |
 |--------|------|------|
-| [weiqi-foxwq](weiqi-foxwq/) | 野狐棋谱下载 | 1.1.0 |
-| [weiqi-player](weiqi-player/) | 棋手等级分/段位查询 | 1.0.8 |
-| [weiqi-recorder](weiqi-recorder/) | 网页记谱工具 | 1.0.4 |
-| [weiqi-sgf](weiqi-sgf/) | SGF转HTML打谱网页 | 1.1.3 |
-| [weiqi-yunbisai](weiqi-yunbisai/) | 云比赛网比赛查询 | 1.1.0 |
+| [weiqi-db](weiqi-db/) | 围棋棋谱数据库 | 1.0.0 |
+| [weiqi-foxwq](weiqi-foxwq/) | 野狐棋谱下载 | 1.1.1 |
+| [weiqi-player](weiqi-player/) | 棋手等级分/段位查询 | 1.0.9 |
+| [weiqi-recorder](weiqi-recorder/) | 网页记谱工具 | 1.0.6 |
+| [weiqi-sgf](weiqi-sgf/) | SGF转HTML打谱网页 | 1.1.5 |
+| [weiqi-yunbisai](weiqi-yunbisai/) | 云比赛网比赛查询 | 1.1.2 |
 
 ## 快速开始
 
@@ -21,6 +22,7 @@
 通过 [ClawHub](https://clawhub.ai) 安装：
 
 ```bash
+clawhub install weiqi-db
 clawhub install weiqi-foxwq
 clawhub install weiqi-player
 clawhub install weiqi-recorder
@@ -29,6 +31,12 @@ clawhub install weiqi-yunbisai
 ```
 
 ## 功能详解
+
+### 🗄️ weiqi-db - 围棋棋谱数据库
+- 本地棋谱管理工具，统一收纳野狐、本地SGF等来源的棋谱
+- 支持SGF导入、元数据编辑、标签管理
+- 全文搜索、JSON查询语法，AI友好接口
+- 数据存储于 `~/.weiqi-db/database.json` 单文件
 
 ### 🔽 weiqi-foxwq - 野狐棋谱下载
 - 按日期批量下载野狐围棋棋谱
