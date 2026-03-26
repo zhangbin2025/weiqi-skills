@@ -1,0 +1,313 @@
+---
+name: weiqi-fetcher
+description: 多源围棋棋谱下载器 - 支持从OGS、野狐围棋等平台下载SGF棋谱
+---
+
+# weiqi-fetcher - 多源围棋棋谱下载器
+
+从多种围棋网站/平台的分享链接自动下载SGF棋谱。
+
+## 支持的平台
+
+| 平台 | 状态 | 实现方式 | 速度 |
+|------|------|----------|------|
+| **OGS** | ✅ 可用 | REST API | ~0.3s |
+| **野狐围棋** | ✅ 可用 | REST API | ~0.1s |
+| **101围棋网** | ✅ 可用 | WebSocket | ~1s |
+| **弈客围棋** | ✅ 可用 | Playwright浏览器 | ~10s |
+| **元萝卜围棋** | ✅ 可用 | REST API | ~0.3s |
+| **弈城围棋** | 🚧 计划中 | 待定 | - |
+
+## 使用方法
+
+### 自动识别下载
+
+```bash
+cd /path/to/weiqi-fetcher/scripts
+
+# OGS对局
+python3 main.py "https://online-go.com/game/85445564"
+
+# 野狐对局
+python3 main.py "https://h5.foxwq.com/yehunewshare/?chessid=1234567890123456789"
+
+# 101围棋网
+python3 main.py "https://www.101weiqi.com/play/p/14629903/"
+
+# 弈客围棋（需要Playwright）
+python3 main.py "https://home.yikeweiqi.com/mobile.html#/golive/room/12345/..."
+
+# 元萝卜围棋
+python3 main.py "https://jupiter.yuanluobo.com/robot-public/all-in-app/go/review?session_id=..."
+```
+
+### 指定输出文件
+
+```bash
+python3 main.py "https://online-go.com/game/85445564" -o ~/games/mygame.sgf
+```
+
+### 强制指定来源
+
+```bash
+python3 main.py "..." --source ogs
+```
+
+### 列出支持的来源
+
+```bash
+python3 main.py --list-sources
+```
+
+### 静默模式（仅输出文件路径）
+
+```bash
+python3 main.py "..." --silent
+```
+
+## 临时目录
+
+默认下载路径: `/tmp/weiqi_fetch/YYYYMMDD_HHMMSS/<来源>/`
+
+## 输出示例
+
+```
+============================================================
+🎯 weiqi-fetcher - 多源围棋棋谱下载器
+============================================================
+
+🌐 识别到来源: OGS (Online-Go)
+
+✅ 下载成功！
+
+🌐 来源: ogs
+🔗 URL: https://online-go.com/game/85445564
+
+📋 对局信息:
+  黑棋: Pandy 7k
+  白棋: GM.SUA 1d
+  规则: japanese
+  贴目: 6.5
+  手数: 31
+  结果: 进行中
+
+💾 文件保存: /tmp/weiqi_fetch/20260326_175713/ogs_85445564.sgf
+
+⏱️ 性能统计:
+  extract_id          : 0.000s
+  api_request         : 0.312s
+  sgf_generation      : 0.001s
+  save_file           : 0.000s
+  总计                : 0.313s
+
+============================================================
+```
+
+## 各平台技术说明
+
+### OGS (Online-Go.com)
+
+- **API端点**: `https://online-go.com/api/v1/games/{id}`
+- **特点**: 公开API，无需登录
+- **数据格式**: JSON，包含完整着法数据
+- **坐标系统**: (0,0)=左上，需要转换为SGF格式
+
+### 野狐围棋 (foxwq.com)
+
+- **API端点**: 
+  - 棋谱: `https://h5.foxwq.com/yehuDiamond/chessbook_local/YHWQFetchChess?chessid={id}`
+  - 详情: `https://h5.foxwq.com/yehuDiamond/chessbook_local/FetchChessSummaryByChessID?chessid={id}`
+- **特点**: 直接返回SGF格式
+- **限制**: 历史棋谱API可用，进行中对局需WebSocket
+
+### 101围棋网 (101weiqi.com)
+
+- **数据提取**: 
+  - Step=0: 页面 `playInfo` 直接获取
+  - Step>0: WebSocket `wss://playdo.101weiqi.com/9001/pp/playroom`
+- **URL模式**: `https://www.101weiqi.com/play/p/{id}/`
+- **特点**: 
+  - 段位显示为等级分制（如 7K, 16K）
+  - 默认中国规则，贴目7.5
+  - 支持让子棋
+- **坐标系统**: 字母坐标 (如 'pc', 'dq') → SGF格式
+- **WebSocket协议**: 
+  1. 连接后发送 `{"cmd": "init_user", "pkey": "play:{id}", "userkey": "..."}`
+  2. 发送 `{"cmd": "getinitdata"}` 获取棋谱
+  3. 返回数据包含 `pos` 数组（字母坐标格式）
+
+### 弈客围棋 (yikeweiqi.com)
+
+- **实现方式**: Playwright浏览器自动化
+- **URL模式**: `https://home.yikeweiqi.com/mobile.html#/golive/room/{id}/...`
+- **特点**:
+  - 支持实时直播对局
+  - 自动提取完整SGF棋谱
+  - 需要Playwright和Chromium浏览器
+- **依赖安装**:
+  ```bash
+  pip install playwright
+  playwright install chromium
+  ```
+- **数据来源**:
+  - `hawkeye_analyses` API: 比赛基本信息
+  - `api.yikeweiqi.com/v2/golive/dtl`: 对局详情
+  - `hawkeye.yikeweiqi.com/api/report/live/move`: 棋谱数据
+
+### 元萝卜围棋 (yuanluobo.com)
+
+- **实现方式**: 纯REST API
+- **URL模式**: `https://jupiter.yuanluobo.com/robot-public/all-in-app/go/review?session_id=...`
+- **特点**:
+  - AI围棋机器人对局记录
+  - 支持让子棋
+  - 无需浏览器，速度最快（约0.3秒）
+- **API端点**: `POST https://jupiter.yuanluobo.com/r2/chess/wq/sdr/v3/record/detail`
+- **请求参数**: `{"sessionId": "..."}`
+- **数据来源**:
+  - `recording.moves`: 棋谱数据
+  - `coordinate` 字段: 已是SGF格式（如 `W[cd]`、`B[qp]`）
+
+## 扩展新平台
+
+1. 在 `scripts/sources/` 下创建新文件（如 `fetch_newsite.py`）
+2. 继承 `BaseSourceFetcher`，实现 `fetch()` 方法
+3. 设置 `name`, `display_name`, `url_patterns`
+4. 在 `__init__.py` 中导入
+
+示例:
+
+```python
+from .base import BaseSourceFetcher, FetchResult, register_fetcher
+
+@register_fetcher
+class NewsiteFetcher(BaseSourceFetcher):
+    name = "newsite"
+    display_name = "新站点"
+    url_patterns = [r'newsite\.com/game/(\d+)']
+    url_examples = ["https://newsite.com/game/12345"]
+    
+    def fetch(self, url: str, output_path: str = None) -> FetchResult:
+        # 实现下载逻辑
+        pass
+```
+
+## 安装
+
+### 基础依赖
+
+所有平台都需要：
+```bash
+pip3 install requests
+```
+
+### 弈客围棋额外依赖
+
+弈客围棋使用浏览器自动化，需要安装 Playwright：
+```bash
+pip3 install playwright
+playwright install chromium
+```
+
+### 完整安装（推荐）
+
+```bash
+# 安装所有依赖
+pip3 install requests playwright websocket-client
+
+# 安装 Chromium 浏览器
+playwright install chromium
+```
+
+## 目录结构
+
+```
+weiqi-fetcher/
+├── SKILL.md                    # 本文档
+├── scripts/
+│   ├── main.py                 # 主入口程序
+│   └── sources/                # 各平台实现
+│       ├── __init__.py
+│       ├── base.py             # 基类定义
+│       ├── fetch_ogs.py        # OGS平台
+│       ├── fetch_fox.py        # 野狐围棋
+│       ├── fetch_101.py        # 101围棋网
+│       ├── fetch_yike.py       # 弈客围棋
+│       └── fetch_yuanluobo.py  # 元萝卜围棋
+└── tmp/                        # 临时下载目录
+```
+
+## 注意事项
+
+### 腾讯围棋（txwq.qq.com）
+
+⚠️ **暂未支持**
+
+腾讯围棋使用自定义protobuf协议和加密WebSocket传输棋谱数据，需要逆向工程才能解析。正在研究中。
+
+### SGF文件编码
+
+下载的SGF文件使用UTF-8编码，兼容所有现代围棋软件（如Sabaki、Lizzie、棋魂等）。
+
+### 临时文件清理
+
+下载的SGF文件默认保存在 `/tmp/weiqi_fetch/` 目录下。系统重启后会自动清理，如需保留请使用 `-o` 参数指定保存位置。
+
+## 故障排除
+
+### 问题："Playwright未安装"
+
+**解决**：
+```bash
+pip3 install playwright
+playwright install chromium
+```
+
+### 问题："WebSocket获取棋谱失败"（101围棋网）
+
+**原因**：网络连接问题或页面结构变化
+**解决**：检查网络，或稍后再试
+
+### 问题："API请求失败"
+
+**原因**：对方网站服务不可用或URL错误
+**解决**：
+1. 检查URL是否正确
+2. 确认对局是否公开可访问
+3. 稍后再试
+
+### 问题：下载的SGF棋盘方向不对
+
+**原因**：坐标转换问题
+**解决**：这是已知问题，正在修复中。请检查SGF文件中的坐标是否正确。
+
+## 依赖
+
+## 版本历史
+
+### v0.5.0 (2026-03-26)
+- ✅ 元萝卜围棋支持（Playwright浏览器自动化）
+- ✅ AI围棋机器人对局下载
+- ✅ 支持让子棋数据
+
+### v0.4.0 (2026-03-26)
+- ✅ 弈客围棋支持（Playwright浏览器自动化）
+- ✅ 支持实时直播对局下载
+- ✅ 自动提取完整SGF
+
+### v0.3.0 (2026-03-26)
+- ✅ 101围棋网完整WebSocket支持
+- ✅ 获取进行中和已结束对局
+- ✅ 字母坐标转换SGF格式
+
+### v0.2.0 (2026-03-26)
+- ✅ 101围棋网支持（页面数据提取）
+- ✅ 等级分段位转换
+- ✅ 中国规则/贴目支持
+
+### v0.1.0 (2026-03-26)
+- ✅ OGS支持（REST API）
+- ✅ 野狐围棋支持（API模式）
+- ✅ 统一基类架构
+- ✅ 自动URL识别
+- ✅ 性能计时统计
