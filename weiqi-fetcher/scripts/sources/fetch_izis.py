@@ -208,7 +208,7 @@ class IzisFetcher(BaseSourceFetcher):
         xxxx = 列号(2位) + 行号(2位), 1-based
         例如: +0404 = 黑棋第4列第4行
         
-        注意: 隐智坐标与SGF坐标直接对应，无需翻转
+        注意: 隐智坐标需要行列互换 + Y轴翻转才能正确对应SGF坐标
         """
         moves = []
         if not allstep:
@@ -227,12 +227,11 @@ class IzisFetcher(BaseSourceFetcher):
                 
                 # 验证坐标范围
                 if 0 <= x < board_size and 0 <= y < board_size:
-                    # 隐智坐标与SGF坐标直接对应，无需翻转
-                    # 隐智: (1,1)=左上, (19,19)=右下
-                    # SGF: (a,a)=左下, (s,s)=右上
-                    # 但隐智的0404直接对应SGF的dd
-                    sgf_x = chr(ord('a') + x)
-                    sgf_y = chr(ord('a') + y)
+                    # 隐智坐标: XXYY，XX=列(X)，YY=行(Y)
+                    # 需要行列互换 + Y轴翻转
+                    # 隐智0404 (列4,行4) -> SGF dp (列4,行16)
+                    sgf_x = chr(ord('a') + y)  # 隐智行 -> SGF列
+                    sgf_y = chr(ord('a') + (board_size - 1 - x))  # 隐智列 -> SGF行(翻转)
                     sgf_coord = sgf_x + sgf_y
                     
                     sgf_color = 'B' if color == '+' else 'W'
