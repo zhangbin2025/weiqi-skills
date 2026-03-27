@@ -20,6 +20,7 @@ from . import fetch_izis
 from . import fetch_yike_shaoer
 from . import fetch_eweiqi
 from . import fetch_txwq
+from . import fetch_xinboduiyi
 
 __all__ = [
     'BaseSourceFetcher',
