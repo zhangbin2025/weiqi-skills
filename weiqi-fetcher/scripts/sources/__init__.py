@@ -19,6 +19,7 @@ from . import fetch_1919
 from . import fetch_izis
 from . import fetch_yike_shaoer
 from . import fetch_eweiqi
+from . import fetch_txwq
 
 __all__ = [
     'BaseSourceFetcher',
