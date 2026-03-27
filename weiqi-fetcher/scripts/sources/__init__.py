@@ -16,6 +16,7 @@ from . import fetch_101
 from . import fetch_yike
 from . import fetch_yuanluobo
 from . import fetch_1919
+from . import fetch_izis
 
 __all__ = [
     'BaseSourceFetcher',
