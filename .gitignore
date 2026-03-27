@@ -24,6 +24,8 @@ skills/
 
 # Personal workspace files (local only)
 .openclaw/
+.clawhub/
+memory/
 AGENTS.md
 MEMORY.md
 SOUL.md

@@ -83,6 +83,86 @@ def calc_hash(sgf_content: str) -> str:
     return hashlib.md5(normalized.encode('utf-8')).hexdigest()[:16]
 
 
+def calc_similarity_hash(sgf_content: str) -> str:
+    """计算棋谱相似度哈希（用于检测同一盘棋的不同SGF版本）
+    
+    忽略以下可变字段：
+    - 文件头信息（FF, AP, SZ等）
+    - 时间戳、日期格式差异
+    - 注释和标记
+    只保留：棋盘大小、 handicap、对局实质内容（落子序列）
+    """
+    # 移除所有空白
+    normalized = re.sub(r'\s+', '', sgf_content.strip())
+    
+    # 提取关键信息
+    size_match = re.search(r'SZ\[(\d+)\]', normalized)
+    size = size_match.group(1) if size_match else '19'
+    
+    # 提取 handicap
+    handicap_match = re.search(r'HA\[(\d+)\]', normalized)
+    handicap = handicap_match.group(1) if handicap_match else '0'
+    
+    # 提取所有落子（只保留坐标，去掉注释、标记等）
+    moves = re.findall(r';[BW]\[([a-z]{2})\]', normalized)
+    move_seq = ''.join(moves)
+    
+    # 组合关键信息计算哈希
+    key_content = f"SZ:{size}|HA:{handicap}|MOVES:{move_seq}"
+    return hashlib.md5(key_content.encode('utf-8')).hexdigest()[:16]
+
+
+def find_conflicts(table, meta: Dict[str, Any], content_hash: str, similarity_hash: str) -> List[Dict[str, Any]]:
+    """查找可能的冲突记录
+    
+    冲突类型：
+    1. exact - 完全重复（内容哈希相同）
+    2. similar - 相似棋谱（日期+黑白棋手相同）
+    3. potential - 潜在重复（相似哈希相同但内容不同）
+    """
+    conflicts = []
+    
+    for game in table.all():
+        conflict_type = None
+        
+        # 检查完全重复
+        if game.get('hash') == content_hash:
+            conflict_type = 'exact'
+        # 检查相似哈希（同一盘棋的不同SGF版本）
+        elif game.get('similarity_hash') == similarity_hash:
+            conflict_type = 'potential'
+        # 检查日期+棋手组合（同一盘棋的标识）
+        elif (meta.get('date') and meta.get('date') == game.get('date') and
+              meta.get('black') and meta.get('white') and
+              meta.get('black') == game.get('black') and
+              meta.get('white') == game.get('white')):
+            conflict_type = 'similar'
+        
+        if conflict_type:
+            conflicts.append({
+                'id': game.get('id'),
+                'type': conflict_type,
+                'existing': {k: v for k, v in game.items() if k not in ('sgf', 'hash', 'similarity_hash')},
+                'diff': calc_diff(meta, game)
+            })
+    
+    return conflicts
+
+
+def calc_diff(new_meta: Dict[str, Any], existing: Dict[str, Any]) -> Dict[str, Any]:
+    """计算新旧记录的元数据差异"""
+    diff = {}
+    fields = ['black', 'white', 'black_rank', 'white_rank', 'date', 'event', 'result', 'komi', 'movenum']
+    
+    for field in fields:
+        old_val = existing.get(field, '')
+        new_val = new_meta.get(field, '')
+        if old_val != new_val:
+            diff[field] = {'old': old_val, 'new': new_val}
+    
+    return diff
+
+
 _id_counter = 0
 
 def generate_id() -> str:
@@ -114,6 +194,42 @@ def cmd_init(args):
     }
 
 
+def find_conflicts(table, meta: Dict[str, Any], content_hash: str) -> List[Dict]:
+    """
+    查找可能的冲突棋谱
+    冲突类型：
+    1. 哈希完全重复（相同SGF内容）
+    2. 元数据重复（同棋手、同日期、可能同一局棋）
+    """
+    conflicts = []
+    all_games = table.all()
+    
+    for game in all_games:
+        conflict_type = None
+        
+        # 类型1: 哈希完全重复
+        if game.get('hash') == content_hash:
+            conflict_type = 'hash'
+        # 类型2: 元数据重复（同棋手 + 同日期）
+        elif (game.get('black') == meta.get('black') and 
+              game.get('white') == meta.get('white') and
+              game.get('date') == meta.get('date') and
+              meta.get('date')):  # 确保日期不为空
+            # 进一步检查：手数相近或结果相同
+            if (game.get('movenum') == meta.get('movenum') or
+                game.get('result') == meta.get('result')):
+                conflict_type = 'metadata'
+        
+        if conflict_type:
+            conflicts.append({
+                'id': game.get('id'),
+                'type': conflict_type,
+                'game': game
+            })
+    
+    return conflicts
+
+
 def cmd_add(args):
     """添加棋谱"""
     db = ensure_db()
@@ -122,6 +238,11 @@ def cmd_add(args):
     results = []
     added_count = 0
     skipped_count = 0
+    overwritten_count = 0
+    conflict_details = []
+    
+    # 冲突处理策略
+    conflict_strategy = getattr(args, 'conflict', 'skip')  # skip, overwrite, keep
     
     # 收集要添加的文件
     files = []
@@ -147,15 +268,54 @@ def cmd_add(args):
             with open(file_path, 'r', encoding='utf-8') as f:
                 sgf_content = f.read()
             
-            # 计算哈希检查重复
+            # 计算哈希
             content_hash = calc_hash(sgf_content)
-            if content_hash in existing_hashes:
-                skipped_count += 1
-                results.append({"file": str(file_path), "success": False, "error": "重复棋谱"})
-                continue
             
             # 解析SGF
             meta = parse_sgf(sgf_content)
+            
+            # 检查冲突
+            conflicts = find_conflicts(table, meta, content_hash)
+            
+            if conflicts:
+                conflict = conflicts[0]  # 取第一个冲突
+                conflict_type = conflict['type']
+                existing_id = conflict['id']
+                
+                if conflict_strategy == 'skip':
+                    skipped_count += 1
+                    conflict_details.append({
+                        "file": str(file_path),
+                        "action": "skipped",
+                        "conflict_type": conflict_type,
+                        "existing_id": existing_id
+                    })
+                    conflict_desc = '相同棋谱' if conflict_type == 'hash' else '可能重复'
+                    results.append({
+                        "file": str(file_path), 
+                        "success": False, 
+                        "error": f"冲突: {conflict_desc}",
+                        "conflict_type": conflict_type,
+                        "existing_id": existing_id
+                    })
+                    continue
+                
+                elif conflict_strategy == 'overwrite':
+                    # 删除旧记录，添加新记录
+                    Game = Query()
+                    table.remove(Game.id == existing_id)
+                    existing_hashes.discard(conflict['game'].get('hash', ''))
+                    overwritten_count += 1
+                    conflict_details.append({
+                        "file": str(file_path),
+                        "action": "overwritten",
+                        "conflict_type": conflict_type,
+                        "existing_id": existing_id
+                    })
+                
+                elif conflict_strategy == 'keep':
+                    # 保留两者，不做任何处理，直接添加
+                    pass
             
             # 命令行参数覆盖
             if args.black:
@@ -218,7 +378,10 @@ def cmd_add(args):
         "success": True,
         "added": added_count,
         "skipped": skipped_count,
+        "overwritten": overwritten_count,
         "total": len(files),
+        "conflict_strategy": conflict_strategy,
+        "conflicts": conflict_details,
         "results": results
     }
 
@@ -560,6 +723,8 @@ def main():
     add_parser.add_argument('--result', help='对局结果')
     add_parser.add_argument('--komi', help='贴目')
     add_parser.add_argument('--tag', action='append', help='标签（可多次指定）')
+    add_parser.add_argument('--conflict', choices=['skip', 'overwrite', 'keep'], 
+                           default='skip', help='冲突处理策略: skip(跳过), overwrite(覆盖), keep(保留两者)')
     
     # query
     query_parser = subparsers.add_parser('query', help='查询棋谱')

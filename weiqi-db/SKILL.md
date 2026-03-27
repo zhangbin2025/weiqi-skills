@@ -45,7 +45,16 @@ python3 db.py add --dir <TEMP_DIR>/foxwq_downloads/2026-03-23/ --tag "野狐" --
 
 # 添加时补充/覆盖元数据
 python3 db.py add --file game.sgf --black "棋手A" --white "棋手B" --event "示例赛事" --json
+
+# 冲突处理策略
+python3 db.py add --dir ./downloads/ --conflict skip     # 默认：跳过重复
+python3 db.py add --dir ./downloads/ --conflict overwrite # 覆盖已有棋谱
+python3 db.py add --dir ./downloads/ --conflict keep      # 保留两者
 ```
+
+**冲突检测类型：**
+- `hash`: SGF内容完全相同（基于MD5哈希）
+- `metadata`: 元数据重复（同棋手+同日期+同手数/结果，可能是同一局棋的不同来源）
 
 ### 查询棋谱
 
@@ -188,6 +197,12 @@ python3 db.py tag --id "xxx" --add "名局" --json
 - [weiqi-yunbisai](../weiqi-yunbisai) - 云比赛网查询（比赛信息查询，不提供棋谱下载）
 
 ## 版本更新
+
+### v1.1.0 (2026-03-27)
+- ✅ 导入冲突检测功能
+  - 支持哈希级重复检测（相同SGF内容）
+  - 支持元数据级重复检测（同棋手+同日期）
+  - 三种冲突处理策略：`skip`(跳过)、`overwrite`(覆盖)、`keep`(保留两者)
 
 ### v1.0.0 (2026-03-24)
 - ✅ 初始版本发布
