@@ -18,7 +18,7 @@ class Weiqi101Fetcher(BaseSourceFetcher):
         r'101weiqi\.(com|cn)/play/(\d+)',
     ]
     url_examples = [
-        "https://www.101weiqi.com/play/p/14629903/",
+        "https://www.101weiqi.com/play/p/{PLAY_ID}/",
     ]
     
     @classmethod

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-weiqi-fetcher - 多源围棋棋谱下载器
+围棋分享棋谱下载器 - 从分享链接自动下载SGF棋谱
 """
 
 import sys
@@ -14,7 +14,7 @@ from sources import get_fetcher_for_url, get_fetcher_by_name, list_fetchers
 
 def print_banner():
     print("=" * 60)
-    print("🎯 weiqi-fetcher - 多源围棋棋谱下载器")
+    print("🎯 围棋分享棋谱下载器")
     print("=" * 60)
 
 def print_result(result):
@@ -78,13 +78,13 @@ def list_sources():
 
 def main():
     parser = argparse.ArgumentParser(
-        description='多源围棋棋谱下载器 - 支持OGS、野狐围棋等',
+        description='围棋分享棋谱下载器 - 支持OGS、野狐围棋等平台',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  python3 main.py "https://online-go.com/game/85445564"
-  python3 main.py "https://h5.foxwq.com/yehunewshare/?chessid=123456"
-  python3 main.py "..." -o /path/to/output.sgf
+  python3 main.py "https://online-go.com/game/{GAME_ID}"
+  python3 main.py "https://h5.foxwq.com/yehunewshare/?chessid={CHESS_ID}"
+  python3 main.py "{URL}" -o /path/to/output.sgf
   python3 main.py --list-sources
         """
     )

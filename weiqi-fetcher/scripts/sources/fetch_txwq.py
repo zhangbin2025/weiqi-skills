@@ -20,7 +20,7 @@ class TxwqFetcher(BaseSourceFetcher):
         r'txwq\.qq\.com.*chessid=(\d+)',
     ]
     url_examples = [
-        "https://h5.txwq.qq.com/txwqshare/index.html?chessid=1774531827010001676",
+        "https://h5.txwq.qq.com/txwqshare/index.html?chessid={CHESS_ID}",
     ]
     
     def fetch(self, url: str, output_path: str = None) -> FetchResult:

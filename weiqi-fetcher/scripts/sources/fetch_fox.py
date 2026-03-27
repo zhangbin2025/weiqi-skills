@@ -14,7 +14,7 @@ class FoxwqFetcher(BaseSourceFetcher):
         r'foxwq\.com.*chessid=(\d+)',
     ]
     url_examples = [
-        "https://h5.foxwq.com/yehunewshare/?chessid=1234567890123456789",
+        "https://h5.foxwq.com/yehunewshare/?chessid={CHESS_ID}",
     ]
     
     def fetch(self, url: str, output_path: str = None) -> FetchResult:

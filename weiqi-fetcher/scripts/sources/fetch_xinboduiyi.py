@@ -26,8 +26,8 @@ class XinboduiyiFetcher(BaseSourceFetcher):
     ]
     
     url_examples = [
-        "https://www.xinboduiyi.com/play-room?id=xxx",
-        "https://weiqi.xinboduiyi.com/golive/index.html#/?gamekey=xxx",
+        "https://www.xinboduiyi.com/play-room?id={GAME_ID}",
+        "https://weiqi.xinboduiyi.com/golive/index.html#/?gamekey={GAME_KEY}",
     ]
     
     def fetch(self, url: str, output_path: str = None) -> FetchResult:

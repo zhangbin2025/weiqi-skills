@@ -17,7 +17,7 @@ class IzisFetcher(BaseSourceFetcher):
         r'app\.izis\.cn.*gameId=(\d+)',
     ]
     url_examples = [
-        "http://app.izis.cn/web/#/live_detail?gameId=888522&type=2",
+        "http://app.izis.cn/web/#/live_detail?gameId={GAME_ID}&type=2",
     ]
     
     # API端点

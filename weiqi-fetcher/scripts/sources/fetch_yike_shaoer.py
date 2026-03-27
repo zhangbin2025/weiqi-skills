@@ -22,7 +22,7 @@ class YikeShaoerFetcher(BaseSourceFetcher):
         r'shaoer\.yikeweiqi\.com.*p=([A-Za-z0-9+/=]+)',
     ]
     url_examples = [
-        "https://shaoer.yikeweiqi.com/statichtml/game_analysis_mobile.html?p=ZXlKMWMyVnlVMmRtUkdWd2IzUkpaQ0k2...",
+        "https://shaoer.yikeweiqi.com/statichtml/game_analysis_mobile.html?p={PARAMS}",
     ]
     
     # API端点

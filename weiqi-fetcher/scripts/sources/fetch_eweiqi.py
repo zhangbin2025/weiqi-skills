@@ -16,7 +16,7 @@ class EweiqiFetcher(BaseSourceFetcher):
         r'eweiqi\.com.*id=(\d+)',
     ]
     url_examples = [
-        "http://mobile.eweiqi.com/index_ZHCN.html?LNK=1&GNO=1478310481&USR=1&SNO=113&RES=ch",
+        "http://mobile.eweiqi.com/index_ZHCN.html?LNK=1&GNO={GAME_NO}",
     ]
     
     # API端点

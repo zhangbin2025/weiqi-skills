@@ -1,6 +1,5 @@
 """
-weiqi-fetcher - 多源围棋棋谱下载器
-源基类定义
+围棋分享棋谱下载器 - 源基类定义
 """
 
 from abc import ABC, abstractmethod

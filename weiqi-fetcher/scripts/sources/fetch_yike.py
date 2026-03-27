@@ -21,7 +21,7 @@ class YikeWeiqiFetcher(BaseSourceFetcher):
         r'yikeweiqi\.com.*room/(\d+)',
     ]
     url_examples = [
-        "https://home.yikeweiqi.com/mobile.html#/golive/room/184318/0/0/TOKEN",
+        "https://home.yikeweiqi.com/mobile.html#/golive/room/{ROOM_ID}/...",
     ]
     
     def fetch(self, url: str, output_path: str = None) -> FetchResult:

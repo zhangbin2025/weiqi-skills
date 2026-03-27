@@ -21,8 +21,7 @@ class GolaxyFetcher(BaseSourceFetcher):
         r'golaxy.*sgf/(\d+)',
     ]
     url_examples = [
-        "https://m.19x19.com/app/dark/zh/sgf/70307160",
-        "https://www.19x19.com/app/dark/zh/sgf/70307160",
+        "https://m.19x19.com/app/dark/zh/sgf/{SGF_ID}",
     ]
     
     def fetch(self, url: str, output_path: str = None) -> FetchResult:

@@ -12,7 +12,7 @@ class OgsFetcher(BaseSourceFetcher):
         r'online-go\.com/game/view/(\d+)',
     ]
     url_examples = [
-        "https://online-go.com/game/85445564",
+        "https://online-go.com/game/{GAME_ID}",
     ]
     
     def fetch(self, url: str, output_path: str = None) -> FetchResult:
