@@ -238,7 +238,7 @@ weiqi-fetcher/
 │       ├── fetch_101.py        # 101围棋网
 │       ├── fetch_yike.py       # 弈客围棋
 │       ├── fetch_yuanluobo.py  # 元萝卜围棋
-│       └── fetch_19x19.py      # 星阵围棋
+│       └── fetch_1919.py       # 星阵围棋
 └── tmp/                        # 临时下载目录
 ```
 
