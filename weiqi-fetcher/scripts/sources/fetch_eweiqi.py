@@ -69,16 +69,17 @@ class EweiqiFetcher(BaseSourceFetcher):
         # 解析数据
         t0 = time.time()
         
-        # 解析玩家信息
-        black_match = re.search(r'\[BUSERINFO=BID:([^,]+),BLV:([^,]+),BNICK:([^,]+)', data)
-        white_match = re.search(r'\[WUSERINFO=WID:([^,]+),WLV:([^,]+),WNICK:([^,]+)', data)
+        # 解析玩家信息 (使用BID/WID，不是BNICK/WNICK)
+        black_match = re.search(r'BID:([^,]+),BLV:([^,]+),BNICK:([^,]+)', data)
+        white_match = re.search(r'WID:([^,]+),WLV:([^,]+),WNICK:([^,]+)', data)
         game_match = re.search(r'GDATE:([^,]+)', data)
         
-        black_name = black_match.group(3) if black_match else '黑棋'
-        white_name = white_match.group(3) if white_match else '白棋'
+        # 使用BID和WID作为玩家名
+        black_name = black_match.group(1) if black_match else '黑棋'
+        white_name = white_match.group(1) if white_match else '白棋'
         date = game_match.group(1) if game_match else ''
         
-        # 解析段位
+        # 解析段位 (BLV/WLV)
         black_rank = self._parse_level(black_match.group(2)) if black_match else ''
         white_rank = self._parse_level(white_match.group(2)) if white_match else ''
         
@@ -118,14 +119,22 @@ class EweiqiFetcher(BaseSourceFetcher):
         )
     
     def _parse_level(self, level_str: str) -> str:
-        """解析弈城段位"""
+        """解析弈城段位
+        
+        弈城等级系统:
+        - 18-26: 职业段位 (1段=18, 9段=26)
+        - 0-17: 业余级位 (18级=0, 1级=17)
+        """
         try:
             level = int(level_str)
-            # 弈城段位系统: 1-8段, 10-18级
-            if level >= 10:
-                return f"{level - 9}级"
+            if level >= 18:
+                # 职业段位: 18=1段, 26=9段
+                dan = level - 17
+                return f"{dan}段"
             else:
-                return f"{level}段"
+                # 业余级位: 0=18级, 17=1级
+                kyu = 18 - level
+                return f"{kyu}级"
         except:
             return level_str
     
