@@ -205,8 +205,10 @@ class IzisFetcher(BaseSourceFetcher):
         
         格式: +xxxx -xxxx +xxxx ...
         + = 黑棋, - = 白棋
-        xxxx = 行号(2位) + 列号(2位), 1-based
-        例如: +0404 = 黑棋第4行第4列
+        xxxx = 列号(2位) + 行号(2位), 1-based
+        例如: +0404 = 黑棋第4列第4行
+        
+        注意: 隐智坐标与SGF坐标直接对应，无需翻转
         """
         moves = []
         if not allstep:
@@ -218,12 +220,21 @@ class IzisFetcher(BaseSourceFetcher):
         
         for color, coord in matches:
             try:
-                x = int(coord[:2]) - 1  # 转为0-based
-                y = int(coord[2:]) - 1
+                # 隐智: 前两位=列(X), 后两位=行(Y), 都是1-based
+                # 隐智(1,1) = 左上角, SGF(a,a) = 左下角
+                x = int(coord[:2]) - 1  # 列, 0-based
+                y = int(coord[2:]) - 1  # 行, 0-based
                 
                 # 验证坐标范围
                 if 0 <= x < board_size and 0 <= y < board_size:
-                    sgf_coord = self.coord_to_sgf(x, y, board_size)
+                    # 隐智坐标与SGF坐标直接对应，无需翻转
+                    # 隐智: (1,1)=左上, (19,19)=右下
+                    # SGF: (a,a)=左下, (s,s)=右上
+                    # 但隐智的0404直接对应SGF的dd
+                    sgf_x = chr(ord('a') + x)
+                    sgf_y = chr(ord('a') + y)
+                    sgf_coord = sgf_x + sgf_y
+                    
                     sgf_color = 'B' if color == '+' else 'W'
                     moves.append((sgf_color, sgf_coord))
             except:
