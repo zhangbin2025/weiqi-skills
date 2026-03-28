@@ -22,6 +22,7 @@ description: 围棋分享棋谱下载器 - 从分享链接自动下载SGF棋谱
 | **弈城围棋** | ✅ 可用 | REST API | ~1s |
 | **腾讯围棋** | ✅ 可用 | Playwright + JSONP | ~8s |
 | **新博对弈** | ✅ 可用 | Playwright + WebSocket | ~10s |
+| **对弈曲折/手谈赛场** | ✅ 可用 | REST API | ~0.5s |
 
 ## 使用方法
 
@@ -62,6 +63,9 @@ python3 main.py "https://h5.txwq.qq.com/txwqshare/index.html?chessid={CHESS_ID}"
 
 # 新博对弈
 python3 main.py "https://weiqi.xinboduiyi.com/golive/index.html#/?gamekey={GAME_KEY}"
+
+# 对弈曲折/手谈赛场
+python3 main.py "https://v.dzqzd.com/Kifu/chessmanualdetail?kifuId={KIFU_ID}"
 ```
 
 ### 指定输出文件
@@ -262,7 +266,8 @@ weiqi-fetcher/
 │       ├── fetch_yike_shaoer.py # 弈客少儿版
 │       ├── fetch_eweiqi.py     # 弈城围棋
 │       ├── fetch_txwq.py       # 腾讯围棋
-│       └── fetch_xinboduiyi.py # 新博对弈
+│       ├── fetch_xinboduiyi.py # 新博对弈
+        │       └── fetch_dzqzd.py       # 对弈曲折/手谈赛场
 └── tmp/                        # 临时下载目录
 ```
 
@@ -292,6 +297,19 @@ weiqi-fetcher/
   - 横坐标映射: T=a, S=b, R=c, Q=d, P=e, O=f, N=g, M=h, L=i, K=j, J=k, H=l, G=m, F=n, E=o, D=p, C=q, B=r, A=s
   - 纵坐标映射: A=a, B=b, C=c, D=d, E=e, F=f, G=g, H=h, J=i, K=j, L=k, M=l, N=m, O=n, P=o, Q=p, R=q, S=r, T=s
   - 示例: `B[CD]` → C(纵)=c, D(横)=p → `B[pc]`
+
+### 对弈曲折/手谈赛场（dzqzd.com）
+
+- **实现方式**: 纯REST API（无需Playwright）
+- **URL模式**: `https://v.dzqzd.com/Kifu/chessmanualdetail?kifuId={id}`
+- **API端点**: `https://v.dzqzd.com/Kifu/Details?kifuid={id}`
+- **特点**:
+  - 使用丹朱对局集系统的比赛直播/记录平台
+  - 返回YAML格式数据，包含头部信息和着法列表
+  - 速度快（约0.5秒），无需浏览器
+- **数据格式**:
+  - 头部: GM, AP, SZ, PB, PW, SO, EV, DT 等
+  - 着法: `- B: pd`, `- W: dc` 格式
 
 ### SGF文件编码
 
