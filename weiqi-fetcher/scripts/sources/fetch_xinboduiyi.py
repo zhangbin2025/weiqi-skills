@@ -61,7 +61,7 @@ class XinboduiyiFetcher(BaseSourceFetcher):
                     error="Playwright 抓取数据失败"
                 )
             
-            # 解析分谱数据
+            # 解析游戏数据生成 SGF
             sgf_content, metadata = self._parse_game_data(result, game_id)
             
             if not sgf_content:
@@ -105,7 +105,7 @@ class XinboduiyiFetcher(BaseSourceFetcher):
                 sgf_content=None,
                 output_path=None,
                 metadata={},
-                error=f"获取失败: {str(e)}\\n{traceback.format_exc()}"
+                error=f"获取失败: {str(e)}\n{traceback.format_exc()}"
             )
     
     def _fetch_with_playwright(self, url: str, game_id: str) -> Optional[dict]:
@@ -113,8 +113,10 @@ class XinboduiyiFetcher(BaseSourceFetcher):
         try:
             from playwright.sync_api import sync_playwright
             
-            ws_messages = []
             game_data = None
+            
+            # 使用容器来在嵌套函数中共享数据
+            data_container = {'game_data': None}
             
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
@@ -130,13 +132,12 @@ class XinboduiyiFetcher(BaseSourceFetcher):
                     def handle_message(msg):
                         try:
                             data = json.loads(msg)
-                            ws_messages.append(data)
-                            print(f"WS msg: cmd={data.get('cmd')}")
+                            cmd = data.get('cmd')
+                            print(f"WS msg: cmd={cmd}")
                             
-                            # 检查是否是游戏数据 (cmd:6)
-                            if data.get('cmd') == '6' and data.get('data'):
-                                nonlocal game_data
-                                game_data = data['data']
+                            # 检查是否是游戏数据 (cmd:2 或 cmd:6)
+                            if cmd in ('2', '6') and data.get('data'):
+                                data_container['game_data'] = data['data']
                         except:
                             pass
                     
@@ -147,14 +148,15 @@ class XinboduiyiFetcher(BaseSourceFetcher):
                 
                 # 访问页面
                 print(f"Navigating to {url}")
-                page.goto(url, wait_until="domcontentloaded")
+                page.goto(url, wait_until="networkidle")
                 
                 # 等待 WebSocket 数据
-                for i in range(30):  # 最多等待30秒
-                    if game_data:
+                for i in range(10):  # 最多等待10秒
+                    if data_container['game_data']:
                         break
                     time.sleep(1)
                 
+                game_data = data_container['game_data']
                 browser.close()
             
             return game_data
@@ -168,25 +170,28 @@ class XinboduiyiFetcher(BaseSourceFetcher):
     def _parse_game_data(self, data: dict, game_id: str) -> Tuple[Optional[str], dict]:
         """
         解析游戏数据生成 SGF
+        
+        新博对弈返回的数据结构:
+        - BlackAliasName: 黑方名称
+        - WhiteAliasName: 白方名称
+        - part_qipu: 分谱数组，每个元素包含 part_id 和 latest_full_qipu
+          - part_id=0 的分谱是标准 SGF 格式: B[DC];W[QQ];B[QD];...
         """
         try:
             # 提取元数据
             metadata = {
                 'game_id': game_id,
-                'black_name': data.get('black_name', '黑方'),
-                'white_name': data.get('white_name', '白方'),
-                'black_rank': data.get('black_level', ''),
-                'white_rank': data.get('white_level', ''),
-                'result': data.get('result', ''),
-                'date': data.get('date', ''),
-                'game_name': data.get('game_name', ''),
+                'black_name': data.get('BlackAliasName', '黑方'),
+                'white_name': data.get('WhiteAliasName', '白方'),
+                'black_rank': '',  # 新博不直接提供段位信息
+                'white_rank': '',
+                'result': '',  # ResultCode 需要映射
+                'date': '',
+                'game_name': data.get('GameKey', ''),
             }
             
             # 获取分谱数据
             part_qipu = data.get('part_qipu', [])
-            if not part_qipu:
-                # 尝试其他字段
-                part_qipu = data.get('qipu', [])
             
             if not part_qipu:
                 print(f"No part_qipu found. Available keys: {list(data.keys())}")
@@ -194,15 +199,25 @@ class XinboduiyiFetcher(BaseSourceFetcher):
             
             print(f"Found {len(part_qipu)} parts")
             
-            # 解析所有着法
-            moves = self._parse_moves_from_parts(part_qipu)
+            # 找到 part_id=0 的分谱（标准 SGF 格式）
+            sgf_moves = None
+            for part in part_qipu:
+                if part.get('part_id') == 0:
+                    sgf_moves = part.get('latest_full_qipu', '')
+                    print(f"Using Part 0: {len(sgf_moves)} chars")
+                    break
+            
+            if not sgf_moves:
+                return None, metadata
+            
+            # 解析 SGF 格式的着法
+            moves = self._parse_sgf_moves(sgf_moves)
+            print(f"Parsed {len(moves)} moves")
             
             if not moves:
                 return None, metadata
             
-            print(f"Parsed {len(moves)} moves")
-            
-            # 生成 SGF
+            # 生成完整 SGF
             sgf = self._generate_sgf(metadata, moves)
             
             return sgf, metadata
@@ -213,32 +228,17 @@ class XinboduiyiFetcher(BaseSourceFetcher):
             traceback.print_exc()
             return None, {}
     
-    def _parse_moves_from_parts(self, part_qipu: List[dict]) -> List[Tuple[str, str]]:
-        """从分谱解析着法 - 只取 part_id=0 的分谱"""
-        # 只使用 part_id=0 的分谱
-        for part in part_qipu:
-            part_id = part.get('part_id', 0)
-            if part_id == 0:
-                qipu_str = part.get('latest_full_qipu', '')
-                if qipu_str:
-                    print(f"Using Part 0: {len(qipu_str)} chars")
-                    return self._parse_qipu_string(qipu_str)
-        
-        return []
-    
-    def _parse_qipu_string(self, qipu_str: str) -> List[Tuple[str, str]]:
+    def _parse_sgf_moves(self, sgf_str: str) -> List[Tuple[str, str]]:
         """
-        解析着法字符串 (part_id=0)
+        解析标准 SGF 格式的着法字符串
         
-        格式: B[CD];W[QR];B[RD];... (分号分隔的SGF-like格式)
-        每个坐标两个字母：第一个是纵坐标，第二个是横坐标
+        格式: B[DC];W[QQ];B[QD];W[DQ];...
         """
         moves = []
         
-        # 分割成单独的着法
-        # 格式: B[CD] 或 W[QR]
+        # 正则匹配 B[XX] 或 W[XX]
         pattern = r'([BW])\[([A-Z]{2})\]'
-        matches = re.findall(pattern, qipu_str)
+        matches = re.findall(pattern, sgf_str)
         
         for color, coord in matches:
             sgf_coord = self._convert_coord(coord)
