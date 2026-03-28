@@ -7,6 +7,7 @@
 | 技能包 | 功能 | 版本 |
 |--------|------|------|
 | [weiqi-db](weiqi-db/) | 围棋棋谱数据库 | 1.0.0 |
+| [weiqi-fetcher](weiqi-fetcher/) | 分享棋谱下载器 | 1.0.0 |
 | [weiqi-foxwq](weiqi-foxwq/) | 野狐棋谱下载 | 1.1.1 |
 | [weiqi-player](weiqi-player/) | 棋手等级分/段位查询 | 1.0.9 |
 | [weiqi-recorder](weiqi-recorder/) | 网页记谱工具 | 1.0.6 |
@@ -23,6 +24,7 @@
 
 ```bash
 clawhub install weiqi-db
+clawhub install weiqi-fetcher
 clawhub install weiqi-foxwq
 clawhub install weiqi-player
 clawhub install weiqi-recorder
@@ -37,6 +39,14 @@ clawhub install weiqi-yunbisai
 - 支持SGF导入、元数据编辑、标签管理
 - 全文搜索、JSON查询语法，AI友好接口
 - 数据存储于 `~/.weiqi-db/database.json` 单文件
+
+### 🔽 weiqi-fetcher - 分享棋谱下载器
+从各大围棋平台分享链接自动下载SGF棋谱，支持10个平台：
+- OGS、野狐围棋、101围棋网
+- 弈客围棋、元萝卜围棋、星阵围棋
+- 隐智智能棋盘、弈客少儿版
+- 弈城围棋、腾讯围棋
+- 自动解析各种链接格式，一键下载SGF文件
 
 ### 🔽 weiqi-foxwq - 野狐棋谱下载
 - 按日期批量下载野狐围棋棋谱
