@@ -9,10 +9,19 @@ import re
 import os
 import sys
 import argparse
+import time
+import random
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
+
+# OGS 抓取相关
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
 
 # ==================== 配置 ====================
 DEFAULT_DB_DIR = Path.home() / ".weiqi-joseki"
@@ -177,11 +186,13 @@ class JosekiDB:
             if m.startswith(("B[", "W[")) and len(m) >= 4:
                 coord = m[2:4]
                 if coord == '' and not ignore_pass:
-                    result.append('pass')  # 保留pass标记
+                    result.append('')  # 保留pass标记为空字符串
                 elif coord != '':
                     result.append(coord)
             elif len(m) == 2 and m[0] in 'abcdefghijklmnopqrs' and m[1] in 'abcdefghijklmnopqrs':
                 result.append(m)
+            elif m == '' and not ignore_pass:
+                result.append('')  # 保留空字符串作为pass标记
             elif m == 'pass' and not ignore_pass:
                 result.append('pass')
         return result
@@ -225,7 +236,8 @@ class JosekiDB:
         if not joseki:
             return None
         
-        sgf_parts = [f"(;CA[utf-8]FF[4]AP[JosekiDB]SZ[19]GM[1]KM[0]MULTIGOGM[1]C[{joseki['name']}]"]
+        name = joseki.get('name', joseki_id)
+        sgf_parts = [f"(;CA[utf-8]FF[4]AP[JosekiDB]SZ[19]GM[1]KM[0]MULTIGOGM[1]C[{name}]"]
         
         for var in joseki.get("variations", []):
             dir_desc = {
@@ -343,6 +355,317 @@ class JosekiDB:
             if j["id"] == joseki_id:
                 return j
         return None
+    
+    # ========== OGS 抓取 ==========
+    
+    @staticmethod
+    def _go_to_sgf(go_coord: str) -> str:
+        """围棋坐标转SGF坐标"""
+        if go_coord == 'pass':
+            return ''
+        # 构建坐标映射表（不含I）
+        col_map = {}
+        letters = [chr(ord('A') + i) for i in range(19)]
+        letters.remove('I')
+        for i, letter in enumerate(letters):
+            col_map[letter] = chr(ord('a') + i)
+        
+        col_char = go_coord[0].upper()
+        row_num = int(go_coord[1:])
+        sgf_col = col_map.get(col_char, '')
+        sgf_row = chr(ord('a') + (19 - row_num))
+        return sgf_col + sgf_row
+    
+    @staticmethod
+    def _fetch_ogs_position(node_id: str, delay: float = 0.3) -> Optional[dict]:
+        """从OGS抓取定式位置数据（使用positions复数API）"""
+        if not HAS_REQUESTS:
+            raise ImportError("需要安装 requests: pip install requests")
+        
+        # 使用positions复数API，返回数组，取第一个元素
+        url = f"https://online-go.com/oje/positions?id={node_id}&mode=0"
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            time.sleep(delay)
+            data = response.json()
+            # positions返回数组，取第一个元素
+            if isinstance(data, list) and len(data) > 0:
+                return data[0]
+            return None
+        except Exception as e:
+            print(f"Error fetching {node_id}: {e}")
+            return None
+    
+    def fetch_ogs_joseki(self, start_node_id: str = "15422", max_moves: int = 15) -> Optional[List[str]]:
+        """从OGS抓取一条定式主线（包含从第一手开始的完整路径）
+        
+        Args:
+            start_node_id: OGS节点ID（默认15422=Q16）
+            max_moves: 最大抓取步数
+            
+        Returns:
+            着法序列列表（SGF坐标），失败返回None
+        """
+        if not HAS_REQUESTS:
+            raise ImportError("需要安装 requests: pip install requests")
+        
+        # 先回溯到第一手，获取完整路径
+        full_path = self._trace_back_to_root(start_node_id)
+        if not full_path:
+            return None
+        
+        current_id = full_path[-1]  # 从start_node继续
+        visited = set(full_path)
+        node_ids = full_path.copy()
+        
+        # 继续抓取后续着法
+        for step in range(len(full_path), max_moves):
+            data = self._fetch_ogs_position(current_id)
+            if not data:
+                break
+            
+            next_moves = data.get('next_moves', [])
+            if not next_moves:
+                break
+            
+            # 按 IDEAL/GOOD 优先级选择
+            next_move = None
+            for priority in ['IDEAL', 'GOOD']:
+                for m in next_moves:
+                    if m['category'] == priority:
+                        next_move = m
+                        break
+                if next_move:
+                    break
+            
+            if not next_move:
+                break
+            
+            current_id = next_move['node_id']
+            if current_id in visited:
+                break
+            
+            visited.add(current_id)
+            node_ids.append(current_id)
+        
+        # 获取每个节点的placement并转换为SGF坐标
+        path_coords = []
+        seen_coords = set()
+        for nid in node_ids:
+            data = self._fetch_ogs_position(nid)
+            if data:
+                placement = data.get('placement', '')
+                if placement == 'root':
+                    placement = 'Q16'
+                if placement and placement not in seen_coords:
+                    path_coords.append(placement)
+                    seen_coords.add(placement)
+        
+        # 转换为SGF坐标
+        return [self._go_to_sgf(c) for c in path_coords]
+    
+    def _trace_back_to_root(self, node_id: str) -> List[str]:
+        """从节点回溯到第一手，返回节点ID列表
+        
+        从空棋盘(15081) -> ... -> node_id 的完整路径
+        """
+        if not HAS_REQUESTS:
+            raise ImportError("需要安装 requests: pip install requests")
+        
+        # 获取目标节点的父节点链
+        path = [node_id]
+        current = node_id
+        visited = {node_id}
+        
+        # 最多回溯20步防止无限循环
+        for _ in range(20):
+            data = self._fetch_ogs_position(current)
+            if not data:
+                break
+            
+            parent = data.get('parent')
+            if not parent:
+                break
+            
+            parent_id = parent.get('node_id')
+            if not parent_id or parent_id in visited:
+                break
+            
+            path.insert(0, parent_id)
+            visited.add(parent_id)
+            current = parent_id
+        
+        return path
+    
+    def import_from_ogs(self, count: int = 5, start_nodes: List[str] = None) -> List[str]:
+        """从OGS随机抓取定式入库
+        
+        Args:
+            count: 抓取定式数量
+            start_nodes: 起始节点列表（默认从空棋盘开始，选择第一手随机）
+            
+        Returns:
+            成功入库的定式ID列表
+        """
+        if not HAS_REQUESTS:
+            raise ImportError("需要安装 requests: pip install requests")
+        
+        # 默认从空棋盘开始，第一手随机选择
+        empty_board_id = "15081"
+        
+        imported_ids = []
+        
+        for i in range(count):
+            print(f"[{i+1}/{count}] 从空棋盘抓取...")
+            
+            # 抓取定式（从空棋盘开始，第一手随机）
+            moves, description = self.fetch_ogs_joseki_from_empty(
+                empty_board_id, 
+                max_moves=random.randint(6, 12)
+            )
+            
+            if not moves or len(moves) < 2:
+                print(f"  抓取失败或太短，跳过")
+                continue
+            
+            # 检查冲突
+            conflict = self.check_conflict(moves)
+            if conflict.has_conflict:
+                print(f"  与已有定式冲突，跳过")
+                continue
+            
+            # 入库
+            joseki_id, _ = self.add(
+                moves=moves,
+                description=description
+            )
+            
+            if joseki_id:
+                print(f"  ✓ 入库成功: {joseki_id} ({len(moves)}手) 第一手: {moves[0]}")
+                imported_ids.append(joseki_id)
+            
+            # 随机延迟，避免请求过快
+            time.sleep(random.uniform(0.5, 1.5))
+        
+        print(f"\n共成功导入 {len(imported_ids)} 条定式")
+        return imported_ids
+    
+    def fetch_ogs_joseki_from_empty(self, empty_board_id: str = "15081", max_moves: int = 15) -> Tuple[Optional[List[str]], str]:
+        """从空棋盘开始抓取定式，第一手随机选择
+        
+        Args:
+            empty_board_id: 空棋盘节点ID（默认15081）
+            max_moves: 最大抓取步数
+            
+        Returns:
+            (着法序列列表, 描述)
+        """
+        if not HAS_REQUESTS:
+            raise ImportError("需要安装 requests: pip install requests")
+        
+        # 获取空棋盘的可选着法
+        data = self._fetch_ogs_position(empty_board_id)
+        if not data:
+            return None, ""
+        
+        next_moves = data.get('next_moves', [])
+        if not next_moves:
+            return None, ""
+        
+        # 随机选择一个第一手（IDEAL/GOOD优先）
+        ideal_moves = [m for m in next_moves if m['category'] in ['IDEAL', 'GOOD']]
+        if ideal_moves:
+            first_move = random.choice(ideal_moves)
+        else:
+            first_move = random.choice(next_moves)
+        
+        first_node_id = first_move['node_id']
+        
+        # 使用 _fetch_joseki_line 抓取完整序列
+        moves, description = self._fetch_joseki_line(first_node_id, max_moves - 1)
+        if moves:
+            # 将第一手加入序列
+            moves.insert(0, self._go_to_sgf(first_move['placement']))
+        
+        return moves, description
+    
+    def _fetch_joseki_line(self, start_node_id: str, max_moves: int) -> Tuple[Optional[List[str]], str]:
+        """从指定节点的下一步开始抓取定式（不包含起始节点本身）
+        
+        Returns:
+            (着法序列列表, 描述)
+        """
+        path_coords = []
+        description = ""
+        
+        # 获取起始节点的信息，但不将其加入路径
+        start_data = self._fetch_ogs_position(start_node_id)
+        if not start_data:
+            return None, ""
+        
+        # 获取起始节点的描述
+        desc = start_data.get('description', '').strip()
+        if desc:
+            description = desc.split('\n')[0].replace('## ', '').replace('### ', '')[:100]
+        
+        # 获取下一步
+        next_moves = start_data.get('next_moves', [])
+        if not next_moves:
+            return [], description
+        
+        # 选择下一步
+        next_move = None
+        for priority in ['IDEAL', 'GOOD']:
+            for m in next_moves:
+                if m['category'] == priority:
+                    next_move = m
+                    break
+            if next_move:
+                break
+        
+        if not next_move:
+            return [], description
+        
+        current_id = next_move['node_id']
+        visited = {start_node_id, current_id}
+        
+        # 从第二步开始抓取
+        for step in range(max_moves):
+            data = self._fetch_ogs_position(current_id)
+            if not data:
+                break
+            
+            placement = data.get('placement', '')
+            if placement and placement != 'root':
+                path_coords.append(placement)
+            
+            # 获取后续着法
+            next_moves = data.get('next_moves', [])
+            if not next_moves:
+                break
+            
+            # 按 IDEAL/GOOD 优先级选择
+            next_move = None
+            for priority in ['IDEAL', 'GOOD']:
+                for m in next_moves:
+                    if m['category'] == priority:
+                        next_move = m
+                        break
+                if next_move:
+                    break
+            
+            if not next_move:
+                break
+            
+            current_id = next_move['node_id']
+            if current_id in visited:
+                break
+            visited.add(current_id)
+        
+        # 转换为SGF坐标
+        sgf_moves = [self._go_to_sgf(c) for c in path_coords]
+        return sgf_moves, description
     
     def list_all(self, category: str = None) -> List[dict]:
         """列出定式"""
@@ -631,6 +954,21 @@ def cmd_stats(args):
         for cat, count in sorted(stats['by_category'].items(), key=lambda x: -x[1]):
             print(f"  {cat}: {count} 个")
 
+def cmd_fetch_ogs(args):
+    db = JosekiDB(args.db)
+    start_nodes = args.start_node if args.start_node else None
+    try:
+        imported = db.import_from_ogs(count=args.count, start_nodes=start_nodes)
+        if imported:
+            print(f"\n✓ 成功导入 {len(imported)} 条定式:")
+            for jid in imported:
+                print(f"  - {jid}")
+        else:
+            print("\n⚠ 未导入任何定式")
+    except ImportError as e:
+        print(f"❌ 错误: {e}")
+        print("请安装依赖: pip install requests")
+
 def main():
     parser = argparse.ArgumentParser(description="围棋定式数据库管理工具")
     parser.add_argument("--db", default=None, help="数据库路径 (默认: ~/.weiqi-joseki/database.json)")
@@ -640,8 +978,8 @@ def main():
     p_init = subparsers.add_parser("init", help="初始化数据库")
     
     p_add = subparsers.add_parser("add", help="添加定式")
-    p_add.add_argument("--name", required=True)
-    p_add.add_argument("--category", required=True)
+    p_add.add_argument("--name", help="定式名称（可选）")
+    p_add.add_argument("--category", help="分类路径（可选）")
     p_add.add_argument("--sgf")
     p_add.add_argument("--moves")
     p_add.add_argument("--tag", action="append")
@@ -676,6 +1014,10 @@ def main():
     
     p_stats = subparsers.add_parser("stats", help="统计信息")
     
+    p_fetch_ogs = subparsers.add_parser("fetch-ogs", help="从OGS抓取定式")
+    p_fetch_ogs.add_argument("--count", "-n", type=int, default=5, help="抓取数量 (默认5)")
+    p_fetch_ogs.add_argument("--start-node", action="append", help="指定起始节点ID (可多次指定)")
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -686,6 +1028,7 @@ def main():
         "init": cmd_init, "add": cmd_add, "remove": cmd_remove,
         "clear": cmd_clear, "list": cmd_list, "8way": cmd_8way,
         "match": cmd_match, "identify": cmd_identify, "stats": cmd_stats,
+        "fetch-ogs": cmd_fetch_ogs,
     }
     
     commands[args.command](args)
