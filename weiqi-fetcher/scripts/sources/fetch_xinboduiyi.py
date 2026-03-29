@@ -171,11 +171,10 @@ class XinboduiyiFetcher(BaseSourceFetcher):
         """
         解析游戏数据生成 SGF
         
-        新博对弈返回的数据结构:
-        - BlackAliasName: 黑方名称
-        - WhiteAliasName: 白方名称
-        - part_qipu: 分谱数组，每个元素包含 part_id 和 latest_full_qipu
-          - part_id=0 的分谱是标准 SGF 格式: B[DC];W[QQ];B[QD];...
+        新博对弈返回的数据结构有两种格式:
+        1. part_qipu: 分谱数组，每个元素包含 part_id 和 latest_full_qipu
+           - part_id=0 的分谱是标准 SGF 格式: B[DC];W[QQ];B[QD];...
+        2. StepStr: 直接的 SGF 格式着法字符串: B[DC];W[QQ];B[QD];...
         """
         try:
             # 提取元数据
@@ -185,29 +184,34 @@ class XinboduiyiFetcher(BaseSourceFetcher):
                 'white_name': data.get('WhiteAliasName', '白方'),
                 'black_rank': '',  # 新博不直接提供段位信息
                 'white_rank': '',
-                'result': '',  # ResultCode 需要映射
+                'result': self._parse_result(data.get('ResultCode'), data.get('resultType')),
                 'date': '',
                 'game_name': data.get('GameKey', ''),
+                'komi': data.get('komi_value', 7.5),
+                'board_size': data.get('BoardSize', 19),
             }
             
-            # 获取分谱数据
-            part_qipu = data.get('part_qipu', [])
-            
-            if not part_qipu:
-                print(f"No part_qipu found. Available keys: {list(data.keys())}")
-                return None, metadata
-            
-            print(f"Found {len(part_qipu)} parts")
-            
-            # 找到 part_id=0 的分谱（标准 SGF 格式）
             sgf_moves = None
-            for part in part_qipu:
-                if part.get('part_id') == 0:
-                    sgf_moves = part.get('latest_full_qipu', '')
-                    print(f"Using Part 0: {len(sgf_moves)} chars")
-                    break
+            
+            # 首先尝试从 StepStr 获取棋谱（新格式）
+            step_str = data.get('StepStr', '')
+            if step_str:
+                print(f"Using StepStr: {len(step_str)} chars")
+                sgf_moves = step_str
+            
+            # 如果没有 StepStr，尝试从 part_qipu 获取（旧格式）
+            if not sgf_moves:
+                part_qipu = data.get('part_qipu', [])
+                if part_qipu:
+                    print(f"Found {len(part_qipu)} parts")
+                    for part in part_qipu:
+                        if part.get('part_id') == 0:
+                            sgf_moves = part.get('latest_full_qipu', '')
+                            print(f"Using Part 0: {len(sgf_moves)} chars")
+                            break
             
             if not sgf_moves:
+                print(f"No StepStr or part_qipu found. Available keys: {list(data.keys())}")
                 return None, metadata
             
             # 解析 SGF 格式的着法
@@ -227,6 +231,24 @@ class XinboduiyiFetcher(BaseSourceFetcher):
             import traceback
             traceback.print_exc()
             return None, {}
+    
+    def _parse_result(self, result_code: int, result_type: int) -> str:
+        """解析对局结果"""
+        # ResultCode: 0=进行中, 1=黑胜, 2=白胜
+        # resultType: 1=中盘胜, 2=数子胜, 3=时间胜, 4=认输
+        if result_code == 0:
+            return ""
+        
+        winner = "B" if result_code == 1 else "W"
+        
+        result_map = {
+            1: "+R",  # 中盘胜
+            2: "+",   # 数子胜（需要具体目数，这里简化）
+            3: "+T",  # 时间胜
+            4: "+R",  # 认输
+        }
+        
+        return f"{winner}{result_map.get(result_type, '+')}"
     
     def _parse_sgf_moves(self, sgf_str: str) -> List[Tuple[str, str]]:
         """
@@ -296,9 +318,13 @@ class XinboduiyiFetcher(BaseSourceFetcher):
     
     def _generate_sgf(self, metadata: dict, moves: List[Tuple[str, str]]) -> str:
         """生成 SGF 文件内容"""
+        board_size = metadata.get('board_size', 19)
+        komi = metadata.get('komi', 7.5)
+        
         lines = [
             "(;GM[1]FF[4]",
-            f"SZ[19]",
+            f"SZ[{board_size}]",
+            f"KM[{komi}]",
             f"PB[{metadata.get('black_name', '黑方')}]",
             f"PW[{metadata.get('white_name', '白方')}]",
         ]
