@@ -22,20 +22,25 @@ import html
 
 def extract_main_branch(sgf_content):
     """
-    从野狐围棋SGF中提取主分支着法
+    从SGF中提取主分支着法
 
-    支持两种格式:
-    1. 嵌套格式（野狐原始格式）：多行，每行一个分支
-    2. 平面格式（已清理）：所有着法在一行，用分号分隔
-
-    提取策略:
-    1. 检测SGF格式类型
-    2. 平面格式：按顺序提取所有着法，直到遇到变例分支
-    3. 嵌套格式：按行处理，只取单着法的行
+    支持三种格式:
+    1. 标准单分支格式: (;GM...;B[pd];W[pp]...)
+    2. 嵌套格式（野狐原始格式）：多行，每行一个分支
+    3. 平面格式（已清理）：所有着法在一行，用分号分隔
+    4. 多变化图格式: (;GM... (;变化1)(;变化2)...)
     """
     sgf_content = sgf_content.replace('\r\n', '\n')
-    lines = sgf_content.split('\n')
 
+    # 检查是否是多变化图格式 (MULTIGOGM)
+    # 格式: (;CA[...]FF[4]... (;变化1)(;变化2)...)
+    if 'MULTIGOGM' in sgf_content or re.search(r'\(;[A-Z]+\[[^\]]+\].*\(\s*;', sgf_content):
+        parallel_variations = extract_parallel_variations(sgf_content)
+        if parallel_variations:
+            # 返回第一个变化作为主分支
+            return parallel_variations[0]['moves']
+
+    lines = sgf_content.split('\n')
     main_moves = []
 
     # 检测格式：如果第一行包含大量着法，认为是平面格式
@@ -110,13 +115,64 @@ def extract_main_branch(sgf_content):
     return main_moves
 
 
+def extract_parallel_variations(sgf_content):
+    """
+    提取多变化图格式的并行分支
+    格式: (;CA[...]FF[4]... (;变化1)(;变化2)...)
+    返回: [{'name': '变化名称', 'moves': [...]}, ...]
+    """
+    variations = []
+
+    # 查找根节点后的所有直接子分支
+    # 模式: (C[名称];B[xx];W[yy]...) 或 (;B[xx];W[yy]...)
+    pattern = r'\(\s*(?:C\[([^\]]*)\])?\s*((?:;[BW]\[[a-z]{2}\])+)\s*\)'
+
+    for match in re.finditer(pattern, sgf_content):
+        name = match.group(1) or f"变化{len(variations)+1}"
+        moves_str = match.group(2)
+
+        # 解析着法
+        moves = []
+        for move_match in re.finditer(r';([BW])\[([a-z]{2})\]', moves_str):
+            moves.append({
+                'color': move_match.group(1),
+                'coord': move_match.group(2)
+            })
+
+        if moves:
+            variations.append({
+                'name': name,
+                'moves': moves
+            })
+
+    return variations
+
+
 def extract_variations(sgf_content, main_moves):
     """
     提取变化图（变例）
     返回: {手数: [{name, moves, comment}, ...]}
     """
-    lines = sgf_content.replace('\r\n', '\n').split('\n')
     variations = {}
+
+    # 首先检查是否是多变化图格式 (MULTIGOGM)
+    # 如果是，提取除第一个外的其他并行分支作为变化图
+    if 'MULTIGOGM' in sgf_content:
+        parallel_variations = extract_parallel_variations(sgf_content)
+        if parallel_variations and len(parallel_variations) > 1:
+            # 第一个作为主分支，其余作为第0手的变化图
+            # 这样一进入就是变化图模式，可以在面板中选择
+            variations[0] = []
+            for i, var in enumerate(parallel_variations[1:], start=2):
+                variations[0].append({
+                    'name': var['name'],
+                    'winRate': var['name'],
+                    'moves': var['moves'],
+                    'comment': var['name']
+                })
+            return variations
+
+    lines = sgf_content.replace('\r\n', '\n').split('\n')
 
     for line in lines:
         line = line.strip()
