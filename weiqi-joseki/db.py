@@ -266,33 +266,29 @@ class JosekiDB:
     
     # ========== CRUD ==========
     
-    def check_conflict(self, moves: List[str], threshold: float = 0.9) -> ConflictCheck:
-        """检查是否与已有定式冲突（忽略pass）"""
-        # 过滤pass进行比较
-        coord_seq = [m for m in self.normalize_moves(moves, ignore_pass=True) if m and m != 'pass']
+    def check_conflict(self, moves: List[str]) -> ConflictCheck:
+        """检查是否与已有定式冲突（完全相同才算冲突）"""
+        # 标准化输入（保留pass）
+        coord_seq = self.normalize_moves(moves, ignore_pass=False)
         similar = []
         
         for joseki in self.joseki_list:
             for var in joseki.get("variations", []):
-                # 定式变化中也过滤pass
-                var_moves = [m for m in var["moves"] if m and m != 'pass']
-                sim = self.lcs_similarity(coord_seq, var_moves)
-                if sim >= threshold:
+                # 直接比较完整序列（包括pass）
+                if coord_seq == var["moves"]:
                     similar.append({
                         "id": joseki["id"],
-                        "name": joseki["name"],
-                        "similarity": round(sim, 3),
                         "direction": var["direction"]
                     })
                     break
         
-        similar.sort(key=lambda x: x["similarity"], reverse=True)
         return ConflictCheck(has_conflict=len(similar) > 0, similar_joseki=similar)
     
-    def add(self, name: str, category_path: str, moves: List[str], 
+    def add(self, name: str = "", category_path: str = "", moves: List[str] = None, 
             tags: List[str] = None, description: str = "", 
             force: bool = False) -> Tuple[Optional[str], Optional[ConflictCheck]]:
-        """添加定式（保留pass）"""
+        """添加定式（保留pass，name和category_path可选）"""
+        moves = moves or []
         # 入库时保留pass
         coord_moves = self.normalize_moves(moves, ignore_pass=False)
         if not coord_moves:
@@ -307,13 +303,19 @@ class JosekiDB:
         
         joseki = {
             "id": joseki_id,
-            "name": name,
-            "category_path": category_path,
             "tags": tags or [],
             "description": description,
             "variations": variations,
             "created_at": self._now()
         }
+        
+        # name 可选，如果有值才添加
+        if name:
+            joseki["name"] = name
+        
+        # category_path 可选，如果有值才添加
+        if category_path:
+            joseki["category_path"] = category_path
         
         self.joseki_list.append(joseki)
         self._save()
