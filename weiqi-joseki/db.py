@@ -581,14 +581,22 @@ class JosekiDB:
             first_move = random.choice(next_moves)
         
         first_node_id = first_move['node_id']
+        first_placement = first_move.get('placement', '')
         
-        # 使用 _fetch_joseki_line 抓取完整序列
+        # 使用 _fetch_joseki_line 抓取从第二手开始的序列
+        # _fetch_joseki_line 返回的是从 start_node 的下一手开始的路径
         moves, description = self._fetch_joseki_line(first_node_id, max_moves - 1)
-        if moves:
-            # 将第一手加入序列
-            moves.insert(0, self._go_to_sgf(first_move['placement']))
         
-        return moves, description
+        # 组合完整序列：第一手 + 后续着法
+        # pass 保留为空字符串，后续生成SGF时会处理为 B[]/W[]
+        full_moves = []
+        if first_placement and first_placement != 'root':
+            full_moves.append(self._go_to_sgf(first_placement))
+        
+        if moves:
+            full_moves.extend(moves)
+        
+        return full_moves, description
     
     def _fetch_joseki_line(self, start_node_id: str, max_moves: int) -> Tuple[Optional[List[str]], str]:
         """从指定节点的下一步开始抓取定式（不包含起始节点本身）
@@ -598,16 +606,12 @@ class JosekiDB:
         """
         path_coords = []
         description = ""
+        last_node_data = None
         
         # 获取起始节点的信息，但不将其加入路径
         start_data = self._fetch_ogs_position(start_node_id)
         if not start_data:
             return None, ""
-        
-        # 获取起始节点的描述
-        desc = start_data.get('description', '').strip()
-        if desc:
-            description = desc.split('\n')[0].replace('## ', '').replace('### ', '')[:100]
         
         # 获取下一步
         next_moves = start_data.get('next_moves', [])
@@ -636,7 +640,11 @@ class JosekiDB:
             if not data:
                 break
             
+            # 保存最后一个节点的数据用于获取描述
+            last_node_data = data
+            
             placement = data.get('placement', '')
+            # 跳过 root，但保留 pass（pass会转成空字符串表示脱先）
             if placement and placement != 'root':
                 path_coords.append(placement)
             
@@ -662,6 +670,12 @@ class JosekiDB:
             if current_id in visited:
                 break
             visited.add(current_id)
+        
+        # 从最后一手节点获取描述
+        if last_node_data:
+            desc = last_node_data.get('description', '').strip()
+            if desc:
+                description = desc.split('\n')[0].replace('## ', '').replace('### ', '')[:100]
         
         # 转换为SGF坐标
         sgf_moves = [self._go_to_sgf(c) for c in path_coords]
