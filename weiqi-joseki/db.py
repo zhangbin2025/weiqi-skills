@@ -520,7 +520,7 @@ class JosekiDB:
             print(f"[{i+1}/{count}] 从空棋盘抓取...")
             
             # 抓取定式（从空棋盘开始，第一手随机）
-            moves, description = self.fetch_ogs_joseki_from_empty(
+            moves, description, last_node_id = self.fetch_ogs_joseki_from_empty(
                 empty_board_id, 
                 max_moves=random.randint(6, 12)
             )
@@ -535,10 +535,13 @@ class JosekiDB:
                 print(f"  与已有定式冲突，跳过")
                 continue
             
+            # 使用最后一手节点ID作为描述
+            joseki_desc = last_node_id if last_node_id else ""
+            
             # 入库
             joseki_id, _ = self.add(
                 moves=moves,
-                description=description
+                description=joseki_desc
             )
             
             if joseki_id:
@@ -551,7 +554,7 @@ class JosekiDB:
         print(f"\n共成功导入 {len(imported_ids)} 条定式")
         return imported_ids
     
-    def fetch_ogs_joseki_from_empty(self, empty_board_id: str = "15081", max_moves: int = 15) -> Tuple[Optional[List[str]], str]:
+    def fetch_ogs_joseki_from_empty(self, empty_board_id: str = "15081", max_moves: int = 15) -> Tuple[Optional[List[str]], str, str]:
         """从空棋盘开始抓取定式，第一手随机选择
         
         Args:
@@ -559,19 +562,22 @@ class JosekiDB:
             max_moves: 最大抓取步数
             
         Returns:
-            (着法序列列表, 描述)
+            (着法序列列表, 描述, 最后一手节点ID)
         """
         if not HAS_REQUESTS:
             raise ImportError("需要安装 requests: pip install requests")
         
+        # 使用系统时间作为随机种子，避免冲突
+        random.seed(time.time())
+        
         # 获取空棋盘的可选着法
         data = self._fetch_ogs_position(empty_board_id)
         if not data:
-            return None, ""
+            return None, "", ""
         
         next_moves = data.get('next_moves', [])
         if not next_moves:
-            return None, ""
+            return None, "", ""
         
         # 随机选择一个第一手（IDEAL/GOOD优先）
         ideal_moves = [m for m in next_moves if m['category'] in ['IDEAL', 'GOOD']]
@@ -585,7 +591,7 @@ class JosekiDB:
         
         # 使用 _fetch_joseki_line 抓取从第二手开始的序列
         # _fetch_joseki_line 返回的是从 start_node 的下一手开始的路径
-        moves, description = self._fetch_joseki_line(first_node_id, max_moves - 1)
+        moves, description, last_node_id = self._fetch_joseki_line(first_node_id, max_moves - 1)
         
         # 组合完整序列：第一手 + 后续着法
         # pass 保留为空字符串，后续生成SGF时会处理为 B[]/W[]
@@ -596,27 +602,28 @@ class JosekiDB:
         if moves:
             full_moves.extend(moves)
         
-        return full_moves, description
+        return full_moves, description, last_node_id
     
-    def _fetch_joseki_line(self, start_node_id: str, max_moves: int) -> Tuple[Optional[List[str]], str]:
+    def _fetch_joseki_line(self, start_node_id: str, max_moves: int) -> Tuple[Optional[List[str]], str, str]:
         """从指定节点的下一步开始抓取定式（不包含起始节点本身）
         
         Returns:
-            (着法序列列表, 描述)
+            (着法序列列表, 描述, 最后一手节点ID)
         """
         path_coords = []
         description = ""
         last_node_data = None
+        last_node_id = ""
         
         # 获取起始节点的信息，但不将其加入路径
         start_data = self._fetch_ogs_position(start_node_id)
         if not start_data:
-            return None, ""
+            return None, "", ""
         
         # 获取下一步
         next_moves = start_data.get('next_moves', [])
         if not next_moves:
-            return [], description
+            return [], description, ""
         
         # 选择下一步
         next_move = None
@@ -629,19 +636,21 @@ class JosekiDB:
                 break
         
         if not next_move:
-            return [], description
+            return [], description, ""
         
         current_id = next_move['node_id']
         visited = {start_node_id, current_id}
         
-        # 从第二步开始抓取
-        for step in range(max_moves):
+        # 从第二步开始抓取，直到没有后续着法或达到max_moves上限
+        step = 0
+        while step < max_moves:
             data = self._fetch_ogs_position(current_id)
             if not data:
                 break
             
-            # 保存最后一个节点的数据用于获取描述
+            # 保存最后一个节点的数据和ID
             last_node_data = data
+            last_node_id = str(current_id)
             
             placement = data.get('placement', '')
             # 跳过 root，但保留 pass（pass会转成空字符串表示脱先）
@@ -651,6 +660,7 @@ class JosekiDB:
             # 获取后续着法
             next_moves = data.get('next_moves', [])
             if not next_moves:
+                # 没有后续着法，定式结束
                 break
             
             # 按 IDEAL/GOOD 优先级选择
@@ -664,22 +674,19 @@ class JosekiDB:
                     break
             
             if not next_move:
+                # 没有找到合适的下一步，定式结束
                 break
             
             current_id = next_move['node_id']
             if current_id in visited:
+                # 循环 detected，定式结束
                 break
             visited.add(current_id)
-        
-        # 从最后一手节点获取描述
-        if last_node_data:
-            desc = last_node_data.get('description', '').strip()
-            if desc:
-                description = desc.split('\n')[0].replace('## ', '').replace('### ', '')[:100]
+            step += 1
         
         # 转换为SGF坐标
         sgf_moves = [self._go_to_sgf(c) for c in path_coords]
-        return sgf_moves, description
+        return sgf_moves, description, last_node_id
     
     def list_all(self, category: str = None) -> List[dict]:
         """列出定式"""
