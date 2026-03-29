@@ -498,12 +498,13 @@ class JosekiDB:
         
         return path
     
-    def import_from_ogs(self, count: int = 5, start_nodes: List[str] = None) -> List[str]:
+    def import_from_ogs(self, count: int = 5, start_nodes: List[str] = None, min_moves: int = 4) -> List[str]:
         """从OGS随机抓取定式入库
         
         Args:
             count: 抓取定式数量
             start_nodes: 起始节点列表（默认从空棋盘开始，选择第一手随机）
+            min_moves: 至少多少步的定式才抓取（默认4）
             
         Returns:
             成功入库的定式ID列表
@@ -515,18 +516,21 @@ class JosekiDB:
         empty_board_id = "15081"
         
         imported_ids = []
+        attempts = 0
+        max_attempts = count * 3  # 最大尝试次数，避免无限循环
         
-        for i in range(count):
-            print(f"[{i+1}/{count}] 从空棋盘抓取...")
+        while len(imported_ids) < count and attempts < max_attempts:
+            attempts += 1
+            print(f"[{len(imported_ids)+1}/{count}] 从空棋盘抓取... (尝试 {attempts})")
             
             # 抓取定式（从空棋盘开始，第一手随机）
             moves, description, last_node_id = self.fetch_ogs_joseki_from_empty(
                 empty_board_id, 
-                max_moves=random.randint(6, 12)
+                max_moves=random.randint(10, 20)
             )
             
-            if not moves or len(moves) < 2:
-                print(f"  抓取失败或太短，跳过")
+            if not moves or len(moves) < min_moves:
+                print(f"  抓取失败或步数不足({len(moves) if moves else 0}手 < {min_moves}手)，跳过")
                 continue
             
             # 检查冲突
@@ -979,7 +983,7 @@ def cmd_fetch_ogs(args):
     db = JosekiDB(args.db)
     start_nodes = args.start_node if args.start_node else None
     try:
-        imported = db.import_from_ogs(count=args.count, start_nodes=start_nodes)
+        imported = db.import_from_ogs(count=args.count, start_nodes=start_nodes, min_moves=args.min_moves)
         if imported:
             print(f"\n✓ 成功导入 {len(imported)} 条定式:")
             for jid in imported:
@@ -1038,6 +1042,7 @@ def main():
     p_fetch_ogs = subparsers.add_parser("fetch-ogs", help="从OGS抓取定式")
     p_fetch_ogs.add_argument("--count", "-n", type=int, default=5, help="抓取数量 (默认5)")
     p_fetch_ogs.add_argument("--start-node", action="append", help="指定起始节点ID (可多次指定)")
+    p_fetch_ogs.add_argument("--min-moves", "-m", type=int, default=4, help="至少多少步的定式才抓取 (默认4)")
     
     args = parser.parse_args()
     
