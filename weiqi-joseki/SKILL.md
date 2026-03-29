@@ -104,16 +104,22 @@ python3 db.py fetch-ogs
 # 指定抓取数量
 python3 db.py fetch-ogs --count 10
 
+# 指定最小步数（默认至少4步）
+python3 db.py fetch-ogs --min-moves 6
+
 # 从指定起始节点抓取
 python3 db.py fetch-ogs --start-node 15422 --start-node 24140
 ```
 
 **抓取逻辑：**
 1. 从空棋盘（节点15081）开始
-2. 随机选择第一手（优先 IDEAL/GOOD 分类）
-3. 自动选择后续着法（IDEAL > GOOD 优先级）
-4. 过滤 pass 节点，只保留实际落子
-5. 生成8向变化并入库
+2. 使用系统时间作为随机种子，避免重复
+3. 随机选择第一手（优先 IDEAL/GOOD 分类）
+4. 自动选择后续着法（IDEAL > GOOD 优先级）
+5. 持续抓取直到 `next_moves` 为空（达到定式终点）
+6. **描述字段保存最后一手节点的ID**，便于追溯源节点
+7. pass（脱先）节点保留，SGF中输出为 `B[]` / `W[]`
+8. 生成8向变化并入库
 
 **依赖：** 需要安装 `requests` 库
 ```bash
@@ -157,15 +163,19 @@ for corner, matches in results.items():
     print(f"{corner}: {matches[0].name if matches else '无匹配'}")
 
 # 从OGS抓取定式 🌐
-# 抓取1条随机定式
-moves, description = db.fetch_ogs_joseki_from_empty()
+# 抓取1条随机定式（返回：着法列表, 最后一手节点ID）
+moves, last_node_id = db.fetch_ogs_joseki_from_empty()
+print(f"抓取到 {len(moves)} 手定式，最后一手节点: {last_node_id}")
 
-# 抓取指定节点开始的定式
-moves, description = db._fetch_joseki_line("15422", max_moves=15)
+# 抓取指定节点开始的定式（返回：着法列表, 最后一手节点ID）
+moves, last_node_id = db._fetch_joseki_line("15422", max_moves=15)
 
-# 批量抓取并自动入库
+# 批量抓取并自动入库（默认至少4步）
 imported_ids = db.import_from_ogs(count=5)
 print(f"成功导入 {len(imported_ids)} 条定式")
+
+# 指定最小步数（至少6步才入库）
+imported_ids = db.import_from_ogs(count=5, min_moves=6)
 ```
 
 ## 数据格式
@@ -174,15 +184,23 @@ print(f"成功导入 {len(imported_ids)} 条定式")
 ```json
 {
   "id": "joseki_001",
-  "name": "星位小飞挂一间低夹",
-  "category_path": "/星位/小飞挂/一间低夹",
+  "description": "30753",
+  "tags": [],
   "variations": [
     {"direction": "rdlu", "moves": ["pd", "qf", "nc", ...]},
     {"direction": "lurd", "moves": ["dd", "cf", "fc", ...]},
     ...
-  ]
+  ],
+  "created_at": "2026-03-29T23:22:36.968667"
 }
 ```
+
+**字段说明：**
+- `id`: 定式唯一标识
+- `description`: **最后一手节点的OGS ID**，可用于追溯源节点
+- `tags`: 标签数组（暂未使用）
+- `variations`: 8向变化数组
+- `created_at`: 创建时间
 
 ### 8个方向
 | 方向 | 位置 | 描述 |
@@ -262,6 +280,10 @@ print(f"成功导入 {len(imported_ids)} 条定式")
 ```
 
 ### 抓取策略
+- **随机种子**：使用 `time.time()` 作为随机种子，避免重复抓取相同定式
 - **第一手**：从空棋盘的 `next_moves` 中随机选择（IDEAL/GOOD 优先）
 - **后续手**：按 IDEAL > GOOD > 其他 的优先级自动选择
-- **pass 处理**：自动过滤 pass 节点，只保留实际落子坐标
+- **终止条件**：当节点的 `next_moves` 为空数组时停止（达到定式终点）
+- **pass 处理**：保留 pass 节点（脱先），SGF 中输出为 `B[]` / `W[]`
+- **最小步数**：默认至少 4 步才入库，可配置
+- **描述字段**：保存最后一手节点的 OGS ID（如 "30753"）
