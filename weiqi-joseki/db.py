@@ -165,38 +165,52 @@ class JosekiDB:
     # ========== 坐标转换 ==========
     
     @staticmethod
-    def normalize_moves(moves: List[str]) -> List[str]:
-        """标准化为纯坐标"""
+    def normalize_moves(moves: List[str], ignore_pass: bool = True) -> List[str]:
+        """标准化为纯坐标
+        Args:
+            moves: 着法列表
+            ignore_pass: 是否忽略pass（匹配时用True，入库时用False）
+        """
         result = []
         for m in moves:
             m = m.strip()
-            if m.startswith(("B[", "W[")) and len(m) >= 5:
-                result.append(m[2:4])
+            if m.startswith(("B[", "W[")) and len(m) >= 4:
+                coord = m[2:4]
+                if coord == '' and not ignore_pass:
+                    result.append('pass')  # 保留pass标记
+                elif coord != '':
+                    result.append(coord)
             elif len(m) == 2 and m[0] in 'abcdefghijklmnopqrs' and m[1] in 'abcdefghijklmnopqrs':
                 result.append(m)
+            elif m == 'pass' and not ignore_pass:
+                result.append('pass')
         return result
     
     @staticmethod
     def generate_variations(moves: List[str]) -> List[dict]:
-        """生成8向变化并去重"""
+        """生成8向变化并去重（保留pass）"""
         variations = []
         seen = set()
         
         for name, coord_sys in COORDINATE_SYSTEMS.items():
             var_moves = []
             for move in moves:
-                c, r = CoordinateSystem.sgf_to_nums(move)
-                nc, nr = {
-                    'lurd': lambda c, r: (c, r),
-                    'ludr': lambda c, r: (r, c),
-                    'ldru': lambda c, r: (c, 18 - r),
-                    'ldur': lambda c, r: (18 - r, c),
-                    'ruld': lambda c, r: (18 - c, r),
-                    'rudl': lambda c, r: (r, 18 - c),
-                    'rdlu': lambda c, r: (18 - c, 18 - r),
-                    'rdul': lambda c, r: (18 - r, 18 - c),
-                }[name](c, r)
-                var_moves.append(CoordinateSystem.nums_to_sgf(nc, nr))
+                # pass保持为pass
+                if move == '' or move == 'pass':
+                    var_moves.append('')
+                else:
+                    c, r = CoordinateSystem.sgf_to_nums(move)
+                    nc, nr = {
+                        'lurd': lambda c, r: (c, r),
+                        'ludr': lambda c, r: (r, c),
+                        'ldru': lambda c, r: (c, 18 - r),
+                        'ldur': lambda c, r: (18 - r, c),
+                        'ruld': lambda c, r: (18 - c, r),
+                        'rudl': lambda c, r: (r, 18 - c),
+                        'rdlu': lambda c, r: (18 - c, 18 - r),
+                        'rdul': lambda c, r: (18 - r, 18 - c),
+                    }[name](c, r)
+                    var_moves.append(CoordinateSystem.nums_to_sgf(nc, nr))
             
             key = ",".join(var_moves)
             if key not in seen:
@@ -224,6 +238,7 @@ class JosekiDB:
             sgf_parts.append(f"(C[{dir_desc} {var['direction']}]" if len(joseki['variations']) > 1 else "(")
             color = 'B'
             for coord in var['moves']:
+                # pass输出为 B[] 或 W[]
                 sgf_parts.append(f";{color}[{coord}]")
                 color = 'W' if color == 'B' else 'B'
             sgf_parts.append(")")
@@ -252,13 +267,16 @@ class JosekiDB:
     # ========== CRUD ==========
     
     def check_conflict(self, moves: List[str], threshold: float = 0.9) -> ConflictCheck:
-        """检查是否与已有定式冲突"""
-        coord_seq = self.normalize_moves(moves)
+        """检查是否与已有定式冲突（忽略pass）"""
+        # 过滤pass进行比较
+        coord_seq = [m for m in self.normalize_moves(moves, ignore_pass=True) if m and m != 'pass']
         similar = []
         
         for joseki in self.joseki_list:
             for var in joseki.get("variations", []):
-                sim = self.lcs_similarity(coord_seq, var["moves"])
+                # 定式变化中也过滤pass
+                var_moves = [m for m in var["moves"] if m and m != 'pass']
+                sim = self.lcs_similarity(coord_seq, var_moves)
                 if sim >= threshold:
                     similar.append({
                         "id": joseki["id"],
@@ -274,8 +292,9 @@ class JosekiDB:
     def add(self, name: str, category_path: str, moves: List[str], 
             tags: List[str] = None, description: str = "", 
             force: bool = False) -> Tuple[Optional[str], Optional[ConflictCheck]]:
-        """添加定式"""
-        coord_moves = self.normalize_moves(moves)
+        """添加定式（保留pass）"""
+        # 入库时保留pass
+        coord_moves = self.normalize_moves(moves, ignore_pass=False)
         if not coord_moves:
             return None, ConflictCheck(has_conflict=False, similar_joseki=[{"error": "无效的着法序列"}])
         
@@ -340,8 +359,9 @@ class JosekiDB:
     # ========== 匹配 ==========
     
     def match(self, moves: List[str], top_k: int = 5, min_similarity: float = 0.5) -> List[MatchResult]:
-        """匹配定式"""
-        coord_seq = self.normalize_moves(moves)
+        """匹配定式（忽略pass和颜色，只看坐标顺序）"""
+        # 过滤掉pass，只保留有效坐标
+        coord_seq = [m for m in self.normalize_moves(moves, ignore_pass=True) if m and m != 'pass']
         if not coord_seq:
             return []
         
@@ -356,19 +376,26 @@ class JosekiDB:
             best_dir = ""
             
             for var in joseki.get("variations", []):
-                sim = self.lcs_similarity(coord_seq, var["moves"])
+                # 定式变化中也过滤pass
+                var_moves = [m for m in var["moves"] if m and m != 'pass']
+                sim = self.lcs_similarity(coord_seq, var_moves)
                 if sim > best_sim:
                     best_sim = sim
                     best_dir = var["direction"]
             
             if best_sim >= min_similarity:
+                # 计算共同着法数（过滤pass后）
+                first_var = joseki['variations'][0]["moves"] if joseki['variations'] else []
+                first_var_filtered = [m for m in first_var if m and m != 'pass']
+                common = sum(1 for i in range(min(len(coord_seq), len(first_var_filtered))) 
+                            if coord_seq[i] == first_var_filtered[i])
+                
                 results.append(MatchResult(
                     id=joseki["id"],
                     name=joseki["name"],
                     similarity=round(best_sim, 3),
                     matched_direction=best_dir,
-                    common_moves=sum(1 for i in range(min(len(coord_seq), len(joseki['variations'][0]['moves']))) 
-                                    if coord_seq[i] == joseki['variations'][0]['moves'][i])
+                    common_moves=common
                 ))
                 seen_ids.add(joseki["id"])
         
