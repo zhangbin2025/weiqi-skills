@@ -95,6 +95,37 @@ python3 db.py identify --sgf-file game.sgf --output json
 python3 db.py stats
 ```
 
+### 从SGF提取定式 ⭐
+```bash
+# 提取四角定式（输出MULTIGOGM格式）
+python3 db.py extract --sgf-file game.sgf
+
+# 只取前N手
+python3 db.py extract --sgf-file game.sgf --first-n 50
+
+# 只提取指定角（tl=左上, tr=右上, bl=左下, br=右下）
+python3 db.py extract --sgf-file game.sgf --corner tr
+
+# 保存到文件
+python3 db.py extract --sgf-file game.sgf --output joseki.sgf
+```
+
+**输出格式：**
+```
+(;CA[utf-8]FF[4]AP[JosekiExtract]SZ[19]GM[1]KM[0]MULTIGOGM[1]
+  (C[右上 黑先];B[pd];W[qf];B[nc];W[rd]...)
+  (C[左上 白先→黑先];B[pc];W[qe];B[od]...)
+  (C[左下 白先→黑先];B[qd];W[pd];B[pc]...)
+  (C[右下 黑先 含脱先];B[pc];W[pe];B[qe]...;W[tt])
+)
+```
+
+**功能说明：**
+- 自动从四角提取定式变化
+- 所有坐标转换为视觉右上角（便于统一查看）
+- 白先定式自动转为黑先（颜色互换）
+- 支持脱先检测（用 `tt` 标记）
+
 ## Python API
 
 ```python
@@ -130,6 +161,12 @@ with open("output.sgf", "w") as f:
 results = db.identify_corners(sgf_data, top_k=3)
 for corner, matches in results.items():
     print(f"{corner}: {matches[0].name if matches else '无匹配'}")
+
+# 从SGF提取四角定式
+from db import extract_joseki_from_sgf
+sgf = open("game.sgf").read()
+result = extract_joseki_from_sgf(sgf, first_n=50)  # 输出MULTIGOGM格式
+print(result)
 ```
 
 ## 数据格式
