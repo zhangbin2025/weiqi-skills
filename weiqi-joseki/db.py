@@ -224,7 +224,7 @@ class JosekiDB:
         return variations
     
     def generate_8way_sgf(self, joseki_id: str) -> Optional[str]:
-        """生成包含8向变化的SGF"""
+        """从单一方向生成包含8向变化的SGF"""
         joseki = self.get(joseki_id)
         if not joseki:
             return None
@@ -232,7 +232,20 @@ class JosekiDB:
         name = joseki.get('name', joseki_id)
         sgf_parts = [f"(;CA[utf-8]FF[4]AP[JosekiDB]SZ[19]GM[1]KM[0]MULTIGOGM[1]C[{name}]"]
         
-        for var in joseki.get("variations", []):
+        # 获取存储的单一方向变化
+        stored_moves = joseki.get("moves", [])
+        if not stored_moves:
+            # 兼容旧数据
+            variations = joseki.get("variations", [])
+            if variations:
+                stored_moves = variations[0]["moves"]
+            else:
+                return None
+        
+        # 动态生成8个方向的变化
+        variations = self.generate_variations(stored_moves)
+        
+        for var in variations:
             dir_desc = {
                 'lurd': '左上(右→下)', 'ludr': '左上(下→右)',
                 'ldru': '左下(右→上)', 'ldur': '左下(上→右)',
@@ -240,7 +253,7 @@ class JosekiDB:
                 'rdlu': '右下(左→上)', 'rdul': '右下(上→左)'
             }.get(var['direction'], var['direction'])
             
-            sgf_parts.append(f"(C[{dir_desc} {var['direction']}]" if len(joseki['variations']) > 1 else "(")
+            sgf_parts.append(f"(C[{dir_desc} {var['direction']}]" if len(variations) > 1 else "(")
             color = 'B'
             for coord in var['moves']:
                 # pass输出为 B[] 或 W[]
@@ -272,18 +285,34 @@ class JosekiDB:
     # ========== CRUD ==========
     
     def check_conflict(self, moves: List[str]) -> ConflictCheck:
-        """检查是否与已有定式冲突（完全相同才算冲突）"""
+        """检查是否与已有定式冲突（输入生成8向与库中单一方向比对）"""
         # 标准化输入（保留pass）
         coord_seq = self.normalize_moves(moves, ignore_pass=False)
+        # 生成输入序列的8个方向变化
+        input_variations = self.generate_variations(coord_seq)
+        # 构建输入变化的集合用于快速查找
+        input_variation_sets = [set(v["moves"]) for v in input_variations]
+        
         similar = []
         
         for joseki in self.joseki_list:
-            for var in joseki.get("variations", []):
-                # 直接比较完整序列（包括pass）
-                if coord_seq == var["moves"]:
+            # 获取库存储的单一方向变化
+            stored_moves = joseki.get("moves", [])
+            if not stored_moves:
+                # 兼容旧数据：如果有variations字段，取第一个
+                variations = joseki.get("variations", [])
+                if variations:
+                    stored_moves = variations[0]["moves"]
+            
+            # 将库存储的变化也生成8向
+            stored_variations = self.generate_variations(stored_moves)
+            
+            # 检查是否有任何方向完全匹配
+            for stored_var in stored_variations:
+                if stored_var["moves"] == coord_seq:
                     similar.append({
                         "id": joseki["id"],
-                        "direction": var["direction"]
+                        "name": joseki.get("name", joseki["id"])
                     })
                     break
         
@@ -292,7 +321,7 @@ class JosekiDB:
     def add(self, name: str = "", category_path: str = "", moves: List[str] = None, 
             tags: List[str] = None, description: str = "", 
             force: bool = False) -> Tuple[Optional[str], Optional[ConflictCheck]]:
-        """添加定式（保留pass，name和category_path可选）"""
+        """添加定式（保留pass，name和category_path可选，只存储单一方向）"""
         moves = moves or []
         # 入库时保留pass
         coord_moves = self.normalize_moves(moves, ignore_pass=False)
@@ -304,13 +333,12 @@ class JosekiDB:
             return None, conflict
         
         joseki_id = f"joseki_{len(self.joseki_list) + 1:03d}"
-        variations = self.generate_variations(coord_moves)
         
         joseki = {
             "id": joseki_id,
             "tags": tags or [],
             "description": description,
-            "variations": variations,
+            "moves": coord_moves,  # 只存储单一方向的变化
             "created_at": self._now()
         }
         
@@ -348,21 +376,25 @@ class JosekiDB:
             if j["id"] == joseki_id:
                 return j
         return None
+    
+    def list_all(self, category: str = None) -> List[dict]:
+        """列出现式（精简字段）"""
+        result = self.joseki_list
         if category:
             result = [j for j in result if j.get("category_path", "").startswith(category)]
         
         return [{
             "id": j["id"],
-            "name": j["name"],
+            "name": j.get("name", j["id"]),
             "category_path": j.get("category_path", ""),
-            "variation_count": len(j.get("variations", [])),
+            "move_count": len(j.get("moves", [])),
             "tags": j.get("tags", [])
         } for j in result]
     
     # ========== 匹配 ==========
     
     def match(self, moves: List[str], top_k: int = 5, min_similarity: float = 0.5) -> List[MatchResult]:
-        """匹配定式（忽略pass和颜色，只看坐标顺序）"""
+        """匹配定式（忽略pass和颜色，只看坐标顺序，动态生成8向比对）"""
         # 过滤掉pass，只保留有效坐标
         coord_seq = [m for m in self.normalize_moves(moves, ignore_pass=True) if m and m != 'pass']
         if not coord_seq:
@@ -375,10 +407,23 @@ class JosekiDB:
             if joseki["id"] in seen_ids:
                 continue
             
+            # 获取库存储的单一方向变化
+            stored_moves = joseki.get("moves", [])
+            if not stored_moves:
+                # 兼容旧数据
+                variations = joseki.get("variations", [])
+                if variations:
+                    stored_moves = variations[0]["moves"]
+                else:
+                    continue
+            
+            # 动态生成8个方向的变化
+            variations = self.generate_variations(stored_moves)
+            
             best_sim = 0.0
             best_dir = ""
             
-            for var in joseki.get("variations", []):
+            for var in variations:
                 # 定式变化中也过滤pass
                 var_moves = [m for m in var["moves"] if m and m != 'pass']
                 sim = self.lcs_similarity(coord_seq, var_moves)
@@ -387,15 +432,14 @@ class JosekiDB:
                     best_dir = var["direction"]
             
             if best_sim >= min_similarity:
-                # 计算共同着法数（过滤pass后）
-                first_var = joseki['variations'][0]["moves"] if joseki['variations'] else []
-                first_var_filtered = [m for m in first_var if m and m != 'pass']
-                common = sum(1 for i in range(min(len(coord_seq), len(first_var_filtered))) 
-                            if coord_seq[i] == first_var_filtered[i])
+                # 计算共同着法数（与原始存储序列比对）
+                stored_filtered = [m for m in stored_moves if m and m != 'pass']
+                common = sum(1 for i in range(min(len(coord_seq), len(stored_filtered))) 
+                            if coord_seq[i] == stored_filtered[i])
                 
                 results.append(MatchResult(
                     id=joseki["id"],
-                    name=joseki["name"],
+                    name=joseki.get("name", joseki["id"]),
                     similarity=round(best_sim, 3),
                     matched_direction=best_dir,
                     common_moves=common
@@ -461,9 +505,9 @@ def cmd_add(args):
     if not args.force:
         conflict = db.check_conflict(moves)
         if conflict.has_conflict:
-            print("⚠️  检测到相似定式:")
+            print("⚠️  检测到相同定式已存在:")
             for s in conflict.similar_joseki:
-                print(f"    {s['id']}: {s['name']} (相似度: {s['similarity']:.2f})")
+                print(f"    {s['id']}: {s.get('name', s['id'])}")
             print("使用 --force 强制添加")
             sys.exit(1)
     
@@ -510,10 +554,10 @@ def cmd_list(args):
     if args.limit:
         joseki_list = joseki_list[:args.limit]
     
-    print(f"{'ID':<12} {'名称':<30} {'分类':<25} {'变化数':<8}")
+    print(f"{'ID':<12} {'名称':<30} {'分类':<25} {'手数':<8}")
     print("-" * 80)
     for j in joseki_list:
-        print(f"{j['id']:<12} {j['name']:<30} {j['category_path']:<25} {j['variation_count']:<8}")
+        print(f"{j['id']:<12} {j['name']:<30} {j['category_path']:<25} {j['move_count']:<8}")
 
 def cmd_8way(args):
     """查看定式8向变化SGF"""

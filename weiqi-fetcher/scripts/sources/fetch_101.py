@@ -192,7 +192,7 @@ class Weiqi101Fetcher(BaseSourceFetcher):
         
         # 后台运行
         ws_thread = threading.Thread(
-            target=lambda: ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
+            target=lambda: ws.run_forever()
         )
         ws_thread.daemon = True
         ws_thread.start()

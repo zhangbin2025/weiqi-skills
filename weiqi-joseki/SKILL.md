@@ -138,25 +138,29 @@ for corner, matches in results.items():
 ```json
 {
   "id": "joseki_001",
+  "name": "星位小飞挂",
+  "category_path": "/星位/小飞挂",
   "description": "30753",
   "tags": [],
-  "variations": [
-    {"direction": "rdlu", "moves": ["pd", "qf", "nc", ...]},
-    {"direction": "lurd", "moves": ["dd", "cf", "fc", ...]},
-    ...
-  ],
+  "moves": ["pd", "qf", "nc", "rd"],
   "created_at": "2026-03-29T23:22:36.968667"
 }
 ```
 
 **字段说明：**
 - `id`: 定式唯一标识
+- `name`: 定式名称（可选）
+- `category_path`: 分类路径（可选）
 - `description`: **最后一手节点的OGS ID**，可用于追溯源节点
 - `tags`: 标签数组（暂未使用）
-- `variations`: 8向变化数组
+- `moves`: 定式着法序列（只存储单一方向，如右上角的变化）
 - `created_at`: 创建时间
 
+> **存储优化**: 数据库只存储单一方向的变化，需要时动态生成8向变化。这大幅减少了存储空间。
+
 ### 8个方向
+在冲突检测、匹配和8向SGF生成时，系统会自动从单一方向展开为8个方向：
+
 | 方向 | 位置 | 描述 |
 |------|------|------|
 | lurd | 左上 | 右→下 |
