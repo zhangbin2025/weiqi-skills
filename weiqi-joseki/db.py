@@ -449,22 +449,111 @@ class JosekiDB:
         results.sort(key=lambda x: x.similarity, reverse=True)
         return results[:top_k]
     
-    def identify_corners(self, sgf_data: str, top_k: int = 3) -> Dict[str, List[MatchResult]]:
-        """从SGF识别四角定式"""
-        corners = {"tl": [], "tr": [], "bl": [], "br": []}
+    def identify_corners(self, sgf_data: str, top_k: int = 3, first_n: int = 80) -> Dict[str, List[MatchResult]]:
+        """
+        从SGF识别四角定式
         
-        for match in re.finditer(r';[BW]\[([a-z]{2})\]', sgf_data):
-            coord = match.group(1)
-            col = ord(coord[0]) - ord('a')
-            row = ord(coord[1]) - ord('a')
-            key = "tl" if col < 9 and row < 9 else "tr" if col >= 9 and row < 9 else "bl" if col < 9 and row >= 9 else "br"
-            corners[key].append(coord)
+        流程：
+        1. 先用 extract_joseki_from_sgf 提取四角定式（统一到右上角）
+        2. 对每个角的定式进行匹配（只需匹配2个方向）
+        """
+        from db import extract_joseki_from_sgf, parse_multigogm
         
-        return {
-            corner: self.match(moves, top_k)
-            for corner, moves in corners.items()
-            if moves
-        }
+        # 提取四角定式（已经统一到右上角）
+        multigogm_sgf = extract_joseki_from_sgf(sgf_data, first_n=first_n)
+        corner_sequences = parse_multigogm(multigogm_sgf)
+        
+        results = {}
+        for corner_key, (comment, moves) in corner_sequences.items():
+            if len(moves) >= 2:  # 至少2手才算定式
+                # 提取纯坐标序列（忽略颜色）
+                coord_seq = [coord for _, coord in moves if coord and coord != 'tt']
+                if coord_seq:
+                    results[corner_key] = self.match_top_right(coord_seq, top_k)
+        
+        return results
+    
+    def match_top_right(self, moves: List[str], top_k: int = 5, min_similarity: float = 0.5) -> List[MatchResult]:
+        """
+        匹配右上角的定式（只需匹配2个方向：ruld和rudl）
+        
+        注意：库存储的定式默认是 ruld 方向（右上，左→下），提取的定式也统一到 ruld 方向
+        所以只需比较：
+        1. 直接比较（ruld vs ruld）
+        2. 把库存的转 rudl 再比较
+        
+        Args:
+            moves: 坐标序列（如 ['pd', 'qf', 'nc']），已经是 ruld 方向
+            top_k: 返回前K个结果
+            min_similarity: 最小相似度阈值
+        """
+        if not moves:
+            return []
+        
+        # 过滤pass
+        coord_seq = [m for m in moves if m and m != 'pass' and m != 'tt']
+        if not coord_seq:
+            return []
+        
+        results = []
+        seen_ids = set()
+        
+        for joseki in self.joseki_list:
+            if joseki["id"] in seen_ids:
+                continue
+            
+            # 获取库存储的单一方向变化（默认是 ruld 方向）
+            stored_moves = joseki.get("moves", [])
+            if not stored_moves:
+                variations = joseki.get("variations", [])
+                if variations:
+                    stored_moves = variations[0]["moves"]
+                else:
+                    continue
+            
+            # 过滤库存储的pass
+            stored_filtered = [m for m in stored_moves if m and m != 'pass' and m != 'tt']
+            if not stored_filtered:
+                continue
+            
+            best_sim = 0.0
+            best_dir = ""
+            
+            # 方向1: 直接比较（ruld vs ruld，都是左→下）
+            sim1 = self.lcs_similarity(coord_seq, stored_filtered)
+            if sim1 > best_sim:
+                best_sim = sim1
+                best_dir = "ruld"
+            
+            # 方向2: 库存的转 rudl（下→左）再比较
+            rudl_moves = []
+            for m in stored_filtered:
+                c, r = CoordinateSystem.sgf_to_nums(m)
+                # rudl: 下→左 = (r, 18-c)
+                nc, nr = (r, 18 - c)
+                rudl_moves.append(CoordinateSystem.nums_to_sgf(nc, nr))
+            
+            sim2 = self.lcs_similarity(coord_seq, rudl_moves)
+            if sim2 > best_sim:
+                best_sim = sim2
+                best_dir = "rudl"
+            
+            if best_sim >= min_similarity:
+                # 计算共同着法数（与原始存储序列比对）
+                common = sum(1 for i in range(min(len(coord_seq), len(stored_filtered))) 
+                            if coord_seq[i] == stored_filtered[i])
+                
+                results.append(MatchResult(
+                    id=joseki["id"],
+                    name=joseki.get("name", joseki["id"]),
+                    similarity=round(best_sim, 3),
+                    matched_direction=best_dir,
+                    common_moves=common
+                ))
+                seen_ids.add(joseki["id"])
+        
+        results.sort(key=lambda x: x.similarity, reverse=True)
+        return results[:top_k]
     
     def stats(self) -> dict:
         """统计信息"""
@@ -594,23 +683,29 @@ def cmd_match(args):
         sys.exit(1)
     
     if args.corner:
-        corners = {"tl": [], "tr": [], "bl": [], "br": []}
-        for m in re.finditer(r';[BW]\[([a-z]{2})\]', sgf_data):
-            coord = m.group(1)
-            col = ord(coord[0]) - ord('a')
-            row = ord(coord[1]) - ord('a')
-            key = "tl" if col < 9 and row < 9 else "tr" if col >= 9 and row < 9 else "bl" if col < 9 and row >= 9 else "br"
-            corners[key].append(coord)
-        moves = corners.get(args.corner, [])
-        if not moves:
+        # 使用提取+匹配流程（统一到右上角）
+        from db import extract_joseki_from_sgf, parse_multigogm
+        multigogm = extract_joseki_from_sgf(sgf_data, first_n=50)
+        parsed = parse_multigogm(multigogm)
+        
+        if args.corner not in parsed:
             print(f"⚠️  {args.corner} 角没有着法")
             return
-        results = db.match(moves, top_k=args.top_k)
-        print(f"\n『{args.corner.upper()}』角匹配结果:")
+        
+        comment, moves = parsed[args.corner]
+        coord_seq = [c for _, c in moves if c and c != 'tt']
+        
+        if not coord_seq:
+            print(f"⚠️  {args.corner} 角没有有效着法")
+            return
+        
+        results = db.match_top_right(coord_seq, top_k=args.top_k)
+        print(f"\n『{args.corner.upper()}』角 ({comment}):")
         _print_match_results(results)
     else:
         results = db.identify_corners(sgf_data, top_k=args.top_k)
-        for corner, matches in results.items():
+        for corner in ['tl', 'tr', 'bl', 'br']:
+            matches = results.get(corner, [])
             if matches:
                 print(f"\n『{corner.upper()}』角:")
                 _print_match_results(matches)
@@ -845,6 +940,42 @@ def format_multigogm(branches: List[Tuple[str, List[Tuple[str, str]]]]) -> str:
     
     parts.append(")")
     return "".join(parts)
+
+
+def parse_multigogm(sgf_data: str) -> Dict[str, Tuple[str, List[Tuple[str, str]]]]:
+    """
+    解析MULTIGOGM格式的SGF，提取各角定式
+    
+    Returns:
+        {corner_key: (comment, [(color, coord), ...]), ...}
+        corner_key: 'tl', 'tr', 'bl', 'br'
+    """
+    result = {}
+    corner_map = {'左上': 'tl', '右上': 'tr', '左下': 'bl', '右下': 'br'}
+    
+    # 找到每个分支 (C[comment];B[xx];W[yy]...)
+    for branch_match in re.finditer(r'\(C\[([^\]]+)\]([^)]*)\)', sgf_data):
+        comment = branch_match.group(1)
+        moves_str = branch_match.group(2)
+        
+        # 解析着法
+        moves = []
+        for m in re.finditer(r';([BW])\[([a-z]{0,2})\]', moves_str):
+            color = m.group(1)
+            coord = m.group(2) if m.group(2) else 'tt'
+            moves.append((color, coord))
+        
+        # 从comment中判断是哪个角
+        corner_key = None
+        for cn, key in corner_map.items():
+            if cn in comment:
+                corner_key = key
+                break
+        
+        if corner_key:
+            result[corner_key] = (comment, moves)
+    
+    return result
 
 def main():
     parser = argparse.ArgumentParser(description="围棋定式数据库管理工具")
