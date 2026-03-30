@@ -676,6 +676,176 @@ def cmd_stats(args):
         for cat, count in sorted(stats['by_category'].items(), key=lambda x: -x[1]):
             print(f"  {cat}: {count} 个")
 
+
+def cmd_extract(args):
+    """从SGF提取四角定式，输出MULTIGOGM格式SGF"""
+    sgf_data = ""
+    if args.sgf_file:
+        with open(args.sgf_file, 'r', encoding='utf-8') as f:
+            sgf_data = f.read()
+    else:
+        sgf_data = sys.stdin.read()
+    
+    if not sgf_data:
+        print("❌ 错误: 未提供SGF数据", file=sys.stderr)
+        sys.exit(1)
+    
+    result = extract_joseki_from_sgf(sgf_data, first_n=args.first_n, corner=args.corner)
+    
+    if args.output:
+        with open(args.output, 'w', encoding='utf-8') as f:
+            f.write(result)
+        print(f"✅ 已保存到: {args.output}")
+    else:
+        print(result)
+
+
+def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None) -> str:
+    """
+    从SGF提取四角定式，输出MULTIGOGM格式
+    
+    Args:
+        sgf_data: SGF棋谱内容
+        first_n: 只取前N手（默认50）
+        corner: 指定提取哪个角 ('tl', 'tr', 'bl', 'br')，None表示全部
+    
+    Returns:
+        MULTIGOGM格式的SGF字符串
+    """
+    # 解析前N手
+    moves = []
+    for m in re.finditer(r';([BW])\[([a-z]{0,2})\]', sgf_data):
+        color = m.group(1)
+        coord = m.group(2)
+        if coord == '':  # pass
+            coord = 'tt'
+        moves.append((color, coord))
+        if len(moves) >= first_n:
+            break
+    
+    if not moves:
+        return "(;CA[utf-8]FF[4]AP[JosekiExtract]SZ[19]GM[1]KM[0]MULTIGOGM[1])"
+    
+    # 分类到四角（单次遍历）
+    corners = {'tr': [], 'tl': [], 'bl': [], 'br': []}
+    for color, coord in moves:
+        if coord == 'tt':
+            continue  # pass 不参与角部分类
+        col, row = CoordinateSystem.sgf_to_nums(coord)
+        # 判断属于哪个角 (0-8 或 10-18，9为边界)
+        if col <= 8 and row <= 8:
+            corners['tl'].append((color, coord))
+        elif col >= 10 and row <= 8:
+            corners['tr'].append((color, coord))
+        elif col <= 8 and row >= 10:
+            corners['bl'].append((color, coord))
+        elif col >= 10 and row >= 10:
+            corners['br'].append((color, coord))
+        # col==9 或 row==9 为中央边界，不处理
+    
+    # 处理每角
+    branches = []
+    corner_names = {'tl': '左上', 'tr': '右上', 'bl': '左下', 'br': '右下'}
+    
+    # 如果指定了角，只处理该角
+    corners_to_process = [corner] if corner else corners.keys()
+    
+    for corner_name in corners_to_process:
+        seq = corners.get(corner_name, [])
+        if len(seq) < 2:  # 至少2手才算定式
+            continue
+        
+        branch = process_corner_sequence(seq, corner_names[corner_name], corner_name)
+        if branch:
+            branches.append(branch)
+    
+    # 生成MULTIGOGM SGF
+    return format_multigogm(branches)
+
+
+def process_corner_sequence(moves: List[Tuple[str, str]], corner_desc: str, corner_key: str) -> Optional[Tuple[str, List[Tuple[str, str]]]]:
+    """
+    处理单角序列，转换为右上角坐标，标准化为黑先
+    
+    Args:
+        moves: [(color, sgf_coord), ...]
+        corner_desc: 角的描述（如"左上")
+        corner_key: 角的键名 ('tl', 'tr', 'bl', 'br')
+    
+    Returns:
+        (comment, [(color, coord), ...]) 或 None
+    """
+    # 1. 检测脱先并截断
+    filtered = []
+    last_color = None
+    has_pass = False
+    
+    for color, coord in moves:
+        if last_color == color:  # 脱先 detected：对方没应，当前方继续
+            # 脱先是对方（与当前color相反的那方）
+            pass_color = 'W' if color == 'B' else 'B'
+            filtered.append((pass_color, 'tt'))  # 标记脱先
+            has_pass = True
+            break
+        filtered.append((color, coord))
+        last_color = color
+    
+    if len(filtered) < 2:
+        return None
+    
+    # 2. 分离颜色和坐标
+    colors = [c for c, _ in filtered]
+    coords = [coord for _, coord in filtered]
+    
+    # 3. 将坐标转换为视觉上的右上角区域
+    # 方法：先将SGF坐标转为该角的局部坐标，再用右上角的坐标系转回SGF
+    source_coord_sys = {
+        'tl': COORDINATE_SYSTEMS['lurd'],  # 左上用 lurd
+        'bl': COORDINATE_SYSTEMS['ldru'],  # 左下用 ldru
+        'tr': COORDINATE_SYSTEMS['ruld'],  # 右上用 ruld
+        'br': COORDINATE_SYSTEMS['rdlu'],  # 右下用 rdlu
+    }[corner_key]
+    
+    target_coord_sys = COORDINATE_SYSTEMS['ruld']  # 输出到右上角的 ruld
+    
+    tr_coords = []
+    for coord in coords:
+        if coord == 'tt':
+            tr_coords.append('tt')
+            continue
+        # 先得到局部坐标 (x, y)
+        local_x, local_y = source_coord_sys._to_local_cache.get(coord, (0, 0))
+        # 再用目标坐标系转回SGF
+        new_coord = target_coord_sys._to_sgf_cache.get((local_x, local_y), coord)
+        tr_coords.append(new_coord)
+    
+    # 5. 颜色标准化为黑先
+    if colors[0] == 'W':  # 原变化白先，需要翻转
+        colors = ['B' if c == 'W' else 'W' for c in colors]
+        comment = f"{corner_desc} 白先→黑先"
+    else:
+        comment = f"{corner_desc} 黑先"
+    
+    if has_pass:
+        comment += " 含脱先"
+    
+    return (comment, list(zip(colors, tr_coords)))
+
+
+def format_multigogm(branches: List[Tuple[str, List[Tuple[str, str]]]]) -> str:
+    """生成MULTIGOGM格式的SGF（空坐标转为tt表示脱先）"""
+    parts = [f"(;CA[utf-8]FF[4]AP[JosekiExtract]SZ[19]GM[1]KM[0]MULTIGOGM[1]"]
+    
+    for comment, moves in branches:
+        parts.append(f"(C[{comment}]")
+        for color, coord in moves:
+            sgf_coord = coord if coord else 'tt'
+            parts.append(f";{color}[{sgf_coord}]")
+        parts.append(")")
+    
+    parts.append(")")
+    return "".join(parts)
+
 def main():
     parser = argparse.ArgumentParser(description="围棋定式数据库管理工具")
     parser.add_argument("--db", default=None, help="数据库路径 (默认: ~/.weiqi-joseki/database.json)")
@@ -721,6 +891,12 @@ def main():
     
     p_stats = subparsers.add_parser("stats", help="统计信息")
     
+    p_extract = subparsers.add_parser("extract", help="从SGF提取四角定式")
+    p_extract.add_argument("--sgf-file", help="SGF文件路径")
+    p_extract.add_argument("--first-n", type=int, default=50, help="只取前N手（默认50）")
+    p_extract.add_argument("--output", "-o", help="输出文件路径")
+    p_extract.add_argument("--corner", choices=["tl", "tr", "bl", "br"], help="只提取指定角 (tl=左上, tr=右上, bl=左下, br=右下)")
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -731,6 +907,7 @@ def main():
         "init": cmd_init, "add": cmd_add, "remove": cmd_remove,
         "clear": cmd_clear, "list": cmd_list, "8way": cmd_8way,
         "match": cmd_match, "identify": cmd_identify, "stats": cmd_stats,
+        "extract": cmd_extract,
     }
     
     commands[args.command](args)
