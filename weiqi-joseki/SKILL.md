@@ -128,6 +128,62 @@ python3 db.py extract --sgf-file game.sgf --output joseki.sgf
 - 白先定式自动转为黑先（颜色互换）
 - 支持脱先检测（用 `tt` 标记）
 
+### 批量导入定式 ⭐（自动提取+统计+入库）
+```bash
+# 从SGF目录批量导入（自动提取、统计频率、入库）
+python3 db.py import /path/to/sgf/dir
+
+# 设置最少出现次数（默认10）
+python3 db.py import /path/to/sgf/dir --min-count 5
+
+# 设置最少手数（默认4手）
+python3 db.py import /path/to/sgf/dir --min-moves 3
+
+# 设置每谱提取前N手（默认50）
+python3 db.py import /path/to/sgf/dir --first-n 80
+
+# 试运行（只统计不真入库）
+python3 db.py import /path/to/sgf/dir --dry-run
+```
+
+**完整示例：**
+```bash
+python3 db.py import /path/to/sgf/dir \
+    --min-count 10 \
+    --min-moves 4 \
+    --first-n 50
+```
+
+**输出示例：**
+```
+📁 找到 97 个SGF文件
+⏳ 正在提取定式（前50手）...
+✅ 提取到 370 个定式
+⏳ 正在统计频率...
+
+📊 统计结果（频率≥10，手数≥4）:
+排名     频率       定式
+------------------------------------------------------------
+1      50       pd qc pc qd                              (4手)
+2      35       pd qc qd pc                              (4手)
+3      27       pd qc pc qd qf                           (5手)
+...
+
+⏳ 开始入库（共24个候选）...
+✅ 入库: joseki_001 (4手, 频率50)
+✅ 入库: joseki_002 (5手, 频率27)
+...
+
+🎉 完成！新增 13 个定式，跳过 11 个（已存在）
+```
+
+**算法说明：**
+1. 遍历所有SGF文件，提取四角定式（统一到右上角 ruld 视角）
+2. 将定式表示为字符串（如 `"pd qc pc qd"`），脱先用 `tt` 表示
+3. 排序后统计前缀频率（如 `"pd qc pc"` 是 `"pd qc pc qd"` 的前缀，计数+1）
+4. 筛选达到阈值的定式（频率≥`--min-count`，手数≥`--min-moves`）
+5. 自动命名并入库（跳过已存在的定式）
+
 ## Python API
 
 ```python

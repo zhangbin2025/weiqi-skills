@@ -936,6 +936,149 @@ def cmd_extract(args):
         print(result)
 
 
+def cmd_import(args):
+    """从SGF目录批量导入定式"""
+    import os
+    from pathlib import Path
+    
+    sgf_dir = Path(args.sgf_dir)
+    if not sgf_dir.exists():
+        print(f"❌ 错误: 目录不存在: {sgf_dir}")
+        sys.exit(1)
+    
+    # 收集所有SGF文件
+    sgf_files = list(sgf_dir.rglob("*.sgf"))
+    if not sgf_files:
+        print(f"⚠️  未找到SGF文件: {sgf_dir}")
+        return
+    
+    print(f"📁 找到 {len(sgf_files)} 个SGF文件")
+    print(f"⏳ 正在提取定式（前{args.first_n}手）...")
+    
+    # 1. 收集所有定式串
+    joseki_strings = []  # 存储 "dd qd cf db" 格式的定式串
+    
+    for sgf_file in sgf_files:
+        try:
+            with open(sgf_file, 'r', encoding='utf-8', errors='ignore') as f:
+                sgf_data = f.read()
+            
+            # 提取四角定式
+            multigogm = extract_joseki_from_sgf(sgf_data, first_n=args.first_n)
+            parsed = parse_multigogm(multigogm)
+            
+            for corner_key, (comment, moves) in parsed.items():
+                # 提取纯坐标序列
+                coords = []
+                for color, coord in moves:
+                    if coord:
+                        coords.append(coord)
+                
+                if len(coords) >= 2:  # 至少2手才算定式
+                    # 转成字符串 "dd qd cf db"
+                    joseki_str = " ".join(coords)
+                    joseki_strings.append(joseki_str)
+        
+        except Exception as e:
+            print(f"⚠️  处理 {sgf_file} 出错: {e}")
+            continue
+    
+    if not joseki_strings:
+        print("⚠️  未提取到任何定式")
+        return
+    
+    print(f"✅ 提取到 {len(joseki_strings)} 个定式")
+    print(f"⏳ 正在统计频率...")
+    
+    # 2. 排序
+    joseki_strings.sort()
+    
+    # 3. 统计前缀频率
+    # 算法：遍历排序后的列表，对每个定式串，它的所有前缀都+1
+    prefix_counts = {}  # {prefix_str: count}
+    
+    i = 0
+    n = len(joseki_strings)
+    
+    while i < n:
+        current = joseki_strings[i]
+        
+        # 统计当前定式串的重复次数
+        repeat_count = 1
+        while i + repeat_count < n and joseki_strings[i + repeat_count] == current:
+            repeat_count += 1
+        
+        # 当前定式串的所有前缀
+        coords = current.split()
+        for length in range(1, len(coords) + 1):
+            prefix = " ".join(coords[:length])
+            prefix_counts[prefix] = prefix_counts.get(prefix, 0) + repeat_count
+        
+        i += repeat_count
+    
+    # 4. 按频率排序
+    sorted_prefixes = sorted(prefix_counts.items(), key=lambda x: -x[1])
+    
+    # 5. 筛选达到阈值的定式（同时检查最少手数）
+    candidates = [(prefix, count) for prefix, count in sorted_prefixes 
+                  if count >= args.min_count and len(prefix.split()) >= args.min_moves]
+    
+    print(f"\n📊 统计结果（频率≥{args.min_count}，手数≥{args.min_moves}）:")
+    print(f"{'排名':<6} {'频率':<8} {'定式':<40}")
+    print("-" * 60)
+    
+    for rank, (prefix, count) in enumerate(candidates[:20], 1):
+        coords = prefix.split()
+        print(f"{rank:<6} {count:<8} {prefix:<40} ({len(coords)}手)")
+    
+    if args.dry_run:
+        print(f"\n🧪 试运行模式，共找到 {len(candidates)} 个候选定式")
+        return
+    
+    # 6. 入库
+    print(f"\n⏳ 开始入库（共{len(candidates)}个候选）...")
+    
+    db = JosekiDB(args.db)
+    added_count = 0
+    skipped_count = 0
+    
+    for prefix, count in candidates:
+        coords = prefix.split()
+        
+        # 构造SGF格式
+        sgf_moves = []
+        color = 'B'
+        for c in coords:
+            sgf_moves.append(f"{color}[{c}]")
+            color = 'W' if color == 'B' else 'B'
+        sgf = "(;" + ";".join(sgf_moves) + ")"
+        
+        # 检查冲突
+        conflict = db.check_conflict(sgf)
+        if conflict.has_conflict:
+            skipped_count += 1
+            continue
+        
+        # 自动命名和分类
+        name = f"自动提取-{len(coords)}手"
+        category = "/自动"
+        
+        joseki_id, _ = db.add(
+            name=name,
+            category_path=category,
+            moves=sgf_moves,
+            force=False
+        )
+        
+        if joseki_id:
+            added_count += 1
+            print(f"✅ 入库: {joseki_id} ({len(coords)}手, 频率{count})")
+        else:
+            skipped_count += 1
+    
+    print(f"\n🎉 完成！新增 {added_count} 个定式，跳过 {skipped_count} 个（已存在）")
+
+
 def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None) -> str:
     """
     从SGF提取四角定式，输出MULTIGOGM格式
@@ -1169,6 +1312,13 @@ def main():
     p_extract.add_argument("--output", "-o", help="输出文件路径")
     p_extract.add_argument("--corner", choices=["tl", "tr", "bl", "br"], help="只提取指定角 (tl=左上, tr=右上, bl=左下, br=右下)")
     
+    p_import = subparsers.add_parser("import", help="从SGF目录批量导入定式")
+    p_import.add_argument("sgf_dir", help="SGF文件目录路径")
+    p_import.add_argument("--min-count", type=int, default=10, help="最少出现次数才入库（默认10）")
+    p_import.add_argument("--min-moves", type=int, default=4, help="定式至少多少手才入库（默认4）")
+    p_import.add_argument("--first-n", type=int, default=50, help="每谱提取前N手内的定式（默认50）")
+    p_import.add_argument("--dry-run", action="store_true", help="试运行，只统计不真入库")
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -1179,7 +1329,7 @@ def main():
         "init": cmd_init, "add": cmd_add, "remove": cmd_remove,
         "clear": cmd_clear, "list": cmd_list, "8way": cmd_8way,
         "match": cmd_match, "identify": cmd_identify, "stats": cmd_stats,
-        "extract": cmd_extract,
+        "extract": cmd_extract, "import": cmd_import,
     }
     
     commands[args.command](args)
