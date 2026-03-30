@@ -285,50 +285,160 @@ class JosekiDB:
     # ========== CRUD ==========
     
     def check_conflict(self, moves: List[str]) -> ConflictCheck:
-        """检查是否与已有定式冲突（输入生成8向与库中单一方向比对）"""
+        """检查是否与已有定式冲突（比较右上角两个方向）
+        
+        规则：输入定式转换到右上角后，生成 ruld 和 rudl 两个方向，
+        与库里定式（已统一为 ruld 方向）比较。
+        
+        关键：使用 CoordinateSystem 进行正确的坐标转换，而不是错误的公式。
+        """
         # 标准化输入（保留pass）
         coord_seq = self.normalize_moves(moves, ignore_pass=False)
-        # 生成输入序列的8个方向变化
-        input_variations = self.generate_variations(coord_seq)
-        # 构建输入变化的集合用于快速查找
-        input_variation_sets = [set(v["moves"]) for v in input_variations]
+        
+        # 检测角位并转换到右上角（ruld 视角）
+        detected_corner = self.detect_corner(coord_seq)
+        if detected_corner and detected_corner != 'tr':
+            coord_seq = self.convert_to_top_right(coord_seq, detected_corner)
+        
+        # 获取右上角两个坐标系
+        ruld = COORDINATE_SYSTEMS['ruld']  # 左→下
+        rudl = COORDINATE_SYSTEMS['rudl']  # 下→左
+        
+        # ruld_seq: 直接就是转换后的坐标
+        ruld_seq = coord_seq
+        
+        # rudl_seq: 需要把 ruld 坐标先转局部，再用 rudl 转回SGF
+        rudl_seq = []
+        for m in coord_seq:
+            if not m or m == 'pass':
+                rudl_seq.append(m)
+            else:
+                # 1. ruld SGF → 局部坐标
+                local = ruld._to_local_cache.get(m)
+                # 2. 局部坐标 → rudl SGF
+                new_sgf = rudl._to_sgf_cache.get(local, m)
+                rudl_seq.append(new_sgf)
         
         similar = []
         
         for joseki in self.joseki_list:
-            # 获取库存储的单一方向变化
+            # 获取库存储的单一方向变化（已统一为右上角 ruld 方向）
             stored_moves = joseki.get("moves", [])
             if not stored_moves:
-                # 兼容旧数据：如果有variations字段，取第一个
+                # 兼容旧数据
                 variations = joseki.get("variations", [])
                 if variations:
                     stored_moves = variations[0]["moves"]
             
-            # 将库存储的变化也生成8向
-            stored_variations = self.generate_variations(stored_moves)
-            
-            # 检查是否有任何方向完全匹配
-            for stored_var in stored_variations:
-                if stored_var["moves"] == coord_seq:
-                    similar.append({
-                        "id": joseki["id"],
-                        "name": joseki.get("name", joseki["id"])
-                    })
-                    break
+            # 检查两个方向是否任一匹配
+            if stored_moves == ruld_seq or stored_moves == rudl_seq:
+                similar.append({
+                    "id": joseki["id"],
+                    "name": joseki.get("name", joseki["id"])
+                })
         
         return ConflictCheck(has_conflict=len(similar) > 0, similar_joseki=similar)
     
+    @staticmethod
+    def detect_corner(moves: List[str]) -> Optional[str]:
+        """
+        检测定式属于哪个角
+        
+        根据坐标分布判断：
+        - 如果所有坐标都在 col<=8 && row<=8 区域 → 左上 (tl)
+        - 如果所有坐标都在 col>=10 && row<=8 区域 → 右上 (tr)
+        - 如果所有坐标都在 col<=8 && row>=10 区域 → 左下 (bl)
+        - 如果所有坐标都在 col>=10 && row>=10 区域 → 右下 (br)
+        
+        返回: 'tl', 'tr', 'bl', 'br' 或 None（无法判断）
+        """
+        valid_coords = [m for m in moves if m and m != 'pass' and len(m) == 2]
+        if not valid_coords:
+            return None
+        
+        corner_counts = {'tl': 0, 'tr': 0, 'bl': 0, 'br': 0}
+        
+        for coord in valid_coords:
+            try:
+                col, row = CoordinateSystem.sgf_to_nums(coord)
+                if col <= 8 and row <= 8:
+                    corner_counts['tl'] += 1
+                elif col >= 10 and row <= 8:
+                    corner_counts['tr'] += 1
+                elif col <= 8 and row >= 10:
+                    corner_counts['bl'] += 1
+                elif col >= 10 and row >= 10:
+                    corner_counts['br'] += 1
+            except:
+                continue
+        
+        # 找出数量最多的角
+        max_corner = max(corner_counts, key=corner_counts.get)
+        if corner_counts[max_corner] > 0:
+            return max_corner
+        return None
+    
+    @staticmethod
+    def convert_to_top_right(moves: List[str], source_corner: str) -> List[str]:
+        """
+        将定式坐标转换为右上角（视觉）的坐标
+        
+        Args:
+            moves: 坐标序列
+            source_corner: 源角位 ('tl', 'tr', 'bl', 'br')
+        
+        Returns:
+            转换后的坐标序列（右上角视角）
+        """
+        # 如果已经是右上角，无需转换
+        if source_corner == 'tr':
+            return moves
+        
+        # 源角对应的坐标系
+        source_coord_sys = {
+            'tl': COORDINATE_SYSTEMS['lurd'],  # 左上
+            'bl': COORDINATE_SYSTEMS['ldru'],  # 左下
+            'br': COORDINATE_SYSTEMS['rdlu'],  # 右下
+        }.get(source_corner)
+        
+        if not source_coord_sys:
+            return moves
+        
+        # 目标坐标系：右上角的 ruld（左→下）
+        target_coord_sys = COORDINATE_SYSTEMS['ruld']
+        
+        converted = []
+        for coord in moves:
+            if not coord or coord == 'pass':
+                converted.append(coord)
+                continue
+            try:
+                # 先转为局部坐标
+                local_x, local_y = source_coord_sys._to_local_cache.get(coord, (0, 0))
+                # 再用目标坐标系转回SGF
+                new_coord = target_coord_sys._to_sgf_cache.get((local_x, local_y), coord)
+                converted.append(new_coord)
+            except:
+                converted.append(coord)
+        
+        return converted
+
     def add(self, name: str = "", category_path: str = "", moves: List[str] = None, 
             tags: List[str] = None, description: str = "", 
             force: bool = False) -> Tuple[Optional[str], Optional[ConflictCheck]]:
-        """添加定式（保留pass，name和category_path可选，只存储单一方向）"""
+        """添加定式（保留pass，name和category_path可选，自动识别角位并转为右上角存储）"""
         moves = moves or []
         # 入库时保留pass
         coord_moves = self.normalize_moves(moves, ignore_pass=False)
         if not coord_moves:
             return None, ConflictCheck(has_conflict=False, similar_joseki=[{"error": "无效的着法序列"}])
         
-        conflict = self.check_conflict(moves)
+        # 检测角位并转换为右上角
+        detected_corner = self.detect_corner(coord_moves)
+        if detected_corner and detected_corner != 'tr':
+            coord_moves = self.convert_to_top_right(coord_moves, detected_corner)
+        
+        conflict = self.check_conflict(coord_moves)
         if conflict.has_conflict and not force:
             return None, conflict
         
@@ -338,7 +448,7 @@ class JosekiDB:
             "id": joseki_id,
             "tags": tags or [],
             "description": description,
-            "moves": coord_moves,  # 只存储单一方向的变化
+            "moves": coord_moves,  # 存储转换后的右上角视角变化
             "created_at": self._now()
         }
         
@@ -394,7 +504,7 @@ class JosekiDB:
     # ========== 匹配 ==========
     
     def match(self, moves: List[str], top_k: int = 5, min_similarity: float = 0.5) -> List[MatchResult]:
-        """匹配定式（忽略pass和颜色，只看坐标顺序，动态生成8向比对）"""
+        """匹配定式（忽略pass和颜色，只看坐标顺序，库存储为ruld，只需比较ruld和rudl两个方向）"""
         # 过滤掉pass，只保留有效坐标
         coord_seq = [m for m in self.normalize_moves(moves, ignore_pass=True) if m and m != 'pass']
         if not coord_seq:
@@ -403,11 +513,15 @@ class JosekiDB:
         results = []
         seen_ids = set()
         
+        # 获取右上角坐标系
+        ruld = COORDINATE_SYSTEMS['ruld']
+        rudl = COORDINATE_SYSTEMS['rudl']
+        
         for joseki in self.joseki_list:
             if joseki["id"] in seen_ids:
                 continue
             
-            # 获取库存储的单一方向变化
+            # 获取库存储的单一方向变化（ruld视角）
             stored_moves = joseki.get("moves", [])
             if not stored_moves:
                 # 兼容旧数据
@@ -417,23 +531,34 @@ class JosekiDB:
                 else:
                     continue
             
-            # 动态生成8个方向的变化
-            variations = self.generate_variations(stored_moves)
+            # 过滤库存储的pass
+            stored_filtered = [m for m in stored_moves if m and m != 'pass']
+            if not stored_filtered:
+                continue
             
             best_sim = 0.0
             best_dir = ""
             
-            for var in variations:
-                # 定式变化中也过滤pass
-                var_moves = [m for m in var["moves"] if m and m != 'pass']
-                sim = self.lcs_similarity(coord_seq, var_moves)
-                if sim > best_sim:
-                    best_sim = sim
-                    best_dir = var["direction"]
+            # 方向1: 直接比较（ruld vs ruld）
+            sim1 = self.lcs_similarity(coord_seq, stored_filtered)
+            if sim1 > best_sim:
+                best_sim = sim1
+                best_dir = "ruld"
+            
+            # 方向2: 库存的转 rudl（下→左）再比较
+            rudl_moves = []
+            for m in stored_filtered:
+                local = ruld._to_local_cache.get(m)
+                new_sgf = rudl._to_sgf_cache.get(local, m)
+                rudl_moves.append(new_sgf)
+            
+            sim2 = self.lcs_similarity(coord_seq, rudl_moves)
+            if sim2 > best_sim:
+                best_sim = sim2
+                best_dir = "rudl"
             
             if best_sim >= min_similarity:
                 # 计算共同着法数（与原始存储序列比对）
-                stored_filtered = [m for m in stored_moves if m and m != 'pass']
                 common = sum(1 for i in range(min(len(coord_seq), len(stored_filtered))) 
                             if coord_seq[i] == stored_filtered[i])
                 
@@ -526,12 +651,14 @@ class JosekiDB:
                 best_dir = "ruld"
             
             # 方向2: 库存的转 rudl（下→左）再比较
+            ruld = COORDINATE_SYSTEMS['ruld']
+            rudl = COORDINATE_SYSTEMS['rudl']
             rudl_moves = []
             for m in stored_filtered:
-                c, r = CoordinateSystem.sgf_to_nums(m)
-                # rudl: 下→左 = (r, 18-c)
-                nc, nr = (r, 18 - c)
-                rudl_moves.append(CoordinateSystem.nums_to_sgf(nc, nr))
+                # ruld SGF → 局部坐标 → rudl SGF
+                local = ruld._to_local_cache.get(m)
+                new_sgf = rudl._to_sgf_cache.get(local, m)
+                rudl_moves.append(new_sgf)
             
             sim2 = self.lcs_similarity(coord_seq, rudl_moves)
             if sim2 > best_sim:
@@ -590,6 +717,20 @@ def cmd_add(args):
     if not moves:
         print("❌ 错误: 未提供有效的着法序列", file=sys.stderr)
         sys.exit(1)
+    
+    # 先标准化着法以检测角位
+    coord_moves = db.normalize_moves(moves, ignore_pass=False)
+    detected_corner = db.detect_corner(coord_moves)
+    corner_names = {'tl': '左上', 'tr': '右上', 'bl': '左下', 'br': '右下'}
+    
+    if detected_corner:
+        corner_desc = corner_names.get(detected_corner, detected_corner)
+        if detected_corner == 'tr':
+            print(f"📍 检测到角位: {corner_desc}（已是右上角视角，无需转换）")
+        else:
+            print(f"📍 检测到角位: {corner_desc} → 已自动转换为右上角视角")
+    else:
+        print(f"⚠️  无法自动识别角位，按原坐标入库")
     
     if not args.force:
         conflict = db.check_conflict(moves)
