@@ -626,9 +626,15 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
             let match;
             while ((match = regex.exec(sgf)) !== null) {{
                 const color = match[1] === 'B' ? 'black' : 'white';
-                const x = match[2].charCodeAt(0) - 97;
-                const y = match[2].charCodeAt(1) - 97;
-                moves.push({{ color, x, y }});
+                const coord = match[2];
+                // 处理脱先(pass): tt
+                if (coord === 'tt') {{
+                    moves.push({{ color, x: null, y: null, pass: true }});
+                    continue;
+                }}
+                const x = coord.charCodeAt(0) - 97;
+                const y = coord.charCodeAt(1) - 97;
+                moves.push({{ color, x, y, pass: false }});
             }}
 
             return {{ moves, info }};
@@ -1030,6 +1036,10 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
 
             for (let i = 0; i < currentMove; i++) {{
                 const move = moves[i];
+                
+                // 跳过脱先(pass)
+                if (move.pass) continue;
+                
                 const opponent = move.color === 'black' ? 'white' : 'black';
 
                 // 检查是否可以下子（简化处理，不处理所有规则）
@@ -1065,8 +1075,11 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
                     playCaptureSound();
                 }}
             }} else if (currentMove > 0 && currentMove > (window.lastMoveNum || 0)) {{
-                // 单纯落子（向前移动）
-                playStoneSound();
+                // 单纯落子（向前移动），跳过脱先
+                const lastMove = moves[currentMove - 1];
+                if (!lastMove.pass) {{
+                    playStoneSound();
+                }}
             }}
 
             // 更新记录
@@ -1078,9 +1091,9 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
             for (let y = 0; y < BOARD_SIZE; y++) {{
                 for (let x = 0; x < BOARD_SIZE; x++) {{
                     if (board[y][x]) {{
-                        const isLast = (currentMove > 0 &&
-                            moves[currentMove - 1].x === x &&
-                            moves[currentMove - 1].y === y);
+                        const lastMove = currentMove > 0 ? moves[currentMove - 1] : null;
+                        const isLast = (lastMove && !lastMove.pass &&
+                            lastMove.x === x && lastMove.y === y);
 
                         // 找到这是第几手
                         let moveNum = null;
