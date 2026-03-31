@@ -184,6 +184,85 @@ python3 db.py import /path/to/sgf/dir \
 4. 筛选达到阈值的定式（频率≥`--min-count`，手数≥`--min-moves`）
 5. 自动命名并入库（跳过已存在的定式）
 
+### 从KataGo棋谱库导入定式 ⭐⭐
+
+自动从 [KataGo Archive](https://katagoarchive.org/kata1/ratinggames/) 下载棋谱并提取定式。
+
+**KataGo棋谱库信息：**
+- 基础URL: https://katagoarchive.org/kata1/ratinggames/
+- 文件格式: YYYY-MM-DDrating.tar.bz2（每日一个压缩包，约500MB-1GB）
+- 每个压缩包包含数千局SGF棋谱
+
+**基本用法：**
+```bash
+# 下载一个月的数据并提取定式
+python3 db.py katago --start-date 2024-01-01 --end-date 2024-01-31
+
+# 只统计不入库（试运行）
+python3 db.py katago --start-date 2024-01-01 --end-date 2024-01-31 --dry-run
+
+# 断点续传（中断后从上次位置继续）
+python3 db.py katago --start-date 2024-01-01 --end-date 2024-01-31 --resume
+```
+
+**完整参数：**
+```bash
+python3 db.py katago \
+    --start-date 2024-01-01 \           # 起始日期（必需）
+    --end-date 2024-01-31 \             # 结束日期（必需）
+    --cache-dir ~/.cache/katago \       # 下载缓存目录
+    --keep-cache \                      # 保留缓存文件（默认删除）
+    --workers 5 \                       # 并行下载线程数（默认3）
+    --max-memory-mb 1024 \              # 内存上限MB（默认512）
+    --resume \                          # 断点续传
+    --min-count 10 \                    # 最少出现次数才入库（默认10）
+    --min-moves 4 \                     # 最少手数（默认4）
+    --min-rate 0.5 \                    # 最小出现概率%（默认0.5）
+    --first-n 50 \                      # 每谱提取前N手（默认50）
+    --dry-run                           # 试运行
+```
+
+**输出示例：**
+```
+📅 日期范围: 2024-01-01 至 2024-01-31（共31天）
+💾 缓存目录: ~/.weiqi-joseki/katago-cache
+📊 进度文件: ~/.weiqi-joseki/katago-progress.json
+
+📥 开始下载（并行3线程）...
+📥 下载进度: 31/31 (100.0%) | 当前: 2024-01-31rating.tar.bz2 | 剩余时间: 0s
+✅ 下载完成: 31/31 个文件
+
+⚙️ 开始处理棋谱（前50手）...
+⚙️ 处理进度: 31/31 | 当前: 2024-01-31   | 棋谱: 15432 | 定式: 2847 | 内存: 245.3MB | 剩余: 0s
+
+⏳ 正在统计前缀频率...
+
+📊 统计结果（次数≥10，手数≥4，概率≥0.5%）：
+   总棋谱数: 15432，候选定式: 156
+排名     频率       定式
+------------------------------------------------------------
+1      892      pd qc pc qd                              (4手)
+2      756      pd qc qd pc                              (4手)
+3      634      pd qc pc qd qf                           (5手)
+...
+
+⏳ 开始入库（共156个候选）...
+✅ 入库: joseki_001 (4手, 频率892)
+✅ 入库: joseki_002 (5手, 频率634)
+...
+
+🎉 完成！新增 89 个定式，跳过 67 个（已存在）
+🧹 已清理进度文件
+```
+
+**功能特性：**
+- **断点续传**: 使用 `--resume` 从中断处继续，进度保存在 `~/.weiqi-joseki/katago-progress.json`
+- **内存控制**: 自动监控内存使用，超过90%时强制GC，超过100%时保存进度退出
+- **流式解压**: 不解压整个文件，直接流式读取tar.bz2内容
+- **多线程下载**: 支持并行下载多个日期的文件
+- **错误恢复**: 下载失败自动重试3次，解压失败跳过该日期
+- **信号捕获**: Ctrl+C 中断时自动保存进度
+
 ## Python API
 
 ```python

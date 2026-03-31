@@ -11,14 +11,679 @@ import sys
 import argparse
 import time
 import random
+import gc
+import signal
+import tarfile
+import threading
+import urllib.request
+import urllib.error
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Set
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import io
 
 # ==================== 配置 ====================
 DEFAULT_DB_DIR = Path.home() / ".weiqi-joseki"
 DEFAULT_DB_PATH = DEFAULT_DB_DIR / "database.json"
+
+# KataGo 配置
+KATAGO_BASE_URL = "https://katagoarchive.org/kata1/ratinggames/"
+KATAGO_CACHE_DIR = DEFAULT_DB_DIR / "katago-cache"
+KATAGO_PROGRESS_FILE = DEFAULT_DB_DIR / "katago-progress.json"
+
+
+# ==================== KataGo 下载器 ====================
+class MemoryMonitor:
+    """内存监控器"""
+    def __init__(self, max_memory_mb: int):
+        self.max_memory_mb = max_memory_mb
+        self.warning_threshold = max_memory_mb * 0.9
+        self.critical_threshold = max_memory_mb
+        self._check_import()
+    
+    def _check_import(self):
+        try:
+            import psutil
+            self.psutil = psutil
+            self.has_psutil = True
+        except ImportError:
+            self.has_psutil = False
+    
+    def get_memory_mb(self) -> float:
+        """获取当前内存使用（MB）"""
+        if self.has_psutil:
+            process = self.psutil.Process()
+            return process.memory_info().rss / (1024 * 1024)
+        else:
+            # 使用简单的对象计数估算
+            return 0
+    
+    def check(self) -> Tuple[str, float]:
+        """检查内存状态，返回 (status, memory_mb)
+        status: 'ok', 'warning', 'critical'
+        """
+        mem = self.get_memory_mb()
+        if mem >= self.critical_threshold:
+            return 'critical', mem
+        elif mem >= self.warning_threshold:
+            return 'warning', mem
+        return 'ok', mem
+    
+    def force_gc(self):
+        """强制垃圾回收"""
+        gc.collect()
+
+
+class ProgressManager:
+    """进度管理器（断点续传）"""
+    def __init__(self, progress_file: Path):
+        self.progress_file = progress_file
+        self.data = self._load()
+    
+    def _load(self) -> dict:
+        if self.progress_file.exists():
+            try:
+                with open(self.progress_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except:
+                pass
+        return {
+            'completed_dates': [],
+            'count_map': {},
+            'total_sgfs': 0,
+            'start_time': None
+        }
+    
+    def save(self):
+        """保存进度"""
+        self.progress_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.progress_file, 'w', encoding='utf-8') as f:
+            json.dump(self.data, f, ensure_ascii=False, indent=2)
+    
+    def is_completed(self, date_str: str) -> bool:
+        return date_str in self.data.get('completed_dates', [])
+    
+    def mark_completed(self, date_str: str, stats: dict):
+        if date_str not in self.data.get('completed_dates', []):
+            self.data.setdefault('completed_dates', []).append(date_str)
+        # 更新统计
+        self.data['total_sgfs'] = self.data.get('total_sgfs', 0) + stats.get('sgf_count', 0)
+        self.save()
+    
+    def update_count_map(self, count_map: dict):
+        """更新计数映射"""
+        for k, v in count_map.items():
+            self.data.setdefault('count_map', {})[k] = self.data.get('count_map', {}).get(k, 0) + v
+    
+    def get_count_map(self) -> dict:
+        return self.data.get('count_map', {})
+    
+    def clear(self):
+        """清除进度"""
+        if self.progress_file.exists():
+            self.progress_file.unlink()
+        self.data = {
+            'completed_dates': [],
+            'count_map': {},
+            'total_sgfs': 0,
+            'start_time': None
+        }
+
+
+class DownloadManager:
+    """下载管理器（支持重试、进度显示）"""
+    def __init__(self, cache_dir: Path, max_retries: int = 3, workers: int = 3):
+        self.cache_dir = cache_dir
+        self.max_retries = max_retries
+        self.workers = workers
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._stop_event = threading.Event()
+        self._lock = threading.Lock()
+        self._completed = 0
+        self._total = 0
+        self._current_file = ""
+        self._start_time = time.time()
+    
+    def stop(self):
+        self._stop_event.set()
+    
+    def is_stopped(self) -> bool:
+        return self._stop_event.is_set()
+    
+    def _format_size(self, size: int) -> str:
+        """格式化文件大小"""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024:
+                return f"{size:.1f}{unit}"
+            size /= 1024
+        return f"{size:.1f}TB"
+    
+    def _format_time(self, seconds: float) -> str:
+        """格式化时间"""
+        if seconds < 60:
+            return f"{int(seconds)}s"
+        elif seconds < 3600:
+            return f"{int(seconds/60)}m{int(seconds%60)}s"
+        else:
+            return f"{int(seconds/3600)}h{int((seconds%3600)/60)}m"
+    
+    def _download_with_progress(self, url: str, output_path: Path, date_str: str) -> bool:
+        """带重试的下载"""
+        for attempt in range(self.max_retries):
+            if self._stop_event.is_set():
+                return False
+            
+            try:
+                self._current_file = f"{date_str}.tar.bz2"
+                
+                # 如果文件已存在且有效，跳过
+                if output_path.exists() and output_path.stat().st_size > 1000:
+                    with self._lock:
+                        self._completed += 1
+                    return True
+                
+                # 下载
+                req = urllib.request.Request(url, headers={
+                    'User-Agent': 'Mozilla/5.0 (compatible; WeiqiJoseki/1.0)'
+                })
+                
+                with urllib.request.urlopen(req, timeout=60) as response:
+                    total_size = int(response.headers.get('Content-Length', 0))
+                    
+                    with open(output_path, 'wb') as f:
+                        downloaded = 0
+                        chunk_size = 8192
+                        while True:
+                            if self._stop_event.is_set():
+                                return False
+                            chunk = response.read(chunk_size)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                
+                with self._lock:
+                    self._completed += 1
+                return True
+                
+            except Exception as e:
+                if attempt < self.max_retries - 1:
+                    time.sleep(2 ** attempt)  # 指数退避
+                else:
+                    with self._lock:
+                        self._completed += 1
+                    return False
+        
+        return False
+    
+    def download(self, dates: List[str]) -> Dict[str, Path]:
+        """批量下载，返回成功下载的文件映射"""
+        self._total = len(dates)
+        self._completed = 0
+        self._start_time = time.time()
+        
+        results = {}
+        
+        def download_single(date_str: str) -> Tuple[str, Optional[Path]]:
+            if self._stop_event.is_set():
+                return date_str, None
+            
+            url = f"{KATAGO_BASE_URL}{date_str}rating.tar.bz2"
+            output_path = self.cache_dir / f"{date_str}rating.tar.bz2"
+            
+            if self._download_with_progress(url, output_path, date_str):
+                return date_str, output_path
+            return date_str, None
+        
+        # 使用线程池并行下载
+        with ThreadPoolExecutor(max_workers=self.workers) as executor:
+            futures = {executor.submit(download_single, d): d for d in dates}
+            
+            for future in as_completed(futures):
+                if self._stop_event.is_set():
+                    break
+                date_str, path = future.result()
+                if path:
+                    results[date_str] = path
+        
+        return results
+    
+    def print_progress(self):
+        """打印当前进度"""
+        elapsed = time.time() - self._start_time
+        if self._completed > 0:
+            avg_time = elapsed / self._completed
+            remaining = (self._total - self._completed) * avg_time
+        else:
+            remaining = 0
+        
+        percent = (self._completed / self._total * 100) if self._total > 0 else 0
+        
+        print(f"\r📥 下载进度: {self._completed}/{self._total} ({percent:.1f}%) "
+              f"| 当前: {self._current_file:<20} "
+              f"| 剩余时间: {self._format_time(remaining)}", end='', flush=True)
+
+
+class KatagoProcessor:
+    """KataGo 棋谱处理器"""
+    def __init__(self, cache_dir: Path, progress_file: Path, 
+                 max_memory_mb: int = 512, workers: int = 3,
+                 first_n: int = 50, keep_cache: bool = False):
+        self.cache_dir = cache_dir
+        self.progress_file = progress_file
+        self.progress = ProgressManager(progress_file)
+        self.memory = MemoryMonitor(max_memory_mb)
+        self.workers = workers
+        self.first_n = first_n
+        self.keep_cache = keep_cache
+        self._stop_event = threading.Event()
+        self._lock = threading.Lock()
+        self._processed_sgfs = 0
+        self._extracted_joseki = 0
+        self._current_date = ""
+        self._start_time = time.time()
+        self.count_map = {}  # 本地计数映射
+        
+        # 加载已有进度
+        self.count_map = self.progress.get_count_map().copy()
+    
+    def stop(self):
+        self._stop_event.set()
+    
+    def is_stopped(self) -> bool:
+        return self._stop_event.is_set()
+    
+    def save_progress(self):
+        """保存当前进度"""
+        self.progress.update_count_map(self.count_map)
+        self.progress.save()
+    
+    def _format_size(self, size: int) -> str:
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024:
+                return f"{size:.1f}{unit}"
+            size /= 1024
+        return f"{size:.1f}TB"
+    
+    def _format_time(self, seconds: float) -> str:
+        if seconds < 60:
+            return f"{int(seconds)}s"
+        elif seconds < 3600:
+            return f"{int(seconds/60)}m{int(seconds%60)}s"
+        else:
+            return f"{int(seconds/3600)}h{int((seconds%3600)/60)}m"
+    
+    def _process_sgf(self, sgf_data: str) -> int:
+        """处理单个SGF，返回提取的定式数量"""
+        try:
+            # 提取四角定式
+            multigogm = extract_joseki_from_sgf(sgf_data, first_n=self.first_n)
+            parsed = parse_multigogm(multigogm)
+            
+            count = 0
+            for corner_key, (comment, moves) in parsed.items():
+                # 提取纯坐标序列
+                coords = []
+                for color, coord in moves:
+                    if coord:
+                        coords.append(coord)
+                
+                if len(coords) >= 2:  # 至少2手才算定式
+                    joseki_str = " ".join(coords)
+                    with self._lock:
+                        self.count_map[joseki_str] = self.count_map.get(joseki_str, 0) + 1
+                    count += 1
+            
+            return count
+        except Exception:
+            return 0
+    
+    def process_tarfile(self, tar_path: Path, date_str: str) -> dict:
+        """处理单个tar.bz2文件"""
+        self._current_date = date_str
+        stats = {'sgf_count': 0, 'joseki_count': 0, 'error': None}
+        
+        try:
+            # 检查内存
+            status, mem_mb = self.memory.check()
+            if status == 'critical':
+                self.save_progress()
+                stats['error'] = f'内存超限: {mem_mb:.1f}MB'
+                return stats
+            elif status == 'warning':
+                self.memory.force_gc()
+            
+            # 流式解压处理
+            sgf_count = 0
+            joseki_count = 0
+            
+            with tarfile.open(tar_path, 'r:bz2') as tar:
+                for member in tar.getmembers():
+                    if self._stop_event.is_set():
+                        break
+                    
+                    if not member.isfile() or not member.name.endswith('.sgf'):
+                        continue
+                    
+                    try:
+                        f = tar.extractfile(member)
+                        if f is None:
+                            continue
+                        
+                        sgf_data = f.read().decode('utf-8', errors='ignore')
+                        sgf_count += 1
+                        
+                        # 处理SGF
+                        joseki = self._process_sgf(sgf_data)
+                        joseki_count += joseki
+                        
+                        # 定期保存进度
+                        if sgf_count % 100 == 0:
+                            self.save_progress()
+                            
+                    except Exception:
+                        continue
+            
+            stats['sgf_count'] = sgf_count
+            stats['joseki_count'] = joseki_count
+            
+            with self._lock:
+                self._processed_sgfs += sgf_count
+                self._extracted_joseki += joseki_count
+            
+            return stats
+            
+        except Exception as e:
+            stats['error'] = str(e)
+            return stats
+    
+    def print_progress(self, total_dates: int, completed_dates: int):
+        """打印处理进度"""
+        elapsed = time.time() - self._start_time
+        if completed_dates > 0:
+            avg_time = elapsed / completed_dates
+            remaining = (total_dates - completed_dates) * avg_time
+        else:
+            remaining = 0
+        
+        _, mem_mb = self.memory.check()
+        
+        print(f"\r⚙️  处理进度: {completed_dates}/{total_dates} "
+              f"| 当前: {self._current_date:<12} "
+              f"| 棋谱: {self._processed_sgfs} "
+              f"| 定式: {len(self.count_map)} "
+              f"| 内存: {mem_mb:.1f}MB "
+              f"| 剩余: {self._format_time(remaining)}", end='', flush=True)
+    
+    def finalize(self, min_count: int, min_moves: int, min_rate: float, 
+                 total_sgfs: int, dry_run: bool = False) -> Tuple[int, int]:
+        """完成处理，筛选并入库"""
+        print("\n\n⏳ 正在统计前缀频率...")
+        
+        # 前缀累加统计
+        sorted_joseki = sorted(self.count_map.keys())
+        n = len(sorted_joseki)
+        
+        for i in range(n):
+            current = sorted_joseki[i]
+            j = i + 1
+            while j < n:
+                later = sorted_joseki[j]
+                if later.startswith(current + " "):
+                    self.count_map[current] += self.count_map[later]
+                    j += 1
+                else:
+                    break
+        
+        # 筛选候选
+        candidates = []
+        for prefix, count in self.count_map.items():
+            if len(prefix.split()) < min_moves:
+                continue
+            if count < min_count:
+                continue
+            if min_rate > 0:
+                rate = (count / total_sgfs) * 100.0
+                if rate < min_rate:
+                    continue
+            candidates.append((prefix, count))
+        
+        # 按频率排序
+        candidates.sort(key=lambda x: -x[1])
+        
+        print(f"\n📊 统计结果（次数≥{min_count}，手数≥{min_moves}，概率≥{min_rate}%）：")
+        print(f"   总棋谱数: {total_sgfs}，候选定式: {len(candidates)}")
+        print(f"{'排名':<6} {'频率':<8} {'定式':<40}")
+        print("-" * 60)
+        
+        for rank, (prefix, count) in enumerate(candidates[:20], 1):
+            coords = prefix.split()
+            print(f"{rank:<6} {count:<8} {prefix:<40} ({len(coords)}手)")
+        
+        if dry_run:
+            print(f"\n🧪 试运行模式，共找到 {len(candidates)} 个候选定式")
+            return 0, 0
+        
+        # 入库
+        print(f"\n⏳ 开始入库（共{len(candidates)}个候选）...")
+        
+        db = JosekiDB()
+        added_count = 0
+        skipped_count = 0
+        
+        for prefix, count in candidates:
+            coords = prefix.split()
+            
+            # 构造SGF格式
+            sgf_moves = []
+            color = 'B'
+            for c in coords:
+                sgf_moves.append(f"{color}[{c}]")
+                color = 'W' if color == 'B' else 'B'
+            sgf = "(;" + ";".join(sgf_moves) + ")"
+            
+            # 检查冲突
+            conflict = db.check_conflict(sgf)
+            if conflict.has_conflict:
+                skipped_count += 1
+                continue
+            
+            # 自动命名和分类
+            name = f"KataGo-{len(coords)}手"
+            category = "/KataGo"
+            
+            joseki_id, _ = db.add(
+                name=name,
+                category_path=category,
+                moves=sgf_moves,
+                force=False
+            )
+            
+            if joseki_id:
+                added_count += 1
+                print(f"✅ 入库: {joseki_id} ({len(coords)}手, 频率{count})")
+            else:
+                skipped_count += 1
+        
+        return added_count, skipped_count
+
+
+def cmd_katago(args):
+    """从KataGo棋谱库下载并提取定式"""
+    import shutil
+    
+    # 参数处理
+    cache_dir = Path(args.cache_dir) if args.cache_dir else KATAGO_CACHE_DIR
+    progress_file = Path(args.progress_file) if args.progress_file else KATAGO_PROGRESS_FILE
+    
+    # 解析日期
+    try:
+        start_date = datetime.strptime(args.start_date, "%Y-%m-%d")
+        end_date = datetime.strptime(args.end_date, "%Y-%m-%d")
+    except ValueError:
+        print("❌ 错误: 日期格式应为 YYYY-MM-DD")
+        sys.exit(1)
+    
+    if start_date > end_date:
+        print("❌ 错误: 起始日期不能晚于结束日期")
+        sys.exit(1)
+    
+    # 生成日期列表
+    dates = []
+    current = start_date
+    while current <= end_date:
+        dates.append(current.strftime("%Y-%m-%d"))
+        current += timedelta(days=1)
+    
+    print(f"📅 日期范围: {args.start_date} 至 {args.end_date}（共{len(dates)}天）")
+    print(f"💾 缓存目录: {cache_dir}")
+    print(f"📊 进度文件: {progress_file}")
+    
+    # 初始化处理器
+    processor = KatagoProcessor(
+        cache_dir=cache_dir,
+        progress_file=progress_file,
+        max_memory_mb=args.max_memory_mb,
+        workers=args.workers,
+        first_n=args.first_n,
+        keep_cache=args.keep_cache
+    )
+    
+    # 如果不resume，清除旧进度
+    if not args.resume:
+        processor.progress.clear()
+        processor.count_map = {}
+        print("🧹 已清除历史进度")
+    
+    # 过滤已完成的日期
+    if args.resume:
+        dates = [d for d in dates if not processor.progress.is_completed(d)]
+        print(f"⏩ 断点续传模式，剩余 {len(dates)} 天需要处理")
+    
+    if not dates:
+        print("✅ 所有日期已处理完毕")
+        # 直接执行finalize
+        total_sgfs = processor.progress.data.get('total_sgfs', 0)
+        added, skipped = processor.finalize(
+            min_count=args.min_count,
+            min_moves=args.min_moves,
+            min_rate=args.min_rate,
+            total_sgfs=total_sgfs,
+            dry_run=args.dry_run
+        )
+        if not args.dry_run:
+            print(f"\n🎉 完成！新增 {added} 个定式，跳过 {skipped} 个（已存在）")
+        return
+    
+    # 设置信号处理（捕获Ctrl+C）
+    def signal_handler(sig, frame):
+        print("\n\n⚠️ 收到中断信号，正在保存进度...")
+        processor.stop()
+        processor.save_progress()
+        print("✅ 进度已保存，下次使用 --resume 继续")
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    # 下载阶段
+    print(f"\n📥 开始下载（并行{args.workers}线程）...")
+    downloader = DownloadManager(
+        cache_dir=cache_dir,
+        max_retries=3,
+        workers=args.workers
+    )
+    
+    # 在后台打印下载进度
+    downloaded = {}
+    download_error = [False]
+    
+    def download_worker():
+        try:
+            nonlocal downloaded
+            downloaded = downloader.download(dates)
+        except Exception as e:
+            print(f"\n❌ 下载出错: {e}")
+            download_error[0] = True
+    
+    download_thread = threading.Thread(target=download_worker)
+    download_thread.start()
+    
+    # 显示下载进度
+    while download_thread.is_alive():
+        downloader.print_progress()
+        time.sleep(0.5)
+    
+    download_thread.join()
+    print()  # 换行
+    
+    if download_error[0]:
+        print("❌ 下载过程中发生错误")
+        sys.exit(1)
+    
+    print(f"✅ 下载完成: {len(downloaded)}/{len(dates)} 个文件")
+    
+    # 处理阶段
+    print(f"\n⚙️ 开始处理棋谱（前{args.first_n}手）...")
+    
+    completed_count = 0
+    total_sgfs = processor.progress.data.get('total_sgfs', 0)
+    
+    for date_str, tar_path in downloaded.items():
+        if processor.is_stopped():
+            break
+        
+        # 检查内存
+        status, mem_mb = processor.memory.check()
+        if status == 'critical':
+            print(f"\n⚠️ 内存超限 ({mem_mb:.1f}MB)，保存进度并退出...")
+            processor.save_progress()
+            print("✅ 进度已保存，下次使用 --resume 继续")
+            sys.exit(0)
+        elif status == 'warning':
+            processor.memory.force_gc()
+        
+        # 处理文件
+        stats = processor.process_tarfile(tar_path, date_str)
+        
+        if stats.get('error'):
+            print(f"\n⚠️  {date_str} 处理出错: {stats['error']}")
+            continue
+        
+        # 标记完成
+        processor.progress.mark_completed(date_str, stats)
+        total_sgfs += stats['sgf_count']
+        completed_count += 1
+        
+        # 显示进度
+        processor.print_progress(len(dates), completed_count)
+        
+        # 删除缓存（如果不保留）
+        if not args.keep_cache and tar_path.exists():
+            tar_path.unlink()
+    
+    print()  # 换行
+    
+    # 最终统计和入库
+    processor.save_progress()
+    added, skipped = processor.finalize(
+        min_count=args.min_count,
+        min_moves=args.min_moves,
+        min_rate=args.min_rate,
+        total_sgfs=total_sgfs,
+        dry_run=args.dry_run
+    )
+    
+    if not args.dry_run:
+        print(f"\n🎉 完成！新增 {added} 个定式，跳过 {skipped} 个（已存在）")
+    
+    # 清理进度文件（如果全部完成）
+    if not args.dry_run and len(processor.progress.data.get('completed_dates', [])) >= len(dates):
+        if progress_file.exists():
+            progress_file.unlink()
+            print("🧹 已清理进度文件")
 
 # ==================== 坐标系定义 ====================
 class CoordinateSystem:
@@ -1340,6 +2005,22 @@ def main():
     p_import.add_argument("--first-n", type=int, default=50, help="每谱提取前N手内的定式（默认50）")
     p_import.add_argument("--dry-run", action="store_true", help="试运行，只统计不真入库")
     
+    # KataGo 命令
+    p_katago = subparsers.add_parser("katago", help="从KataGo棋谱库下载并提取定式")
+    p_katago.add_argument("--start-date", required=True, help="起始日期 (YYYY-MM-DD)")
+    p_katago.add_argument("--end-date", required=True, help="结束日期 (YYYY-MM-DD)")
+    p_katago.add_argument("--cache-dir", help="下载缓存目录（默认 ~/.weiqi-joseki/katago-cache）")
+    p_katago.add_argument("--keep-cache", action="store_true", help="保留缓存文件")
+    p_katago.add_argument("--workers", type=int, default=3, help="并行下载线程数（默认3）")
+    p_katago.add_argument("--max-memory-mb", type=int, default=512, help="内存上限MB（默认512）")
+    p_katago.add_argument("--resume", action="store_true", help="断点续传")
+    p_katago.add_argument("--min-count", type=int, default=10, help="最少出现次数才入库（默认10）")
+    p_katago.add_argument("--min-moves", type=int, default=4, help="定式至少多少手才入库（默认4）")
+    p_katago.add_argument("--min-rate", type=float, default=0.5, help="最小出现概率%%才入库（默认0.5）")
+    p_katago.add_argument("--first-n", type=int, default=50, help="每谱提取前N手内的定式（默认50）")
+    p_katago.add_argument("--dry-run", action="store_true", help="试运行，只统计不真入库")
+    p_katago.add_argument("--progress-file", help="进度文件路径（默认 ~/.weiqi-joseki/katago-progress.json）")
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -1351,6 +2032,7 @@ def main():
         "clear": cmd_clear, "list": cmd_list, "8way": cmd_8way,
         "match": cmd_match, "identify": cmd_identify, "stats": cmd_stats,
         "extract": cmd_extract, "import": cmd_import,
+        "katago": cmd_katago,
     }
     
     commands[args.command](args)
