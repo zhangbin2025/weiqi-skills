@@ -1790,32 +1790,36 @@ def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None
     if not moves:
         return "(;CA[utf-8]FF[4]AP[JosekiExtract]SZ[19]GM[1]KM[0]MULTIGOGM[1])"
     
-    # 分类到四角（单次遍历）
+    # 分类到四角（支持"角部-脱先-其他-回角部"完整序列）
+    # 策略：为每个角维护独立序列，当回到该角时继续追加
     corners = {'tr': [], 'tl': [], 'bl': [], 'br': []}
-    current_corner = None  # 跟踪当前属于哪个角
+    last_corner = None  # 上一手所属的角
     
     for color, coord in moves:
         if coord == 'tt':
-            # 脱先：保留在当前角（如果已知），用于标记脱先后继续下棋的情况
-            if current_corner:
-                corners[current_corner].append((color, coord))
+            # 脱先：标记但不断开序列，保留在上一手所属的角
+            if last_corner:
+                corners[last_corner].append((color, coord))
             continue
         
         col, row = CoordinateSystem.sgf_to_nums(coord)
+        current_corner = None
+        
         # 判断属于哪个角 (0-8 或 10-18，9为边界)
         if col <= 8 and row <= 8:
             current_corner = 'tl'
-            corners['tl'].append((color, coord))
         elif col >= 10 and row <= 8:
             current_corner = 'tr'
-            corners['tr'].append((color, coord))
         elif col <= 8 and row >= 10:
             current_corner = 'bl'
-            corners['bl'].append((color, coord))
         elif col >= 10 and row >= 10:
             current_corner = 'br'
-            corners['br'].append((color, coord))
-        # col==9 或 row==9 为中央边界，不处理
+        # col==9 或 row==9 为中央边界，不归属任何角
+        
+        if current_corner:
+            corners[current_corner].append((color, coord))
+            last_corner = current_corner
+        # 中央棋不影响 last_corner，脱先后若回角部能正确归属
     
     # 处理每角
     branches = []
