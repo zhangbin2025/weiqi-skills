@@ -937,7 +937,7 @@ def cmd_extract(args):
 
 
 def cmd_import(args):
-    """从SGF目录批量导入定式"""
+    """从SGF目录批量导入定式（内存优化版：Hash表统计+前缀累加）"""
     import os
     from pathlib import Path
     
@@ -955,8 +955,8 @@ def cmd_import(args):
     print(f"📁 找到 {len(sgf_files)} 个SGF文件")
     print(f"⏳ 正在提取定式（前{args.first_n}手）...")
     
-    # 1. 收集所有定式串
-    joseki_strings = []  # 存储 "dd qd cf db" 格式的定式串
+    # 1. 用Hash表统计定式出现次数（去重存储，大幅减少内存）
+    count_map = {}  # {joseki_str: count}
     
     for sgf_file in sgf_files:
         try:
@@ -977,53 +977,73 @@ def cmd_import(args):
                 if len(coords) >= 2:  # 至少2手才算定式
                     # 转成字符串 "dd qd cf db"
                     joseki_str = " ".join(coords)
-                    joseki_strings.append(joseki_str)
+                    count_map[joseki_str] = count_map.get(joseki_str, 0) + 1
         
         except Exception as e:
             print(f"⚠️  处理 {sgf_file} 出错: {e}")
             continue
     
-    if not joseki_strings:
+    if not count_map:
         print("⚠️  未提取到任何定式")
         return
     
-    print(f"✅ 提取到 {len(joseki_strings)} 个定式")
-    print(f"⏳ 正在统计频率...")
+    total_extractions = sum(count_map.values())
+    unique_count = len(count_map)
+    print(f"✅ 提取到 {total_extractions} 个定式（去重后 {unique_count} 个）")
+    print(f"⏳ 正在统计前缀频率...")
     
-    # 2. 排序
-    joseki_strings.sort()
+    # 2. 将唯一定式串排序到列表（用于有序遍历和前缀查找）
+    sorted_joseki = sorted(count_map.keys())
     
-    # 3. 统计前缀频率
-    # 算法：遍历排序后的列表，对每个定式串，它的所有前缀都+1
-    prefix_counts = {}  # {prefix_str: count}
+    # 3. 前缀累加：如果某个定式串是后面定式串的前缀，累加后面的次数
+    # 原理：排序后，具有相同前缀的定式串一定连续出现
+    # 例如："pd qc" < "pd qc pc" < "pd qc pd" < "pd qcc"
+    # 对于 "pd qc"，只需要检查连续的以 "pd qc " 开头的串
     
-    i = 0
-    n = len(joseki_strings)
+    # 直接在 count_map 上累加（结果覆盖原始计数）
+    n = len(sorted_joseki)
+    for i in range(n):
+        current = sorted_joseki[i]
+        # 检查后面的定式串是否以 current + " " 为前缀
+        j = i + 1
+        while j < n:
+            later = sorted_joseki[j]
+            # 必须以 current + " " 开头，确保是完整前缀匹配
+            # "pd qc" 是 "pd qc pc" 的前缀（"pd qc pc".startswith("pd qc ") = True）
+            # "pd qc" 不是 "pd qcc" 的前缀（"pd qcc".startswith("pd qc ") = False）
+            if later.startswith(current + " "):
+                count_map[current] += count_map[later]  # 累加后面定式串的次数
+                j += 1
+            else:
+                # 由于字符串排序的特性，如果 later 不以 current + " " 开头
+                # 且 later > current（按字典序），则后面所有串都不可能是 current 的前缀扩展
+                # 因为：如果存在 "pd qc xxx"，它一定在 "pd qcc" 之前（' ' < 'c'）
+                break
     
-    while i < n:
-        current = joseki_strings[i]
-        
-        # 统计当前定式串的重复次数
-        repeat_count = 1
-        while i + repeat_count < n and joseki_strings[i + repeat_count] == current:
-            repeat_count += 1
-        
-        # 当前定式串的所有前缀
-        coords = current.split()
-        for length in range(1, len(coords) + 1):
-            prefix = " ".join(coords[:length])
-            prefix_counts[prefix] = prefix_counts.get(prefix, 0) + repeat_count
-        
-        i += repeat_count
+    # 4. 按频率排序（count_map 现在包含累加后的次数）
+    sorted_prefixes = sorted(count_map.items(), key=lambda x: -x[1])
     
-    # 4. 按频率排序
-    sorted_prefixes = sorted(prefix_counts.items(), key=lambda x: -x[1])
+    # 5. 筛选达到阈值的定式（同时检查最少手数、最小概率）
+    total_sgf = len(sgf_files)
+    min_count_by_rate = (args.min_rate / 100.0) * total_sgf if args.min_rate > 0 else 0
     
-    # 5. 筛选达到阈值的定式（同时检查最少手数）
-    candidates = [(prefix, count) for prefix, count in sorted_prefixes 
-                  if count >= args.min_count and len(prefix.split()) >= args.min_moves]
+    candidates = []
+    for prefix, count in sorted_prefixes:
+        # 检查最少手数
+        if len(prefix.split()) < args.min_moves:
+            continue
+        # 检查最少次数（用户指定的绝对次数 或 按比例计算的次数，取较大值）
+        if count < args.min_count:
+            continue
+        # 检查最小概率
+        if args.min_rate > 0:
+            rate = (count / total_sgf) * 100.0
+            if rate < args.min_rate:
+                continue
+        candidates.append((prefix, count))
     
-    print(f"\n📊 统计结果（频率≥{args.min_count}，手数≥{args.min_moves}）:")
+    print(f"\n📊 统计结果（次数≥{args.min_count}，手数≥{args.min_moves}，概率≥{args.min_rate}%）：")
+    print(f"   总棋谱数: {total_sgf}，按概率计算的最小次数: {min_count_by_rate:.1f}")
     print(f"{'排名':<6} {'频率':<8} {'定式':<40}")
     print("-" * 60)
     
@@ -1316,6 +1336,7 @@ def main():
     p_import.add_argument("sgf_dir", help="SGF文件目录路径")
     p_import.add_argument("--min-count", type=int, default=10, help="最少出现次数才入库（默认10）")
     p_import.add_argument("--min-moves", type=int, default=4, help="定式至少多少手才入库（默认4）")
+    p_import.add_argument("--min-rate", type=float, default=0.0, help="最小出现概率%%才入库（默认0，例如：1表示1%%，0.5表示0.5%%）")
     p_import.add_argument("--first-n", type=int, default=50, help="每谱提取前N手内的定式（默认50）")
     p_import.add_argument("--dry-run", action="store_true", help="试运行，只统计不真入库")
     
