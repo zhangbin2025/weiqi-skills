@@ -51,8 +51,10 @@ def extract_main_branch(sgf_content):
             first_non_empty = stripped
             break
 
-    moves_in_first = re.findall(r';([BW])\[([a-z]{2})\]', first_non_empty)
-    is_flat_format = len(moves_in_first) > 10  # 平面格式：第一行有很多着法
+    moves_in_first = re.findall(r';([BW])\[([a-z]{0,2})\]', first_non_empty)
+    # 平面格式：第一行包含所有着法（或者没有换行符）
+    # 如果第一行有着法且整行看起来像SGF（包含分号），认为是平面格式
+    is_flat_format = len(moves_in_first) > 0 and (';' in first_non_empty and first_non_empty.startswith('('))
 
     if is_flat_format:
         # 平面格式：直接按顺序提取所有着法
@@ -63,7 +65,7 @@ def extract_main_branch(sgf_content):
                 continue
 
             # 查找所有着法及其位置
-            for match in re.finditer(r';([BW])\[([a-z]{2})\]', line):
+            for match in re.finditer(r';([BW])\[([a-z]{0,2})\]', line):
                 pos = match.start()
 
                 # 检查这个着法是否在变例分支内（前面有未闭合的括号）
@@ -90,7 +92,7 @@ def extract_main_branch(sgf_content):
             if not line:
                 continue
 
-            moves_in_line = re.findall(r';([BW])\[([a-z]{2})\]', line)
+            moves_in_line = re.findall(r';([BW])\[([a-z]{0,2})\]', line)
 
             if not moves_in_line:
                 continue
@@ -125,7 +127,7 @@ def extract_parallel_variations(sgf_content):
 
     # 查找根节点后的所有直接子分支
     # 模式: (C[名称];B[xx];W[yy]...) 或 (;B[xx];W[yy]...)
-    pattern = r'\(\s*(?:C\[([^\]]*)\])?\s*((?:;[BW]\[[a-z]{2}\])+)\s*\)'
+    pattern = r'\(\s*(?:C\[([^\]]*)\])?\s*((?:;[BW]\[[a-z]{0,2}\])+)\s*\)'
 
     for match in re.finditer(pattern, sgf_content):
         name = match.group(1) or f"变化{len(variations)+1}"
@@ -133,7 +135,7 @@ def extract_parallel_variations(sgf_content):
 
         # 解析着法
         moves = []
-        for move_match in re.finditer(r';([BW])\[([a-z]{2})\]', moves_str):
+        for move_match in re.finditer(r';([BW])\[([a-z]{0,2})\]', moves_str):
             moves.append({
                 'color': move_match.group(1),
                 'coord': move_match.group(2)
@@ -179,7 +181,7 @@ def extract_variations(sgf_content, main_moves):
         if not line:
             continue
 
-        moves_in_line = re.findall(r';([BW])\[([a-z]{2})\]', line)
+        moves_in_line = re.findall(r';([BW])\[([a-z]{0,2})\]', line)
 
         # 只处理有多个着法的行（变化图）
         if len(moves_in_line) <= 1:
@@ -622,13 +624,13 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
             if (reMatch) info.result = reMatch[1];
 
             // 提取着法 - 平面格式直接按顺序提取
-            const regex = /;([BW])\\[([a-z]{{2}})\\]/g;
+            const regex = /;([BW])\\[([a-z]{{0,2}})\\]/g;
             let match;
             while ((match = regex.exec(sgf)) !== null) {{
                 const color = match[1] === 'B' ? 'black' : 'white';
                 const coord = match[2];
-                // 处理脱先(pass): tt
-                if (coord === 'tt') {{
+                // 处理脱先(pass): tt 或空字符串
+                if (coord === 'tt' || coord === '') {{
                     moves.push({{ color, x: null, y: null, pass: true }});
                     continue;
                 }}
