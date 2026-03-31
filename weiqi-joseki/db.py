@@ -1843,7 +1843,7 @@ def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None
 
 def process_corner_sequence(moves: List[Tuple[str, str]], corner_desc: str, corner_key: str) -> Optional[Tuple[str, List[Tuple[str, str]]]]:
     """
-    处理单角序列，转换为右上角坐标，标准化为黑先
+    处理单角序列，检测脱先（连续同色），转换为右上角坐标，标准化为黑先
     
     Args:
         moves: [(color, sgf_coord), ...]
@@ -1856,12 +1856,24 @@ def process_corner_sequence(moves: List[Tuple[str, str]], corner_desc: str, corn
     if len(moves) < 2:
         return None
     
-    # 检查是否包含脱先标记
-    has_pass = any(coord == 'tt' for _, coord in moves)
+    # 1. 检测脱先（连续同色棋）并插入tt标记
+    # 规则：在同一角，如果当前颜色与上一手相同，说明对方脱先了
+    processed = []
+    last_color = None
+    has_pass = False
     
-    # 分离颜色和坐标
-    colors = [c for c, _ in moves]
-    coords = [coord for _, coord in moves]
+    for color, coord in moves:
+        if last_color == color:
+            # 检测到脱先：插入对方脱先标记（只插入一步）
+            pass_color = 'W' if color == 'B' else 'B'
+            processed.append((pass_color, 'tt'))
+            has_pass = True
+        processed.append((color, coord))
+        last_color = color
+    
+    # 2. 分离颜色和坐标
+    colors = [c for c, _ in processed]
+    coords = [coord for _, coord in processed]
     
     # 3. 将坐标转换为视觉上的右上角区域
     # 方法：先将SGF坐标转为该角的局部坐标，再用右上角的坐标系转回SGF
