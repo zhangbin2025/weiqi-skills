@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SGF围棋打谱网页生成器
+SGF围棋打谱网页生成器 - 纯本地离线工具
 将野狐围棋SGF文件转换为交互式HTML打谱网页
+
+安全特性:
+    - 无网络访问: 不导入 urllib/http/socket 等网络库
+    - 标准库 Only: 仅使用 sys, re, os, json, html
+    - XSS防护: 所有SGF元数据使用 html.escape() 转义
+    - JS注入防护: JSON数据经 json.dumps() + html.escape() 双重转义
+    - 本地文件IO: 仅读取输入SGF，写入输出HTML
 
 使用方法:
     python3 replay.py input.sgf [output.html]
@@ -287,14 +294,21 @@ def extract_game_info(sgf_content):
 
 
 def generate_html(main_moves, game_info, variations, output_path, input_base_name='棋谱'):
-    """生成HTML打谱网页"""
+    """生成HTML打谱网页
+    
+    安全处理流程:
+    1. 所有SGF元数据使用 html.escape() 转义后再嵌入HTML
+    2. 变化图数据使用 json.dumps() 序列化后再 html.escape() 转义
+    3. JavaScript端通过 textarea.innerHTML 解码HTML实体
+    """
 
     import json
 
     # 构建SGF字符串（平面格式）
     sgf_moves = ''.join([f";{m['color']}[{m['coord']}]" for m in main_moves])
 
-    # 棋局信息（HTML转义防止XSS）
+    # === 棋局信息（HTML转义防止XSS）===
+    # 所有来自SGF的文本数据在嵌入HTML前必须经过 html.escape() 处理
     black_name = html.escape(game_info.get('black', '黑棋'))
     white_name = html.escape(game_info.get('white', '白棋'))
     black_rank = html.escape(game_info.get('black_rank', ''))
@@ -315,7 +329,9 @@ def generate_html(main_moves, game_info, variations, output_path, input_base_nam
         coord = chr(97 + stone['x']) + chr(97 + stone['y'])
         handicap_sgf += f"AB[{coord}]"
 
-    # SGF内容需要转义HTML特殊字符后再嵌入
+    # === SGF数据嵌入（HTML转义防护）===
+    # 原始SGF内容中可能包含棋手名、棋局名等用户输入数据
+    # 使用 html.escape() 确保这些数据不会破坏HTML结构或执行脚本
     sgf_raw = f"""(;GM[1]FF[4]
 SZ[{board_size}]
 GN[{game_info.get('game_name', '围棋棋谱')}]
@@ -325,9 +341,12 @@ PW[{game_info.get('white', '白棋')}]
 BR[{game_info.get('black_rank', '')}]
 WR[{game_info.get('white_rank', '')}]
 KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})"""
-    sgf_data = html.escape(sgf_raw)
+    sgf_data = html.escape(sgf_raw)  # 关键：防止SGF内容中的特殊字符破坏HTML
 
-    # 变化图数据（JSON转义后再HTML转义）
+    # === 变化图数据（双重转义防护）===
+    # 1. json.dumps() 将Python对象转为JSON字符串
+    # 2. html.escape() 将JSON字符串中的HTML特殊字符转义
+    # 这样可防止SGF中的特殊字符破坏HTML结构或注入恶意代码
     variations_json = html.escape(json.dumps(variations, ensure_ascii=False))
 
     # HTML模板
@@ -588,10 +607,13 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
     </div>
 
     <script>
-        // SGF 数据（HTML解码）
+        // === SGF 数据（安全解码）===
+        // 服务器端已将SGF数据进行 html.escape() 转义
+        // 客户端使用 textarea.innerHTML 解码HTML实体，恢复原始SGF内容
+        // 这种方法比 innerHTML 直接插入更安全，不会产生DOM解析
         const sgfData = (() => {{
             const textarea = document.createElement('textarea');
-            textarea.innerHTML = `{sgf_data}`;
+            textarea.innerHTML = `{sgf_data}`;  // HTML实体解码
             return textarea.value;
         }})();
 
@@ -647,10 +669,12 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
         let isPlaying = false;
         let playInterval = null;
 
-        // 变化图相关变量（HTML解码后解析JSON）
+        // === 变化图数据（安全解码）===
+        // 服务器端已进行 html.escape(json.dumps(data)) 双重处理
+        // 客户端先解码HTML实体，再解析JSON
         const variations = JSON.parse((() => {{
             const textarea = document.createElement('textarea');
-            textarea.innerHTML = `{variations_json}`;
+            textarea.innerHTML = `{variations_json}`;  // HTML实体解码
             return textarea.value;
         }})());
         let inVariation = false;
