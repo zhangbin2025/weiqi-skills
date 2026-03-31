@@ -6,12 +6,13 @@
 
 | 技能包 | 功能 | 版本 |
 |--------|------|------|
-| [weiqi-db](weiqi-db/) | 围棋棋谱数据库 | 1.0.0 |
-| [weiqi-fetcher](weiqi-fetcher/) | 分享棋谱下载器 | 1.0.0 |
+| [weiqi-db](weiqi-db/) | 围棋棋谱数据库 | 1.0.1 |
+| [weiqi-fetcher](weiqi-fetcher/) | 分享棋谱下载器 | 1.1.1 |
 | [weiqi-foxwq](weiqi-foxwq/) | 野狐棋谱下载 | 1.1.1 |
+| [weiqi-joseki](weiqi-joseki/) | 围棋定式数据库 | 1.1.0 |
 | [weiqi-player](weiqi-player/) | 棋手等级分/段位查询 | 1.0.9 |
 | [weiqi-recorder](weiqi-recorder/) | 网页记谱工具 | 1.0.6 |
-| [weiqi-sgf](weiqi-sgf/) | SGF转HTML打谱网页 | 1.1.5 |
+| [weiqi-sgf](weiqi-sgf/) | SGF转HTML打谱网页 | 1.2.2 |
 | [weiqi-yunbisai](weiqi-yunbisai/) | 云比赛网比赛查询 | 1.1.2 |
 
 ## 快速开始
@@ -26,6 +27,7 @@
 clawhub install weiqi-db
 clawhub install weiqi-fetcher
 clawhub install weiqi-foxwq
+clawhub install weiqi-joseki
 clawhub install weiqi-player
 clawhub install weiqi-recorder
 clawhub install weiqi-sgf
@@ -52,6 +54,13 @@ clawhub install weiqi-yunbisai
 - 按日期批量下载野狐围棋棋谱
 - 支持从分享链接实时提取棋谱（WebSocket协议解析）
 - 支持进行中/已结束对局
+
+### 📚 weiqi-joseki - 围棋定式数据库
+- 定式录入与管理，支持8向对称变化自动生成
+- 从棋谱批量提取定式，自动检测脱先（PASS）定式
+- KataGo Archive 自动导入，支持断点续传和内存保护
+- 定式冲突检测与棋谱定式匹配识别
+- 数据存储于 `~/.weiqi-joseki/database.json`
 
 ### 🔍 weiqi-player - 棋手查询
 - 查询手谈等级分（dzqzd.com）
