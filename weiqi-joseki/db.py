@@ -1853,27 +1853,15 @@ def process_corner_sequence(moves: List[Tuple[str, str]], corner_desc: str, corn
     Returns:
         (comment, [(color, coord), ...]) 或 None
     """
-    # 1. 检测脱先并截断
-    filtered = []
-    last_color = None
-    has_pass = False
-    
-    for color, coord in moves:
-        if last_color == color:  # 脱先 detected：对方没应，当前方继续
-            # 脱先是对方（与当前color相反的那方）
-            pass_color = 'W' if color == 'B' else 'B'
-            filtered.append((pass_color, 'tt'))  # 标记脱先
-            has_pass = True
-            break
-        filtered.append((color, coord))
-        last_color = color
-    
-    if len(filtered) < 2:
+    if len(moves) < 2:
         return None
     
-    # 2. 分离颜色和坐标
-    colors = [c for c, _ in filtered]
-    coords = [coord for _, coord in filtered]
+    # 检查是否包含脱先标记
+    has_pass = any(coord == 'tt' for _, coord in moves)
+    
+    # 分离颜色和坐标
+    colors = [c for c, _ in moves]
+    coords = [coord for _, coord in moves]
     
     # 3. 将坐标转换为视觉上的右上角区域
     # 方法：先将SGF坐标转为该角的局部坐标，再用右上角的坐标系转回SGF
