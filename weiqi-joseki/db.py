@@ -1792,18 +1792,28 @@ def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None
     
     # 分类到四角（单次遍历）
     corners = {'tr': [], 'tl': [], 'bl': [], 'br': []}
+    current_corner = None  # 跟踪当前属于哪个角
+    
     for color, coord in moves:
         if coord == 'tt':
-            continue  # pass 不参与角部分类
+            # 脱先：保留在当前角（如果已知），用于标记脱先后继续下棋的情况
+            if current_corner:
+                corners[current_corner].append((color, coord))
+            continue
+        
         col, row = CoordinateSystem.sgf_to_nums(coord)
         # 判断属于哪个角 (0-8 或 10-18，9为边界)
         if col <= 8 and row <= 8:
+            current_corner = 'tl'
             corners['tl'].append((color, coord))
         elif col >= 10 and row <= 8:
+            current_corner = 'tr'
             corners['tr'].append((color, coord))
         elif col <= 8 and row >= 10:
+            current_corner = 'bl'
             corners['bl'].append((color, coord))
         elif col >= 10 and row >= 10:
+            current_corner = 'br'
             corners['br'].append((color, coord))
         # col==9 或 row==9 为中央边界，不处理
     
