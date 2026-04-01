@@ -19,21 +19,10 @@ import urllib.request
 import urllib.parse
 import time
 
-# ============================================================================
-# API 配置
-# 以下URL为平台提供的公开API端点，可通过分析H5页面或参考开源项目获取
-# ============================================================================
-
-# 用户查询接口：根据昵称获取用户信息
-QUERY_USER_URL = "<USER_QUERY_ENDPOINT>"  # 例如: https://example.com/api/queryUser
-
-# 棋谱列表接口：获取指定用户的公开对局列表
-CHESS_LIST_URL = "<CHESS_LIST_ENDPOINT>"  # 例如: https://example.com/api/chessList
-
-# 棋谱下载接口：根据棋谱ID获取SGF数据
-FETCH_CHESS_URL = "<CHESS_FETCH_ENDPOINT>"  # 例如: https://example.com/api/fetchChess
-
-# 移动端UA，用于模拟移动设备请求
+# API 配置（来源：开源项目 GetFoxRequest.java）
+QUERY_USER_URL = "https://newframe.foxwq.com/cgi/QueryUserInfoPanel"
+CHESS_LIST_URL = "https://h5.foxwq.com/yehuDiamond/chessbook_local/YHWQFetchChessList"
+FETCH_CHESS_URL = "https://h5.foxwq.com/yehuDiamond/chessbook_local/YHWQFetchChess"
 MOBILE_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
 
 
@@ -159,34 +148,10 @@ def parse_result(winner, point, reason):
         return winner_str
 
 
-def check_api_config():
-    """检查API配置是否已设置"""
-    placeholders = ["<USER_QUERY_ENDPOINT>", "<CHESS_LIST_ENDPOINT>", "<CHESS_FETCH_ENDPOINT>"]
-    configs = [QUERY_USER_URL, CHESS_LIST_URL, FETCH_CHESS_URL]
-    
-    for config, placeholder in zip(configs, placeholders):
-        if config == placeholder:
-            return False, placeholder
-    return True, None
+# 工具函数
 
 
 def main():
-    # 检查API配置
-    is_configured, missing = check_api_config()
-    if not is_configured:
-        print("=" * 60)
-        print("⚠️  API 配置未设置")
-        print("=" * 60)
-        print()
-        print("请编辑脚本，设置以下API端点：")
-        print(f"  - QUERY_USER_URL: {missing}")
-        print(f"  - CHESS_LIST_URL: 棋谱列表接口")
-        print(f"  - FETCH_CHESS_URL: 棋谱下载接口")
-        print()
-        print("提示：这些端点可通过分析H5页面网络请求获取")
-        print("=" * 60)
-        sys.exit(1)
-    
     if len(sys.argv) < 2:
         print("用法: python3 download_by_name.py <昵称> [--limit N] [--output-dir DIR]")
         print("示例: python3 download_by_name.py 星阵谈兵")

@@ -304,7 +304,12 @@ HA[5]
 2. **棋谱数据接口** - 使用 Chess ID 获取 SGF 格式的棋谱数据
 3. **元数据接口** - 获取玩家名、段位、结果、对局时间等附加信息
 
-接口响应格式示例：
+**棋谱数据接口:**
+```
+GET https://h5.foxwq.com/yehuDiamond/chessbook_local/YHWQFetchChess?chessid=<ID>
+```
+
+响应格式:
 ```json
 {
   "result": 0,
@@ -318,8 +323,10 @@ HA[5]
 
 通过昵称下载功能的实现依赖平台提供的用户查询接口：
 
-**请求参数:**
-- `username` - 棋手昵称
+**接口地址:**
+```
+GET https://newframe.foxwq.com/cgi/QueryUserInfoPanel?srcuid=0&username=<昵称>
+```
 
 **响应数据:**
 ```json
@@ -342,10 +349,10 @@ HA[5]
 
 获取指定用户的公开对局列表：
 
-**请求参数:**
-- `dstuid` - 目标用户 UID
-- `type` - 查询类型
-- `lastcode` - 分页游标
+**接口地址:**
+```
+GET https://h5.foxwq.com/yehuDiamond/chessbook_local/YHWQFetchChessList?dstuid=<UID>&type=1&lastcode=0
+```
 
 **响应数据:**
 ```json
