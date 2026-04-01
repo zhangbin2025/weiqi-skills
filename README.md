@@ -1,4 +1,4 @@
-# 围棋技能包集合 (Weiqi Skills)
+# 围棋技能 (Weiqi Skills)
 
 > **每一位围棋爱好者，都值得拥有属于自己的围棋智能助手。**
 
@@ -16,7 +16,7 @@
 
 ## 🤖 开发方式
 
-**weiqi-skills 是由 AI 自动化开发的围棋技能包集合。**
+**weiqi-skills 是由 AI 自动化开发的围棋技能。**
 
 这代表着一种全新的开源项目开发模式：
 
@@ -200,6 +200,6 @@ MIT License - 详见各技能包目录下的 `LICENSE` 文件。
 
 ## 相关链接
 
-- **GitHub 仓库**: https://github.com/zhangbin2025/weiqi-skills
+- [围棋技能](https://github.com/zhangbin2025/weiqi-skills)
 - [OpenClaw](https://github.com/openclaw/openclaw)
 - [ClawHub](https://clawhub.ai)
