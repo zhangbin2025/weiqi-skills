@@ -7,6 +7,8 @@
     python3 download_by_name.py <昵称> [--limit N] [--output-dir DIR]
     python3 download_by_name.py 星阵谈兵
     python3 download_by_name.py 星阵谈兵 --limit 10 --output-dir /tmp/qipu
+
+注意：本脚本通过平台提供的公开API获取数据，仅供个人学习研究使用。
 """
 
 import sys
@@ -17,12 +19,22 @@ import urllib.request
 import urllib.parse
 import time
 
-# API配置
-QUERY_USER_URL = "https://newframe.foxwq.com/cgi/QueryUserInfoPanel"
-CHESS_LIST_URL = "https://h5.foxwq.com/yehuDiamond/chessbook_local/YHWQFetchChessList"
-FETCH_CHESS_URL = "https://h5.foxwq.com/yehuDiamond/chessbook_local/YHWQFetchChess"
+# ============================================================================
+# API 配置
+# 以下URL为平台提供的公开API端点，可通过分析H5页面或参考开源项目获取
+# ============================================================================
 
-MOBILE_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+# 用户查询接口：根据昵称获取用户信息
+QUERY_USER_URL = "<USER_QUERY_ENDPOINT>"  # 例如: https://example.com/api/queryUser
+
+# 棋谱列表接口：获取指定用户的公开对局列表
+CHESS_LIST_URL = "<CHESS_LIST_ENDPOINT>"  # 例如: https://example.com/api/chessList
+
+# 棋谱下载接口：根据棋谱ID获取SGF数据
+FETCH_CHESS_URL = "<CHESS_FETCH_ENDPOINT>"  # 例如: https://example.com/api/fetchChess
+
+# 移动端UA，用于模拟移动设备请求
+MOBILE_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
 
 
 def http_get(url, timeout=20):
@@ -36,8 +48,14 @@ def http_get(url, timeout=20):
 
 
 def query_user_by_name(nickname):
-    """通过昵称查询用户信息"""
+    """
+    通过昵称查询用户信息
+    
+    调用平台的用户查询接口，根据昵称获取UID等基本信息。
+    需要提供正确的 API 端点才能正常工作。
+    """
     encoded_name = urllib.parse.quote(nickname)
+    # 构造请求URL：srcuid=0 表示游客身份查询
     url = f"{QUERY_USER_URL}?srcuid=0&username={encoded_name}"
     
     response = http_get(url)
@@ -62,8 +80,14 @@ def query_user_by_name(nickname):
 
 
 def fetch_chess_list(uid, lastcode="0"):
-    """获取棋谱列表"""
+    """
+    获取棋谱列表
+    
+    调用平台的棋谱列表接口，获取指定用户的公开对局记录。
+    type=1 表示查询类型，lastcode 用于分页。
+    """
     encoded_uid = urllib.parse.quote(uid)
+    # 构造请求URL：type=1 表示获取对局列表
     url = f"{CHESS_LIST_URL}?srcuid=0&dstuid={encoded_uid}&type=1&lastcode={lastcode}&searchkey=&uin={encoded_uid}"
     
     response = http_get(url)
@@ -77,7 +101,11 @@ def fetch_chess_list(uid, lastcode="0"):
 
 
 def fetch_sgf(chessid):
-    """下载单局SGF"""
+    """
+    下载单局SGF
+    
+    根据棋谱ID获取SGF格式的棋谱数据。
+    """
     url = f"{FETCH_CHESS_URL}?chessid={chessid}"
     
     response = http_get(url)
@@ -104,9 +132,14 @@ def format_dan(dan_value):
 
 
 def parse_result(winner, point, reason):
-    """解析对局结果"""
-    # winner: 1=黑胜, 2=白胜, 0=和棋
-    # reason: 1=数子胜, 2=超时, 3=中盘胜, 4=认输
+    """
+    解析对局结果
+    
+    参数说明:
+    - winner: 1=黑胜, 2=白胜, 0=和棋
+    - point: 胜子数（数子胜时有效）
+    - reason: 1=数子胜, 2=超时, 3=中盘胜, 4=认输
+    """
     if winner == 0:
         return "和棋"
     
@@ -126,7 +159,34 @@ def parse_result(winner, point, reason):
         return winner_str
 
 
+def check_api_config():
+    """检查API配置是否已设置"""
+    placeholders = ["<USER_QUERY_ENDPOINT>", "<CHESS_LIST_ENDPOINT>", "<CHESS_FETCH_ENDPOINT>"]
+    configs = [QUERY_USER_URL, CHESS_LIST_URL, FETCH_CHESS_URL]
+    
+    for config, placeholder in zip(configs, placeholders):
+        if config == placeholder:
+            return False, placeholder
+    return True, None
+
+
 def main():
+    # 检查API配置
+    is_configured, missing = check_api_config()
+    if not is_configured:
+        print("=" * 60)
+        print("⚠️  API 配置未设置")
+        print("=" * 60)
+        print()
+        print("请编辑脚本，设置以下API端点：")
+        print(f"  - QUERY_USER_URL: {missing}")
+        print(f"  - CHESS_LIST_URL: 棋谱列表接口")
+        print(f"  - FETCH_CHESS_URL: 棋谱下载接口")
+        print()
+        print("提示：这些端点可通过分析H5页面网络请求获取")
+        print("=" * 60)
+        sys.exit(1)
+    
     if len(sys.argv) < 2:
         print("用法: python3 download_by_name.py <昵称> [--limit N] [--output-dir DIR]")
         print("示例: python3 download_by_name.py 星阵谈兵")
