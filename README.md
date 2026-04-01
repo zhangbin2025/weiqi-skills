@@ -200,5 +200,6 @@ MIT License - 详见各技能包目录下的 `LICENSE` 文件。
 
 ## 相关链接
 
+- **GitHub 仓库**: https://github.com/zhangbin2025/weiqi-skills
 - [OpenClaw](https://github.com/openclaw/openclaw)
 - [ClawHub](https://clawhub.ai)
