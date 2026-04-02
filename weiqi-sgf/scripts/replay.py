@@ -11,6 +11,11 @@ SGF围棋打谱网页生成器 - 纯本地离线工具
     - JS注入防护: JSON数据经 json.dumps() + html.escape() 双重转义
     - 本地文件IO: 仅读取输入SGF，写入输出HTML
 
+SGF解析:
+    - 使用内置树状解析器解析SGF树结构
+    - 支持完整SGF树遍历（括号层级、分号序列）
+    - 正确提取主分支和所有变化图
+
 使用方法:
     python3 replay.py input.sgf [output.html]
     python3 replay.py input.sgf --output-dir /path/to/dir
@@ -25,13 +30,6 @@ import re
 import os
 import html
 import json
-
-# 尝试导入 sgfmill 库，如果失败则使用备用解析器
-try:
-    from sgfmill import sgf
-    SGFMILL_AVAILABLE = True
-except ImportError:
-    SGFMILL_AVAILABLE = False
 
 
 class SGFNode:
@@ -259,201 +257,6 @@ class SGFTreeParser:
         return ''.join(value), i
 
 
-def parse_with_sgfmill(sgf_content):
-    """使用 sgfmill 库解析 SGF"""
-    try:
-        game = sgf.Sgf_game.from_string(sgf_content)
-        root = game.get_root()
-
-        # 提取棋局信息
-        game_info = {}
-        try:
-            game_info['black'] = root.get('PB')
-        except:
-            pass
-        try:
-            game_info['white'] = root.get('PW')
-        except:
-            pass
-        try:
-            game_info['black_rank'] = root.get('BR')
-        except:
-            pass
-        try:
-            game_info['white_rank'] = root.get('WR')
-        except:
-            pass
-        try:
-            game_info['game_name'] = root.get('GN')
-        except:
-            pass
-        try:
-            game_info['date'] = root.get('DT')
-        except:
-            pass
-        try:
-            game_info['result'] = root.get('RE')
-        except:
-            pass
-        try:
-            game_info['komi'] = root.get('KM')
-        except:
-            pass
-        try:
-            game_info['board_size'] = root.get('SZ')
-        except:
-            pass
-        try:
-            game_info['handicap'] = root.get('HA')
-        except:
-            pass
-
-        # 处理让子
-        handicap_stones = []
-        try:
-            ab_list = root.get('AB')
-            if ab_list:
-                for coord in ab_list:
-                    if coord and len(coord) >= 2:
-                        x = ord(coord[0]) - 97
-                        y = ord(coord[1]) - 97
-                        handicap_stones.append({'x': x, 'y': y})
-        except:
-            pass
-        game_info['handicap_stones'] = handicap_stones
-
-        # 提取主分支着法
-        moves = []
-        node = root
-        while len(node) > 0:
-            node = node[0]
-            try:
-                move = node.get_move()
-                if move and move[0] is not None:
-                    color, coord = move
-                    moves.append({
-                        'color': 'B' if color == 'b' else 'W',
-                        'coord': _coord_to_sgf(coord)
-                    })
-            except:
-                props = node.properties()
-                if 'B' in props:
-                    coord = node.get('B')
-                    if isinstance(coord, list):
-                        coord = coord[0] if coord else ''
-                    moves.append({'color': 'B', 'coord': coord if coord else ''})
-                elif 'W' in props:
-                    coord = node.get('W')
-                    if isinstance(coord, list):
-                        coord = coord[0] if coord else ''
-                    moves.append({'color': 'W', 'coord': coord if coord else ''})
-
-        # 提取变化图
-        variations = {}
-        _extract_variations_sgf(root, moves, variations, 0)
-
-        return moves, variations, game_info, True
-
-    except Exception as e:
-        return None, None, None, False
-
-
-def _coord_to_sgf(coord):
-    """将 sgfmill 的坐标元组转换为 SGF 坐标字符串
-    
-    sgfmill 使用 (x, y) 坐标，其中:
-    - x: 对应 SGF 行，从下到上 (SGF 行从上到下，需要反转)
-    - y: 对应 SGF 列，从左到右 (和 SGF 列相同，不需要反转)
-    
-    注意：sgfmill 的 (x, y) 实际上是 (行, 列)，与 SGF 的 (列, 行) 不同
-    """
-    if coord is None:
-        return ''
-    if isinstance(coord, str):
-        return coord
-    if hasattr(coord, '__iter__') and len(coord) == 2:
-        x, y = coord
-        # sgfmill: x=行(从下到上), y=列(从左到右)
-        # SGF: 第一个字母=列(从左到右), 第二个字母=行(从上到下)
-        sgf_row = 18 - x  # 行：反转
-        sgf_col = y       # 列：不变
-        return chr(97 + sgf_col) + chr(97 + sgf_row)
-    return str(coord)
-
-
-def _extract_variations_sgf(node, main_moves, variations, move_num):
-    """递归提取变化分支 (sgfmill 版本)"""
-    if len(node) > 1:
-        for i in range(1, len(node)):
-            child = node[i]
-            var_moves = _get_branch_moves_sgf(child)
-            if var_moves:
-                if move_num not in variations:
-                    variations[move_num] = []
-
-                name = f"变化{i}"
-                win_rate = name
-
-                try:
-                    comment = child.get('C') or ''
-                except:
-                    comment = ''
-
-                if comment:
-                    win_match = re.search(r'([黑白]).*?(\d+\.?\d*)%', comment)
-                    if win_match:
-                        win_rate = f"{win_match.group(1)}{win_match.group(2)}%"
-                        name += f" {win_rate}"
-
-                variations[move_num].append({
-                    'name': name,
-                    'winRate': win_rate,
-                    'moves': var_moves,
-                    'comment': comment
-                })
-
-    if len(node) > 0:
-        next_move_num = move_num
-        try:
-            move = node[0].get_move()
-            if move and move[0] is not None:
-                next_move_num = move_num + 1
-        except:
-            props = node[0].properties()
-            if 'B' in props or 'W' in props:
-                next_move_num = move_num + 1
-        _extract_variations_sgf(node[0], main_moves, variations, next_move_num)
-
-
-def _get_branch_moves_sgf(node):
-    """获取分支的所有着法 (sgfmill 版本)"""
-    moves = []
-    current = node
-    while len(current) > 0:
-        current = current[0]
-        try:
-            move = current.get_move()
-            if move and move[0] is not None:
-                color, coord = move
-                moves.append({
-                    'color': 'B' if color == 'b' else 'W',
-                    'coord': _coord_to_sgf(coord)
-                })
-        except:
-            props = current.properties()
-            if 'B' in props:
-                coord = current.get('B')
-                if isinstance(coord, list):
-                    coord = coord[0] if coord else ''
-                moves.append({'color': 'B', 'coord': coord if coord else ''})
-            elif 'W' in props:
-                coord = current.get('W')
-                if isinstance(coord, list):
-                    coord = coord[0] if coord else ''
-                moves.append({'color': 'W', 'coord': coord if coord else ''})
-    return moves
-
-
 def parse_with_tree_parser(sgf_content):
     """使用内置树状解析器解析 SGF"""
     parser = SGFTreeParser()
@@ -588,220 +391,31 @@ def extract_variations_from_tree(root, main_moves):
 
 def parse_sgf(sgf_content):
     """
-    解析 SGF 的主入口函数
-    
-    策略:
-    1. 优先使用 sgfmill 库（如果已安装）
-    2. 库解析失败时，使用内置树状解析器
-    3. 内置解析器也失败时，回退到原有的正则解析
+    解析 SGF 的主入口函数 - 仅使用内置树状解析器
     
     返回: (moves, variations, game_info, parse_info)
     """
     parse_info = {
-        'parser_used': None,
+        'parser_used': 'tree_parser',
         'errors': [],
         'warnings': []
     }
 
-    # 步骤 1: 尝试使用 sgfmill
-    if SGFMILL_AVAILABLE:
-        try:
-            moves, variations, game_info, success = parse_with_sgfmill(sgf_content)
-            if success and moves:
-                parse_info['parser_used'] = 'sgfmill'
-                return moves, variations or {}, game_info or {}, parse_info
-        except Exception as e:
-            parse_info['warnings'].append(f"sgfmill 解析失败: {str(e)}")
-
-    # 步骤 2: 使用内置树状解析器
-    try:
-        moves, variations, game_info, errors = parse_with_tree_parser(sgf_content)
-        if moves:
-            parse_info['parser_used'] = 'tree_parser'
-            parse_info['errors'].extend(errors)
-            return moves, variations or {}, game_info or {}, parse_info
-    except Exception as e:
-        parse_info['warnings'].append(f"树状解析器失败: {str(e)}")
-
-    # 步骤 3: 回退到原有的正则解析
-    try:
-        moves = extract_main_branch_legacy(sgf_content)
-        variations = extract_variations_legacy(sgf_content, moves)
-        game_info = extract_game_info(sgf_content)
-        parse_info['parser_used'] = 'legacy_regex'
-        parse_info['warnings'].append("使用兼容模式解析，可能无法识别部分变化图")
-        return moves, variations, game_info, parse_info
-    except Exception as e:
-        parse_info['errors'].append(f"所有解析器均失败: {str(e)}")
-        return [], {}, {}, parse_info
+    moves, variations, game_info, errors = parse_with_tree_parser(sgf_content)
+    parse_info['errors'].extend(errors)
+    
+    return moves, variations or {}, game_info or {}, parse_info
 
 
 def extract_main_branch(sgf_content):
-    """从SGF中提取主分支着法（新版，使用统一的 parse_sgf 函数）"""
+    """从SGF中提取主分支着法"""
     moves, _, _, _ = parse_sgf(sgf_content)
     return moves
 
 
-def extract_main_branch_legacy(sgf_content):
-    """从SGF中提取主分支着法（旧版，作为备用）"""
-    sgf_content = sgf_content.replace('\r\n', '\n')
-
-    # 检查是否是多变化图格式 (MULTIGOGM)
-    if 'MULTIGOGM' in sgf_content or re.search(r'\(;[A-Z]+\[[^\]]+\].*\(\s*;', sgf_content):
-        parallel_variations = extract_parallel_variations(sgf_content)
-        if parallel_variations:
-            return parallel_variations[0]['moves']
-
-    lines = sgf_content.split('\n')
-    main_moves = []
-
-    first_non_empty = ''
-    for line in lines:
-        stripped = line.strip()
-        if stripped:
-            first_non_empty = stripped
-            break
-
-    moves_in_first = re.findall(r';([BW])\[([a-z]{0,2})\]', first_non_empty)
-    is_flat_format = len(moves_in_first) > 0 and (';' in first_non_empty and first_non_empty.startswith('('))
-
-    if is_flat_format:
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            for match in re.finditer(r';([BW])\[([a-z]{0,2})\]', line):
-                pos = match.start()
-                prefix = line[:pos]
-                open_parens = prefix.count('(')
-                close_parens = prefix.count(')')
-
-                if open_parens - close_parens == 1:
-                    color = match.group(1)
-                    coord = match.group(2)
-                    main_moves.append({'color': color, 'coord': coord})
-    else:
-        found_first_move = False
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            moves_in_line = re.findall(r';([BW])\[([a-z]{0,2})\]', line)
-            if not moves_in_line:
-                continue
-
-            if not found_first_move:
-                color, coord = moves_in_line[0]
-                main_moves.append({'color': color, 'coord': coord})
-                found_first_move = True
-                continue
-
-            if len(moves_in_line) == 1:
-                color, coord = moves_in_line[0]
-                main_moves.append({'color': color, 'coord': coord})
-
-    return main_moves
-
-
-def extract_parallel_variations(sgf_content):
-    """提取多变化图格式的并行分支"""
-    variations = []
-    pattern = r'\(\s*(?:C\[([^\]]*)\])?\s*((?:;[BW]\[[a-z]{0,2}\])+)\s*\)'
-
-    for match in re.finditer(pattern, sgf_content):
-        name = match.group(1) or f"变化{len(variations)+1}"
-        moves_str = match.group(2)
-
-        moves = []
-        for move_match in re.finditer(r';([BW])\[([a-z]{0,2})\]', moves_str):
-            moves.append({
-                'color': move_match.group(1),
-                'coord': move_match.group(2)
-            })
-
-        if moves:
-            variations.append({'name': name, 'moves': moves})
-
-    return variations
-
-
-def extract_variations(sgf_content, main_moves):
-    """提取变化图（变例）- 新版，使用统一的 parse_sgf 函数"""
+def extract_variations(sgf_content):
+    """提取变化图（变例）"""
     _, variations, _, _ = parse_sgf(sgf_content)
-    return variations
-
-
-def extract_variations_legacy(sgf_content, main_moves):
-    """提取变化图（变例）- 旧版，作为备用"""
-    variations = {}
-
-    if 'MULTIGOGM' in sgf_content:
-        parallel_variations = extract_parallel_variations(sgf_content)
-        if parallel_variations and len(parallel_variations) > 1:
-            variations[0] = []
-            for i, var in enumerate(parallel_variations[1:], start=2):
-                variations[0].append({
-                    'name': var['name'],
-                    'winRate': var['name'],
-                    'moves': var['moves'],
-                    'comment': var['name']
-                })
-            return variations
-
-    lines = sgf_content.replace('\r\n', '\n').split('\n')
-
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-
-        moves_in_line = re.findall(r';([BW])\[([a-z]{0,2})\]', line)
-        if len(moves_in_line) <= 1:
-            continue
-
-        comment_match = re.search(r'C\[([^\]]+)\]', line)
-        comment = comment_match.group(1) if comment_match else ""
-        comment = comment.replace('\\', '/').replace('"', '')
-
-        first_color, first_coord = moves_in_line[0]
-
-        for start_idx, main_move in enumerate(main_moves):
-            if main_move['color'] == first_color and main_move['coord'] == first_coord:
-                has_diff = False
-                for i in range(1, len(moves_in_line)):
-                    if start_idx + i >= len(main_moves):
-                        has_diff = True
-                        break
-                    var_color, var_coord = moves_in_line[i]
-                    main = main_moves[start_idx + i]
-                    if main['color'] != var_color or main['coord'] != var_coord:
-                        has_diff = True
-                        break
-
-                if has_diff or len(moves_in_line) > len(main_moves) - start_idx:
-                    move_num = start_idx + 1
-                    var_moves = [{'color': c, 'coord': coord} for c, coord in moves_in_line]
-
-                    if move_num not in variations:
-                        variations[move_num] = []
-
-                    name = f"变化{len(variations[move_num])+1}"
-                    winRate = name
-                    win_match = re.search(r'([黑白]).*?(\d+\.?\d*)%', comment)
-                    if win_match:
-                        winRate = f"{win_match.group(1)}{win_match.group(2)}%"
-                        name += f" {winRate}"
-
-                    variations[move_num].append({
-                        'name': name,
-                        'winRate': winRate,
-                        'moves': var_moves,
-                        'comment': comment
-                    })
-                break
-
     return variations
 
 
@@ -932,8 +546,9 @@ KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})
     # === 变化图数据（双重转义防护）===
     # 1. json.dumps() 将Python对象转为JSON字符串
     # 2. html.escape() 将JSON字符串中的HTML特殊字符转义
+    # 3. 额外转义反斜杠，防止JavaScript字符串解析时破坏JSON结构
     # 这样可防止SGF中的特殊字符破坏HTML结构或注入恶意代码
-    variations_json = html.escape(json.dumps(variations, ensure_ascii=False))
+    variations_json = html.escape(json.dumps(variations, ensure_ascii=False)).replace('\\', '&#92;')
 
     # HTML模板
     html_template = f'''<!DOCTYPE html>
