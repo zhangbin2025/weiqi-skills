@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{{GAME_NAME}} - 实战选点</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 6px;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            padding: 8px;
+            max-width: 100%;
+            width: 100%;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 8px;
+        }
+        .header h1 {
+            font-size: 15px;
+            color: #333;
+            margin-bottom: 2px;
+            line-height: 1.2;
+        }
+        .header .info {
+            color: #666;
+            font-size: 11px;
+            line-height: 1.3;
+        }
+        .problem-info {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 6px;
+            flex-wrap: wrap;
+        }
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .tag-phase-layout { background: #4CAF50; color: white; }
+        .tag-phase-middle { background: #2196F3; color: white; }
+        .tag-phase-endgame { background: #FF9800; color: white; }
+        .tag-difficulty-easy { background: #81C784; color: white; }
+        .tag-difficulty-medium { background: #FFB74D; color: white; }
+        .tag-difficulty-hard { background: #E57373; color: white; }
+        .tag-blunder { background: #F44336; color: white; }
+        .board-container {
+            display: flex;
+            justify-content: center;
+            margin: 10px 0;
+            position: relative;
+            width: 100%;
+        }
+        #board {
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            max-width: 100%;
+            width: 100%;
+            height: auto;
+            aspect-ratio: 1 / 1;
+            display: block;
+            cursor: pointer;
+        }
+        .btn {
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            background: #f0f0f0;
+            color: #333;
+            padding: 8px 12px;
+        }
+        .btn:active {
+            transform: scale(0.95);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-success {
+            background: #4CAF50;
+            color: white;
+        }
+        .btn-danger {
+            background: #F44336;
+            color: white;
+        }
+        .btn-option {
+            min-width: 60px;
+            padding: 8px 12px;
+            font-weight: bold;
+        }
+        .btn-option.correct {
+            background: #4CAF50;
+            color: white;
+        }
+        .btn-option.wrong {
+            background: #F44336;
+            color: white;
+        }
+        .result-area {
+            text-align: center;
+            margin: 12px 0;
+            padding: 12px;
+            border-radius: 8px;
+            display: none;
+        }
+        .result-area.correct {
+            display: block;
+            background: #E8F5E9;
+            color: #2E7D32;
+        }
+        .result-area.wrong {
+            display: block;
+            background: #FFEBEE;
+            color: #C62828;
+        }
+        .result-area .icon {
+            font-size: 32px;
+            margin-bottom: 4px;
+        }
+        .options-area {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin: 12px 0;
+            flex-wrap: wrap;
+        }
+        .variations-area {
+            margin: 12px 0;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: none;
+        }
+        .variations-area.active {
+            display: block;
+        }
+        .variations-title {
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        .variations-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .controls-area {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin: 12px 0;
+            flex-wrap: wrap;
+        }
+        .navigation-area {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid #eee;
+        }
+        .progress-text {
+            font-size: 14px;
+            color: #666;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #555;
+        }
+        .stone-black, .stone-white {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+        }
+        .stone-black {
+            background: radial-gradient(circle at 30% 30%, #666, #000);
+        }
+        .stone-white {
+            background: radial-gradient(circle at 30% 30%, #fff, #ccc);
+            border: 1px solid #ddd;
+        }
+        @media (min-width: 600px) {
+            .container {
+                max-width: 500px;
+                padding: 20px;
+            }
+            .header h1 {
+                font-size: 18px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 id="gameTitle">{{GAME_TITLE}}</h1>
+            <div class="info" id="gameInfo">{{GAME_INFO}}</div>
+            <div class="problem-info" id="problemInfo">
+                <span class="tag tag-phase-middle" id="phaseTag">中盘</span>
+                <span class="tag tag-difficulty-medium" id="difficultyTag">中等</span>
+            </div>
+        </div>
+
+        <div class="board-container">
+            <canvas id="board"></canvas>
+        </div>
+
+        <div class="controls-area" id="replayControls">
+            <button class="btn" onclick="prevMove()" title="上一手">◀</button>
+            <input type="range" id="moveSlider" min="0" max="0" value="0" style="width: 150px;" oninput="goToMove(this.value)">
+            <button class="btn" onclick="nextMove()" title="下一手">▶</button>
+            <button class="btn btn-primary" onclick="startQuiz()" title="开始做题">做题</button>
+        </div>
+
+        <div id="quizControls" style="display: none;">
+            <div class="options-area" id="optionsArea"></div>
+            <div class="result-area" id="resultArea">
+                <div class="icon" id="resultIcon">✓</div>
+                <div id="resultText">回答正确！</div>
+            </div>
+            <div class="variations-area" id="variationsArea">
+                <div class="variations-title">查看变化图：</div>
+                <div class="variations-list" id="variationsList"></div>
+            </div>
+            <div class="controls-area">
+                <button class="btn" onclick="backToReplay()">返回打谱</button>
+                <button class="btn btn-primary" onclick="nextProblem()" id="nextBtn">下一题</button>
+            </div>
+        </div>
+
+        <div class="navigation-area" id="navigationArea">
+            <button class="btn" onclick="prevProblem()" id="prevProblemBtn">上一题</button>
+            <span class="progress-text" id="progressText">1 / {{TOTAL_PROBLEMS}}</span>
+            <button class="btn" onclick="nextProblem()" id="nextProblemBtn">下一题</button>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="stone-black"></div>
+                <span id="blackName">{{BLACK_NAME}}</span>
+            </div>
+            <div class="legend-item">
+                <div class="stone-white"></div>
+                <span id="whiteName">{{WHITE_NAME}}</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== 数据 ====================
+        const BOARD_SIZE = {{BOARD_SIZE}};
+        const handicapStones = {{HANDICAP_STONES}};
+        const problems = {{PROBLEMS_JSON}};
+        let currentProblemIndex = 0;
+        let currentProblem = problems[0];
+        
+        let inQuizMode = false;
+        let inVariation = false;
+        let answered = false;
+        let selectedOption = null;
+        
+        // 打谱状态
+        let currentMove = 0;
+        let maxMove = 0;
+        
+        // 变化图状态
+        let varMoves = [];
+        let varIndex = 0;
+
+        // ==================== 围棋规则 ====================
+        function createBoard() {
+            const board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+            if (handicapStones && handicapStones.length > 0) {
+                for (const stone of handicapStones) {
+                    board[stone.y][stone.x] = 'black';
+                }
+            }
+            return board;
+        }
+
+        function getNeighbors(x, y) {
+            const neighbors = [];
+            const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+            for (const [dx, dy] of dirs) {
+                const nx = x + dx, ny = y + dy;
+                if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE) {
+                    neighbors.push([nx, ny]);
+                }
+            }
+            return neighbors;
+        }
+
+        function getGroup(board, x, y, color, group = null) {
+            if (!group) group = new Set();
+            const key = `${x},${y}`;
+            if (group.has(key)) return group;
+            if (board[y][x] !== color) return group;
+            group.add(key);
+            for (const [nx, ny] of getNeighbors(x, y)) {
+                getGroup(board, nx, ny, color, group);
+            }
+            return group;
+        }
+
+        function getLiberties(board, x, y) {
+            const color = board[y][x];
+            const group = getGroup(board, x, y, color);
+            const liberties = new Set();
+            for (const key of group) {
+                const [gx, gy] = key.split(',').map(Number);
+                for (const [nx, ny] of getNeighbors(gx, gy)) {
+                    if (board[ny][nx] === null) {
+                        liberties.add(`${nx},${ny}`);
+                    }
+                }
+            }
+            return liberties;
+        }
+
+        function applyMove(board, move) {
+            if (move.pass) return { captured: 0 };
+            board[move.y][move.x] = move.color;
+            const opponent = move.color === 'black' ? 'white' : 'black';
+            let captured = 0;
+            for (const [nx, ny] of getNeighbors(move.x, move.y)) {
+                if (board[ny][nx] === opponent) {
+                    const liberties = getLiberties(board, nx, ny);
+                    if (liberties.size === 0) {
+                        const group = getGroup(board, nx, ny, opponent);
+                        for (const key of group) {
+                            const [gx, gy] = key.split(',').map(Number);
+                            board[gy][gx] = null;
+                            captured++;
+                        }
+                    }
+                }
+            }
+            return { captured };
+        }
+
+        // ==================== 棋盘渲染 ====================
+        const canvas = document.getElementById('board');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            const container = document.querySelector('.board-container');
+            const isMobile = window.innerWidth < 768;
+            const margin = isMobile ? 4 : 20;
+            const availableWidth = Math.min(container.clientWidth, window.innerWidth) - margin;
+            const availableHeight = window.innerHeight - 350;
+            const maxSize = Math.min(availableWidth, availableHeight, isMobile ? 760 : 600);
+            const size = Math.max(isMobile ? 320 : 400, maxSize);
+            canvas.width = size;
+            canvas.height = size;
+            canvas.style.width = size + 'px';
+            canvas.style.height = size + 'px';
+            updateDisplay();
+        }
+
+        function getGridParams() {
+            const baseMargin = canvas.width * 0.02;
+            const coordMargin = canvas.width * 0.018;
+            const margin = baseMargin + coordMargin;
+            const gridSize = (canvas.width - 2 * margin) / (BOARD_SIZE - 1);
+            return { margin, gridSize, baseMargin, coordMargin };
+        }
+
+        function drawBoard() {
+            const { margin, gridSize, baseMargin, coordMargin } = getGridParams();
+            const size = canvas.width;
+            ctx.fillStyle = '#E3C16F';
+            ctx.fillRect(0, 0, size, size);
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                ctx.beginPath();
+                ctx.moveTo(margin, margin + i * gridSize);
+                ctx.lineTo(size - margin, margin + i * gridSize);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(margin + i * gridSize, margin);
+                ctx.lineTo(margin + i * gridSize, size - margin);
+                ctx.stroke();
+            }
+            ctx.fillStyle = '#333';
+            ctx.font = `bold ${Math.max(8, gridSize * 0.28)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                const colLabel = String.fromCharCode(65 + i + (i >= 8 ? 1 : 0));
+                ctx.fillText(colLabel, margin + i * gridSize, baseMargin + coordMargin * 0.3);
+                ctx.fillText(colLabel, margin + i * gridSize, size - baseMargin - coordMargin * 0.3);
+                const rowLabel = (BOARD_SIZE - i).toString();
+                ctx.fillText(rowLabel, baseMargin + coordMargin * 0.3, margin + i * gridSize);
+                ctx.fillText(rowLabel, size - baseMargin - coordMargin * 0.3, margin + i * gridSize);
+            }
+            const stars = BOARD_SIZE === 19 ? [3, 9, 15] : [2, 6, 10];
+            ctx.fillStyle = '#333';
+            for (const x of stars) {
+                for (const y of stars) {
+                    ctx.beginPath();
+                    ctx.arc(margin + x * gridSize, margin + y * gridSize, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        function drawStone(x, y, color, isLast = false, label = null) {
+            const { margin, gridSize } = getGridParams();
+            const cx = margin + x * gridSize;
+            const cy = margin + y * gridSize;
+            const radius = gridSize * 0.48;
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            const gradient = ctx.createRadialGradient(
+                cx - radius * 0.3, cy - radius * 0.3, radius * 0.1,
+                cx, cy, radius
+            );
+            if (color === 'black') {
+                gradient.addColorStop(0, '#666');
+                gradient.addColorStop(1, '#000');
+            } else {
+                gradient.addColorStop(0, '#fff');
+                gradient.addColorStop(1, '#ccc');
+            }
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            if (isLast && !label) {
+                ctx.beginPath();
+                ctx.arc(cx, cy, radius * 0.25, 0, Math.PI * 2);
+                ctx.fillStyle = color === 'black' ? '#fff' : '#000';
+                ctx.fill();
+            }
+            if (label) {
+                ctx.fillStyle = color === 'black' ? '#fff' : '#000';
+                ctx.font = `bold ${Math.floor(gridSize * 0.55)}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, cx, cy);
+            }
+        }
+
+        function drawOptionMarker(x, y, letter, isCorrect = null) {
+            const { margin, gridSize } = getGridParams();
+            const cx = margin + x * gridSize;
+            const cy = margin + y * gridSize;
+            const radius = gridSize * 0.35;
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            if (isCorrect === true) {
+                ctx.fillStyle = '#4CAF50';
+            } else if (isCorrect === false) {
+                ctx.fillStyle = '#F44336';
+            } else {
+                ctx.fillStyle = 'rgba(102, 126, 234, 0.9)';
+            }
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.fillStyle = '#fff';
+            ctx.font = `bold ${Math.floor(gridSize * 0.5)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(letter, cx, cy);
+        }
+
+        function updateDisplay() {
+            drawBoard();
+            const board = createBoard();
+            const position = currentProblem ? currentProblem.position : [];
+            const displayMove = inQuizMode ? position.length : currentMove;
+            for (let i = 0; i < displayMove && i < position.length; i++) {
+                const move = position[i];
+                const color = move.color === 'B' ? 'black' : 'white';
+                const pos = coordToPos(move.coord);
+                if (pos) {
+                    applyMove(board, { color, x: pos.x, y: pos.y });
+                }
+            }
+            for (let y = 0; y < BOARD_SIZE; y++) {
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    if (board[y][x]) {
+                        const isLast = (displayMove > 0 && displayMove <= position.length);
+                        drawStone(x, y, board[y][x], isLast);
+                    }
+                }
+            }
+            if (inQuizMode && !inVariation) {
+                currentProblem.options.forEach((opt, idx) => {
+                    const pos = coordToPos(opt.coord);
+                    if (pos) {
+                        let isCorrect = null;
+                        if (answered) {
+                            isCorrect = opt.is_correct;
+                            if (selectedOption === idx && !opt.is_correct) {
+                                isCorrect = false;
+                            }
+                        }
+                        drawOptionMarker(pos.x, pos.y, opt.letter, isCorrect);
+                    }
+                });
+            }
+            if (inVariation && varMoves.length > 0) {
+                for (let i = 0; i < varIndex && i < varMoves.length; i++) {
+                    const move = varMoves[i];
+                    applyMove(board, move);
+                }
+                for (let i = 0; i < varIndex && i < varMoves.length; i++) {
+                    const move = varMoves[i];
+                    drawStone(move.x, move.y, move.color, i === varIndex - 1, i + 1);
+                }
+            }
+        }
+
+        function coordToPos(coord) {
+            if (!coord || coord.length < 2) return null;
+            return {
+                x: coord.charCodeAt(0) - 97,
+                y: coord.charCodeAt(1) - 97
+            };
+        }
+
+        // ==================== 打谱控制 ====================
+        function prevMove() {
+            if (currentMove > 0) {
+                currentMove--;
+                document.getElementById('moveSlider').value = currentMove;
+                updateDisplay();
+            }
+        }
+
+        function nextMove() {
+            const max = currentProblem ? currentProblem.position.length : 0;
+            if (currentMove < max) {
+                currentMove++;
+                document.getElementById('moveSlider').value = currentMove;
+                updateDisplay();
+            }
+        }
+
+        function goToMove(moveNum) {
+            const max = currentProblem ? currentProblem.position.length : 0;
+            const target = parseInt(moveNum);
+            if (target >= 0 && target <= max) {
+                currentMove = target;
+                updateDisplay();
+            }
+        }
+
+        // ==================== 题目模式 ====================
+        function startQuiz() {
+            inQuizMode = true;
+            answered = false;
+            selectedOption = null;
+            inVariation = false;
+            currentMove = currentProblem.position.length;
+            document.getElementById('replayControls').style.display = 'none';
+            document.getElementById('quizControls').style.display = 'block';
+            document.getElementById('navigationArea').style.display = 'none';
+            document.getElementById('resultArea').className = 'result-area';
+            document.getElementById('variationsArea').className = 'variations-area';
+            renderOptions();
+            updateDisplay();
+        }
+
+        function backToReplay() {
+            inQuizMode = false;
+            inVariation = false;
+            answered = false;
+            document.getElementById('replayControls').style.display = 'flex';
+            document.getElementById('quizControls').style.display = 'none';
+            document.getElementById('navigationArea').style.display = 'flex';
+            updateDisplay();
+        }
+
+        function renderOptions() {
+            const container = document.getElementById('optionsArea');
+            container.innerHTML = '';
+            currentProblem.options.forEach((opt, idx) => {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-option';
+                btn.textContent = opt.letter;
+                btn.onclick = () => selectOption(idx);
+                container.appendChild(btn);
+            });
+        }
+
+        function selectOption(idx) {
+            if (answered) return;
+            selectedOption = idx;
+            answered = true;
+            const option = currentProblem.options[idx];
+            const buttons = document.querySelectorAll('.btn-option');
+            buttons.forEach((btn, i) => {
+                if (i === idx) {
+                    btn.classList.add(option.is_correct ? 'correct' : 'wrong');
+                } else if (currentProblem.options[i].is_correct) {
+                    btn.classList.add('correct');
+                }
+            });
+            const resultArea = document.getElementById('resultArea');
+            const resultIcon = document.getElementById('resultIcon');
+            const resultText = document.getElementById('resultText');
+            if (option.is_correct) {
+                resultArea.className = 'result-area correct';
+                resultIcon.textContent = '✓';
+                resultText.textContent = '回答正确！';
+            } else {
+                resultArea.className = 'result-area wrong';
+                resultIcon.textContent = '✗';
+                const correctOpt = currentProblem.options.find(o => o.is_correct);
+                resultText.textContent = `回答错误，正确答案是 ${correctOpt.letter}`;
+            }
+            renderVariationButtons();
+            document.getElementById('variationsArea').classList.add('active');
+            updateDisplay();
+        }
+
+        function renderVariationButtons() {
+            const container = document.getElementById('variationsList');
+            container.innerHTML = '';
+            currentProblem.options.forEach((opt, idx) => {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-primary';
+                btn.style.minWidth = '80px';
+                let mark = '';
+                if (opt.is_correct) mark = ' ✓';
+                else if (answered && selectedOption === idx && !opt.is_correct) mark = ' ✗';
+                btn.textContent = `变化${opt.letter}${mark}`;
+                btn.onclick = () => showVariation(idx);
+                container.appendChild(btn);
+            });
+        }
+
+        function showVariation(idx) {
+            inVariation = true;
+            const opt = currentProblem.options[idx];
+            varMoves = opt.moves.map((m, i) => ({
+                color: m.color === 'B' ? 'black' : 'white',
+                x: m.coord.charCodeAt(0) - 97,
+                y: m.coord.charCodeAt(1) - 97
+            }));
+            varIndex = varMoves.length;
+            document.getElementById('optionsArea').style.display = 'none';
+            document.getElementById('resultArea').style.display = 'none';
+            const controls = document.createElement('div');
+            controls.id = 'varControls';
+            controls.className = 'controls-area';
+            controls.innerHTML = `
+                <button class="btn" onclick="varPrev()">◀</button>
+                <span id="varProgress">${varIndex}/${varMoves.length}</span>
+                <button class="btn" onclick="varNext()">▶</button>
+                <button class="btn btn-danger" onclick="exitVariation()">退出变化图</button>
+            `;
+            document.getElementById('quizControls').insertBefore(controls, document.getElementById('variationsArea'));
+            updateDisplay();
+        }
+
+        function exitVariation() {
+            inVariation = false;
+            varMoves = [];
+            varIndex = 0;
+            const varControls = document.getElementById('varControls');
+            if (varControls) varControls.remove();
+            document.getElementById('optionsArea').style.display = 'flex';
+            document.getElementById('resultArea').style.display = 'block';
+            updateDisplay();
+        }
+
+        function varPrev() {
+            if (varIndex > 0) {
+                varIndex--;
+                document.getElementById('varProgress').textContent = `${varIndex}/${varMoves.length}`;
+                updateDisplay();
+            }
+        }
+
+        function varNext() {
+            if (varIndex < varMoves.length) {
+                varIndex++;
+                document.getElementById('varProgress').textContent = `${varIndex}/${varMoves.length}`;
+                updateDisplay();
+            }
+        }
+
+        // ==================== 题目导航 ====================
+        function loadProblem(index) {
+            if (index < 0 || index >= problems.length) return;
+            currentProblemIndex = index;
+            currentProblem = problems[index];
+            inQuizMode = false;
+            inVariation = false;
+            answered = false;
+            selectedOption = null;
+            currentMove = currentProblem.position.length;
+            maxMove = currentProblem.position.length;
+            document.getElementById('progressText').textContent = `${index + 1} / ${problems.length}`;
+            document.getElementById('prevProblemBtn').disabled = index === 0;
+            document.getElementById('nextProblemBtn').disabled = index === problems.length - 1;
+            const phaseTag = document.getElementById('phaseTag');
+            const difficultyTag = document.getElementById('difficultyTag');
+            const phaseNames = { layout: '布局', middle: '中盘', endgame: '官子' };
+            const difficultyNames = { easy: '简单', medium: '中等', hard: '困难' };
+            phaseTag.textContent = phaseNames[currentProblem.phase] || currentProblem.phase;
+            phaseTag.className = `tag tag-phase-${currentProblem.phase}`;
+            difficultyTag.textContent = difficultyNames[currentProblem.difficulty] || currentProblem.difficulty;
+            difficultyTag.className = `tag tag-difficulty-${currentProblem.difficulty}`;
+            if (currentProblem.is_blunder) {
+                if (!document.getElementById('blunderTag')) {
+                    const blunderTag = document.createElement('span');
+                    blunderTag.id = 'blunderTag';
+                    blunderTag.className = 'tag tag-blunder';
+                    blunderTag.textContent = '恶手题';
+                    document.getElementById('problemInfo').appendChild(blunderTag);
+                }
+            } else {
+                const blunderTag = document.getElementById('blunderTag');
+                if (blunderTag) blunderTag.remove();
+            }
+            const slider = document.getElementById('moveSlider');
+            slider.max = maxMove;
+            slider.value = maxMove;
+            document.getElementById('replayControls').style.display = 'flex';
+            document.getElementById('quizControls').style.display = 'none';
+            document.getElementById('navigationArea').style.display = 'flex';
+            document.getElementById('resultArea').className = 'result-area';
+            document.getElementById('variationsArea').className = 'variations-area';
+            const varControls = document.getElementById('varControls');
+            if (varControls) varControls.remove();
+            updateDisplay();
+        }
+
+        function prevProblem() {
+            loadProblem(currentProblemIndex - 1);
+        }
+
+        function nextProblem() {
+            loadProblem(currentProblemIndex + 1);
+        }
+
+        // ==================== 棋盘点击 ====================
+        function handleBoardClick(e) {
+            if (!inQuizMode || answered || inVariation) return;
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+            const { margin, gridSize } = getGridParams();
+            const bx = Math.round((x - margin) / gridSize);
+            const by = Math.round((y - margin) / gridSize);
+            if (bx >= 0 && bx < BOARD_SIZE && by >= 0 && by < BOARD_SIZE) {
+                // 检查是否点击了某个选项
+                for (let i = 0; i < currentProblem.options.length; i++) {
+                    const opt = currentProblem.options[i];
+                    const pos = coordToPos(opt.coord);
+                    if (pos && pos.x === bx && pos.y === by) {
+                        selectOption(i);
+                        break;
+                    }
+                }
+            }
+        }
+
+        canvas.addEventListener('click', handleBoardClick);
+        window.addEventListener('resize', resizeCanvas);
+
+        // ==================== 初始化 ====================
+        resizeCanvas();
+        loadProblem(0);
+    </script>
+</body>
+</html>
