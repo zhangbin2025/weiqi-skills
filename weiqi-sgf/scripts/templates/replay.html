@@ -325,6 +325,33 @@
             noise.stop(audioCtx.currentTime + 0.18);
         }
 
+        function playMultiCaptureSound(count) {
+            if (!soundEnabled || count <= 0) return;
+            // 播放主提子音
+            playCaptureSound();
+            // 额外添加更多石子散落声
+            const extraCount = Math.min(count - 1, 4);
+            for (let i = 0; i < extraCount; i++) {
+                setTimeout(() => {
+                    if (audioCtx.state === 'running' && soundEnabled) {
+                        const noise = audioCtx.createBufferSource();
+                        noise.buffer = noiseBuffer;
+                        const filter = audioCtx.createBiquadFilter();
+                        filter.type = 'bandpass';
+                        filter.frequency.value = 2000 - i * 200;
+                        const gain = audioCtx.createGain();
+                        gain.gain.setValueAtTime(0.3 - i * 0.05, audioCtx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+                        noise.connect(filter);
+                        filter.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        noise.start(audioCtx.currentTime);
+                        noise.stop(audioCtx.currentTime + 0.08);
+                    }
+                }, i * 60);
+            }
+        }
+
         function toggleSound() {
             soundEnabled = !soundEnabled;
             const btn = document.getElementById('soundToggleBtn');
@@ -484,6 +511,31 @@
             }
         }
 
+        function drawStoneWithOpacity(x, y, color, isLast, moveNum, opacity) {
+            const {margin, gridSize} = getGridParams();
+            const cx = margin + x * gridSize;
+            const cy = margin + y * gridSize;
+            const radius = gridSize * 0.48;
+            ctx.save();
+            ctx.globalAlpha = opacity;
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            const gradient = ctx.createRadialGradient(
+                cx - radius * 0.3, cy - radius * 0.3, radius * 0.1,
+                cx, cy, radius
+            );
+            if (color === 'black') {
+                gradient.addColorStop(0, '#666');
+                gradient.addColorStop(1, '#000');
+            } else {
+                gradient.addColorStop(0, '#fff');
+                gradient.addColorStop(1, '#ccc');
+            }
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            ctx.restore();
+        }
+
         let lastBlackCaptured = 0;
         let lastWhiteCaptured = 0;
 
@@ -589,6 +641,16 @@
             updateVarPanel();
         }
 
+        function goToStart() {
+            currentMove = 0;
+            updateDisplay();
+        }
+
+        function goToEnd() {
+            currentMove = moves.length;
+            updateDisplay();
+        }
+
         function prevMove() {
             if (currentMove > 0) {
                 currentMove--;
@@ -657,18 +719,400 @@
             else if (e.key === ' ') togglePlay();
         });
 
+        // ==================== 试下功能 ====================
+        let inTrialMode = false;
+        let trialMoves = [];
+        let trialIndex = 0;
+        let trialCurrentPlayer = 'black';
+        let trialCapturedBlack = 0;
+        let trialCapturedWhite = 0;
+        let trialKoPosition = null;
+
+        function createBoardFromMainMoves(moveCount) {
+            const board = createBoard();
+            for (let i = 0; i < moveCount && i < moves.length; i++) {
+                const move = moves[i];
+                board[move.y][move.x] = move.color;
+                const opponent = move.color === 'black' ? 'white' : 'black';
+                for (const [nx, ny] of getNeighbors(move.x, move.y)) {
+                    if (board[ny][nx] === opponent) {
+                        const liberties = getLiberties(board, nx, ny);
+                        if (liberties.size === 0) {
+                            const group = getGroup(board, nx, ny, opponent);
+                            for (const key of group) {
+                                const [gx, gy] = key.split(',').map(Number);
+                                board[gy][gx] = null;
+                            }
+                        }
+                    }
+                }
+            }
+            return board;
+        }
+
+        function getStoneAt(board, x, y) {
+            return board[y][x];
+        }
+
+        function findGroupOnBoard(board, startX, startY, color) {
+            const group = [];
+            const visited = new Set();
+            const stack = [{x: startX, y: startY}];
+            while (stack.length > 0) {
+                const {x, y} = stack.pop();
+                const key = `${x},${y}`;
+                if (visited.has(key)) continue;
+                visited.add(key);
+                if (board[y][x] === color) {
+                    group.push({x, y});
+                    for (const [nx, ny] of getNeighbors(x, y)) {
+                        stack.push({x: nx, y: ny});
+                    }
+                }
+            }
+            return group;
+        }
+
+        function countLibertiesOnBoard(board, group) {
+            const liberties = new Set();
+            for (const stone of group) {
+                const neighbors = getNeighbors(stone.x, stone.y);
+                for (const [nx, ny] of neighbors) {
+                    if (ny >= 0 && ny < BOARD_SIZE && nx >= 0 && nx < BOARD_SIZE) {
+                        if (board[ny][nx] === null) {
+                            liberties.add(`${nx},${ny}`);
+                        }
+                    }
+                }
+            }
+            return liberties.size;
+        }
+
+        function isSuicideOnBoard(board, x, y, color) {
+            const opponent = color === 'black' ? 'white' : 'black';
+            board[y][x] = color;
+            let canCapture = false;
+            const checked = new Set();
+            for (const [nx, ny] of getNeighbors(x, y)) {
+                if (board[ny][nx] === opponent) {
+                    const key = `${nx},${ny}`;
+                    if (!checked.has(key)) {
+                        const group = findGroupOnBoard(board, nx, ny, opponent);
+                        for (const s of group) checked.add(`${s.x},${s.y}`);
+                        if (countLibertiesOnBoard(board, group) === 0) canCapture = true;
+                    }
+                }
+            }
+            const myGroup = findGroupOnBoard(board, x, y, color);
+            const myLiberties = countLibertiesOnBoard(board, myGroup);
+            board[y][x] = null;
+            return myLiberties === 0 && !canCapture;
+        }
+
+        function removeDeadStonesOnBoard(board, x, y, color) {
+            const opponent = color === 'black' ? 'white' : 'black';
+            const captured = [];
+            const checked = new Set();
+            for (const [nx, ny] of getNeighbors(x, y)) {
+                if (board[ny][nx] === opponent) {
+                    const key = `${nx},${ny}`;
+                    if (checked.has(key)) continue;
+                    const group = findGroupOnBoard(board, nx, ny, opponent);
+                    for (const s of group) checked.add(`${s.x},${s.y}`);
+                    if (countLibertiesOnBoard(board, group) === 0) {
+                        for (const s of group) {
+                            captured.push({x: s.x, y: s.y});
+                            board[s.y][s.x] = null;
+                        }
+                    }
+                }
+            }
+            return captured;
+        }
+
+        function checkKoOnBoard(board, x, y, color, captured) {
+            if (captured.length !== 1) return null;
+            const opponent = color === 'black' ? 'white' : 'black';
+            const capturedPos = captured[0];
+            board[capturedPos.y][capturedPos.x] = opponent;
+            const myGroup = findGroupOnBoard(board, x, y, color);
+            const myLiberties = countLibertiesOnBoard(board, myGroup);
+            const canBeCaptured = myLiberties === 0 && myGroup.length === 1;
+            board[capturedPos.y][capturedPos.x] = null;
+            if (canBeCaptured) return {x: capturedPos.x, y: capturedPos.y};
+            return null;
+        }
+
+        function enterTrialMode() {
+            if (isPlaying) return;
+            if (inVariation) {
+                alert('变化图模式下暂不支持试下功能');
+                return;
+            }
+            inTrialMode = true;
+            trialMoves = [];
+            trialIndex = 0;
+            trialCurrentPlayer = (currentMove % 2 === 0) ? 'black' : 'white';
+            trialCapturedBlack = 0;
+            trialCapturedWhite = 0;
+            trialKoPosition = null;
+            document.getElementById('mainControls').style.display = 'none';
+            document.getElementById('varPanel').style.display = 'none';
+            document.getElementById('trialControlPanel').style.display = 'block';
+            updateTrialButtons();
+            updateDisplay();
+        }
+
+        function exitTrialMode() {
+            inTrialMode = false;
+            trialMoves = [];
+            trialIndex = 0;
+            trialKoPosition = null;
+            document.getElementById('mainControls').style.display = 'flex';
+            document.getElementById('trialControlPanel').style.display = 'none';
+            updateVarPanel();
+            updateDisplay();
+        }
+
+        function trialPlaceStone(x, y) {
+            const board = createBoardFromMainMoves(currentMove);
+            for (let i = 0; i < trialIndex && i < trialMoves.length; i++) {
+                const m = trialMoves[i];
+                board[m.y][m.x] = m.color;
+                removeDeadStonesOnBoard(board, m.x, m.y, m.color);
+            }
+            if (getStoneAt(board, x, y) !== null) return false;
+            if (trialKoPosition && trialKoPosition.x === x && trialKoPosition.y === y) return false;
+            if (isSuicideOnBoard(board, x, y, trialCurrentPlayer)) return false;
+            board[y][x] = trialCurrentPlayer;
+            const captured = removeDeadStonesOnBoard(board, x, y, trialCurrentPlayer);
+            trialKoPosition = checkKoOnBoard(board, x, y, trialCurrentPlayer, captured);
+            if (trialCurrentPlayer === 'black') trialCapturedWhite += captured.length;
+            else trialCapturedBlack += captured.length;
+            trialMoves = trialMoves.slice(0, trialIndex);
+            trialMoves.push({x, y, color: trialCurrentPlayer, captured: captured.length});
+            trialIndex++;
+            trialCurrentPlayer = trialCurrentPlayer === 'black' ? 'white' : 'black';
+            if (captured.length > 0) {
+                if (captured.length >= 3) playMultiCaptureSound(captured.length);
+                else playCaptureSound();
+            } else {
+                playStoneSound();
+            }
+            updateTrialButtons();
+            updateDisplay();
+            return true;
+        }
+
+        function trialPrev() {
+            if (trialIndex > 0) {
+                trialIndex--;
+                const move = trialMoves[trialIndex];
+                if (move.color === 'black') trialCapturedWhite -= move.captured || 0;
+                else trialCapturedBlack -= move.captured || 0;
+                trialCurrentPlayer = move.color;
+                trialKoPosition = null;
+                updateTrialButtons();
+                updateDisplay();
+            }
+        }
+
+        function trialNext() {
+            if (trialIndex < trialMoves.length) {
+                const move = trialMoves[trialIndex];
+                trialIndex++;
+                if (move.color === 'black') trialCapturedWhite += move.captured || 0;
+                else trialCapturedBlack += move.captured || 0;
+                trialCurrentPlayer = move.color === 'black' ? 'white' : 'black';
+                updateTrialButtons();
+                updateDisplay();
+            }
+        }
+
+        function updateTrialButtons() {
+            const prevBtn = document.getElementById('trialPrevBtn');
+            const nextBtn = document.getElementById('trialNextBtn');
+            prevBtn.style.opacity = trialIndex <= 0 ? '0.3' : '1';
+            prevBtn.style.cursor = trialIndex <= 0 ? 'not-allowed' : 'pointer';
+            prevBtn.disabled = trialIndex <= 0;
+            nextBtn.style.opacity = trialIndex >= trialMoves.length ? '0.3' : '1';
+            nextBtn.style.cursor = trialIndex >= trialMoves.length ? 'not-allowed' : 'pointer';
+            nextBtn.disabled = trialIndex >= trialMoves.length;
+        }
+
+        function handleBoardClick(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+            const {margin, gridSize} = getGridParams();
+            const bx = Math.round((x - margin) / gridSize);
+            const by = Math.round((y - margin) / gridSize);
+            if (bx >= 0 && bx < BOARD_SIZE && by >= 0 && by < BOARD_SIZE) {
+                if (inTrialMode) {
+                    trialPlaceStone(bx, by);
+                } else if (!isPlaying) {
+                    enterTrialMode();
+                    trialPlaceStone(bx, by);
+                }
+            }
+        }
+
+        canvas.addEventListener('click', handleBoardClick);
+
+        // 触摸滑动支持
         let touchStartX = 0;
+        let touchStartY = 0;
         canvas.addEventListener('touchstart', (e) => {
             touchStartX = e.touches[0].clientX;
-        });
+            touchStartY = e.touches[0].clientY;
+        }, { passive: true });
         canvas.addEventListener('touchend', (e) => {
             const touchEndX = e.changedTouches[0].clientX;
-            const diff = touchStartX - touchEndX;
-            if (Math.abs(diff) > 50) {
-                if (diff > 0) nextMove();
+            const touchEndY = e.changedTouches[0].clientY;
+            const diffX = touchStartX - touchEndX;
+            const diffY = touchStartY - touchEndY;
+            // 水平滑动切换手数（只有在非试下模式下）
+            if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50 && !inTrialMode && !inVariation) {
+                e.preventDefault();
+                if (diffX > 0) nextMove();
                 else prevMove();
             }
-        });
+        }, { passive: false });
+
+        // 修改原有的绘制函数支持试下和变化图
+        const originalDrawBoard = updateDisplay;
+        updateDisplay = function() {
+            if (inTrialMode) {
+                // 试下模式绘制
+                drawBoard();
+
+                // 构建棋盘状态（使用与 trialPlaceStone 相同的逻辑）
+                const board = createBoardFromMainMoves(currentMove);
+
+                // 应用试下着法
+                for (let i = 0; i < trialIndex && i < trialMoves.length; i++) {
+                    const m = trialMoves[i];
+                    board[m.y][m.x] = m.color;
+                    removeDeadStonesOnBoard(board, m.x, m.y, m.color);
+                }
+
+                // 收集所有试下棋子位置
+                const trialPositions = new Set();
+                for (let i = 0; i < trialIndex && i < trialMoves.length; i++) {
+                    trialPositions.add(`${trialMoves[i].x},${trialMoves[i].y}`);
+                }
+
+                // 绘制所有棋子
+                for (let y = 0; y < BOARD_SIZE; y++) {
+                    for (let x = 0; x < BOARD_SIZE; x++) {
+                        if (board[y][x]) {
+                            const isTrial = trialPositions.has(`${x},${y}`);
+                            if (isTrial) {
+                                // 试下棋子 - 强制显示手数（从1开始）
+                                const moveIdx = [...trialPositions].indexOf(`${x},${y}`);
+                                drawStone(x, y, board[y][x], false, null);
+                                // 绘制手数（强制显示，不依赖手数开关）
+                                const {margin: m2, gridSize: gs2} = getGridParams();
+                                const cx2 = m2 + x * gs2;
+                                const cy2 = m2 + y * gs2;
+                                ctx.fillStyle = board[y][x] === 'black' ? '#fff' : '#000';
+                                ctx.font = `bold ${Math.floor(gs2 * 0.55)}px Arial`;
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                ctx.fillText((moveIdx + 1).toString(), cx2, cy2);
+                            } else {
+                                // 主分支棋子 - 正常显示
+                                drawStone(x, y, board[y][x], false, null);
+                            }
+                        }
+                    }
+                }
+                // 试下模式 - 清空状态文字
+                document.getElementById('moveInfo').textContent = '';
+                document.getElementById('capturedInfo').textContent = '';
+            } else if (inVariation) {
+                // 变化图模式绘制
+                drawBoard();
+                const board = createBoard();
+                let blackCaptured = 0;
+                let whiteCaptured = 0;
+
+                // 主分支着法
+                for (let i = 0; i < currentMove && i < moves.length; i++) {
+                    const move = moves[i];
+                    board[move.y][move.x] = move.color;
+                    const opponent = move.color === 'black' ? 'white' : 'black';
+                    for (const [nx, ny] of getNeighbors(move.x, move.y)) {
+                        if (board[ny][nx] === opponent) {
+                            const liberties = getLiberties(board, nx, ny);
+                            if (liberties.size === 0) {
+                                const group = getGroup(board, nx, ny, opponent);
+                                for (const key of group) {
+                                    const [gx, gy] = key.split(',').map(Number);
+                                    board[gy][gx] = null;
+                                    if (opponent === 'white') blackCaptured++;
+                                    else whiteCaptured++;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 变化图着法
+                for (let i = 0; i < varIndex && i < varMoves.length; i++) {
+                    const move = varMoves[i];
+                    board[move.y][move.x] = move.color;
+                    const opponent = move.color === 'black' ? 'white' : 'black';
+                    for (const [nx, ny] of getNeighbors(move.x, move.y)) {
+                        if (board[ny][nx] === opponent) {
+                            const liberties = getLiberties(board, nx, ny);
+                            if (liberties.size === 0) {
+                                const group = getGroup(board, nx, ny, opponent);
+                                for (const key of group) {
+                                    const [gx, gy] = key.split(',').map(Number);
+                                    board[gy][gx] = null;
+                                    if (opponent === 'white') blackCaptured++;
+                                    else whiteCaptured++;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 绘制棋子 - 变化图模式下强制显示手数
+                for (let y = 0; y < BOARD_SIZE; y++) {
+                    for (let x = 0; x < BOARD_SIZE; x++) {
+                        if (board[y][x]) {
+                            // 检查是否是变化图的棋子
+                            let varMoveNum = null;
+                            for (let i = 0; i < varIndex && i < varMoves.length; i++) {
+                                if (varMoves[i].x === x && varMoves[i].y === y) {
+                                    varMoveNum = i + 1;
+                                    break;
+                                }
+                            }
+                            drawStone(x, y, board[y][x], false, varMoveNum);
+                        }
+                    }
+                }
+
+                // 更新状态
+                const totalMoves = currentMove + varIndex;
+                document.getElementById('moveInfo').textContent = `第 ${totalMoves} 手`;
+                if (blackCaptured > 0 || whiteCaptured > 0) {
+                    document.getElementById('capturedInfo').textContent = `提子: 黑 ${blackCaptured} 子, 白 ${whiteCaptured} 子`;
+                } else {
+                    document.getElementById('capturedInfo').textContent = '';
+                }
+            } else {
+                originalDrawBoard();
+                updateVarPanel();
+                // 同步滑动条位置
+                document.getElementById('moveSlider').value = currentMove;
+            }
+        };
 
         // ==================== 变化图功能 ====================
 
