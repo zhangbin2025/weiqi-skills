@@ -466,13 +466,16 @@
             ctx.fillStyle = gradient;
             ctx.fill();
             const showNumbers = document.getElementById('showNumbers').checked;
-            if (isLast && !showNumbers) {
+            const showMoveNum = moveNum && (showNumbers || inVariation);
+            // 显示聚焦点（仅在未显示手数时）
+            if (isLast && !showMoveNum) {
                 ctx.beginPath();
                 ctx.arc(cx, cy, radius * 0.25, 0, Math.PI * 2);
                 ctx.fillStyle = color === 'black' ? '#fff' : '#000';
                 ctx.fill();
             }
-            if (moveNum && showNumbers) {
+            // 显示手数：主分支需要showNumbers开启，变化图强制显示
+            if (showMoveNum) {
                 ctx.fillStyle = color === 'black' ? '#fff' : '#000';
                 ctx.font = `bold ${Math.floor(gridSize * 0.55)}px Arial`;
                 ctx.textAlign = 'center';
@@ -532,10 +535,13 @@
                         const lastMove = currentMove > 0 ? moves[currentMove - 1] : null;
                         const isLast = (lastMove && !lastMove.pass && lastMove.x === x && lastMove.y === y);
                         let moveNum = null;
-                        for (let i = 0; i < currentMove; i++) {
-                            if (moves[i].x === x && moves[i].y === y) {
-                                moveNum = i + 1;
-                                break;
+                        // 变化图模式下，主分支棋子不显示手数
+                        if (!inVariation) {
+                            for (let i = 0; i < currentMove; i++) {
+                                if (moves[i].x === x && moves[i].y === y) {
+                                    moveNum = i + 1;
+                                    break;
+                                }
                             }
                         }
                         drawStone(x, y, board[y][x], isLast, moveNum);
@@ -543,12 +549,44 @@
                 }
             }
 
-            document.getElementById('moveInfo').textContent = `第 ${currentMove} 手 / 共 ${moves.length} 手`;
+            // 如果在变化图中，叠加显示变化图着法
+            if (inVariation && varMoves.length > 0) {
+                for (let i = 0; i < varIndex; i++) {
+                    const move = varMoves[i];
+                    const opponent = move.color === 'black' ? 'white' : 'black';
+                    board[move.y][move.x] = move.color;
+                    for (const [nx, ny] of getNeighbors(move.x, move.y)) {
+                        if (board[ny][nx] === opponent) {
+                            const liberties = getLiberties(board, nx, ny);
+                            if (liberties.size === 0) {
+                                const group = getGroup(board, nx, ny, opponent);
+                                for (const key of group) {
+                                    const [gx, gy] = key.split(',').map(Number);
+                                    board[gy][gx] = null;
+                                }
+                            }
+                        }
+                    }
+                }
+                // 绘制变化图的棋子，显示变化图手数
+                for (let i = 0; i < varIndex; i++) {
+                    const move = varMoves[i];
+                    const lastMove = i === varIndex - 1;
+                    drawStone(move.x, move.y, move.color, lastMove, i + 1);
+                }
+                document.getElementById('moveInfo').textContent = `第 ${currentMove} 手 / 共 ${moves.length} 手 | 变化图: ${varIndex}/${varMoves.length}`;
+            } else {
+                document.getElementById('moveInfo').textContent = `第 ${currentMove} 手 / 共 ${moves.length} 手`;
+            }
+
             if (blackCaptured > 0 || whiteCaptured > 0) {
                 document.getElementById('capturedInfo').textContent = `提子: 黑 ${blackCaptured} 子, 白 ${whiteCaptured} 子`;
             } else {
                 document.getElementById('capturedInfo').textContent = '';
             }
+
+            // 更新变化图面板
+            updateVarPanel();
         }
 
         function prevMove() {
@@ -631,6 +669,90 @@
                 else prevMove();
             }
         });
+
+        // ==================== 变化图功能 ====================
+
+        // 更新变化图面板
+        function updateVarPanel() {
+            const varPanel = document.getElementById('varPanel');
+            const varList = document.getElementById('varList');
+
+            if (inVariation || !variations[currentMove]) {
+                varPanel.style.display = 'none';
+                return;
+            }
+
+            varPanel.style.display = 'block';
+            varList.innerHTML = '';
+
+            variations[currentMove].forEach((v, i) => {
+                const btn = document.createElement('button');
+                btn.className = 'btn';
+                btn.style.cssText = 'width: 72px; padding: 4px 0; height: 28px; font-size: 13px; background: #667eea; color: white; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+                btn.textContent = v.winRate || v.name.replace(/^变化\d+\s*/, '');
+                btn.title = v.winRate || v.name;
+                btn.onclick = () => enterVariation(v);
+                varList.appendChild(btn);
+            });
+        }
+
+        // 进入变化图
+        function enterVariation(v) {
+            inVariation = true;
+            varMoves = v.moves.map(m => ({
+                color: m.color === 'B' ? 'black' : 'white',
+                x: m.coord.charCodeAt(0) - 97,
+                y: m.coord.charCodeAt(1) - 97
+            }));
+            varIndex = 1;  // 默认显示第一手
+
+            document.getElementById('mainControls').style.display = 'none';
+            document.getElementById('varPanel').style.display = 'none';
+            document.getElementById('varControlPanel').style.display = 'block';
+
+            updateVarButtons();
+            updateDisplay();
+        }
+
+        // 退出变化图
+        function exitVariation() {
+            inVariation = false;
+            varMoves = [];
+            varIndex = 0;
+
+            document.getElementById('mainControls').style.display = 'flex';
+            document.getElementById('varControlPanel').style.display = 'none';
+
+            updateVarPanel();
+            updateDisplay();
+        }
+
+        // 更新变化图控制按钮
+        function updateVarButtons() {
+            const prevBtn = document.getElementById('varPrevBtn');
+            const nextBtn = document.getElementById('varNextBtn');
+
+            prevBtn.style.opacity = varIndex > 0 ? '1' : '0.3';
+            nextBtn.style.opacity = varIndex < varMoves.length ? '1' : '0.3';
+        }
+
+        // 变化图上一步
+        function varPrev() {
+            if (varIndex > 0) {
+                varIndex--;
+                updateVarButtons();
+                updateDisplay();
+            }
+        }
+
+        // 变化图下一步
+        function varNext() {
+            if (varIndex < varMoves.length) {
+                varIndex++;
+                updateVarButtons();
+                updateDisplay();
+            }
+        }
 
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();

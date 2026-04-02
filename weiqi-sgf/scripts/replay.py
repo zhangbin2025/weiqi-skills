@@ -44,22 +44,14 @@ def generate_html(main_moves, game_info, variations, output_path, input_base_nam
     handicap_stones = game_info.get('handicap_stones', [])
     komi = game_info.get('komi', '375')
     
-    # 构建SGF字符串
+    # 构建SGF字符串（单行格式，避免HTML模板中的换行问题）
     sgf_moves = ''.join([f";{m['color']}[{m['coord']}]" for m in main_moves])
     handicap_sgf = f"HA[{handicap}]" if int(handicap) > 0 else ""
     for stone in handicap_stones:
         coord = chr(97 + stone['x']) + chr(97 + stone['y'])
         handicap_sgf += f"AB[{coord}]"
     
-    sgf_raw = f"""(;GM[1]FF[4]
-SZ[{board_size}]
-GN[{game_info.get('game_name', '围棋棋谱')}]
-DT[{game_info.get('date', '')}]
-PB[{game_info.get('black', '黑棋')}]
-PW[{game_info.get('white', '白棋')}]
-BR[{game_info.get('black_rank', '')}]
-WR[{game_info.get('white_rank', '')}]
-KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})"""
+    sgf_raw = f"(;GM[1]FF[4]SZ[{board_size}]GN[{game_info.get('game_name', '围棋棋谱')}]DT[{game_info.get('date', '')}]PB[{game_info.get('black', '黑棋')}]PW[{game_info.get('white', '白棋')}]BR[{game_info.get('black_rank', '')}]WR[{game_info.get('white_rank', '')}]KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})"
     
     # 各种转义处理
     black_name = html.escape(game_info.get('black', '黑棋'))
