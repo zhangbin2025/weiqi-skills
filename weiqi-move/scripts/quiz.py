@@ -151,13 +151,21 @@ def get_adapter(format_type: str) -> FormatAdapter:
 class Problem:
     """单个选点题"""
     
-    def __init__(self, move_num: int, position: List[Dict], variations: List[Dict]):
+    def __init__(self, move_num: int, position: List[Dict], variations: List[Dict], main_moves: List[Dict] = None):
         self.move_num = move_num  # 题目标记的手数
         self.position = position  # 题目前的历史局面着法
         self.variations = variations  # 变化图（选项）
+        self.main_moves = main_moves  # 主分支所有着法
+        self.practical_move = self._get_practical_move(main_moves, move_num)  # 实战落子
         self.phase = self._classify_phase(move_num)
         self.difficulty = self._classify_difficulty(variations)
-        self.is_blunder = self._check_blunder(variations)
+        self.is_blunder = self._check_blunder(variations, main_moves, move_num)
+    
+    def _get_practical_move(self, main_moves: List[Dict], move_num: int) -> Optional[Dict]:
+        """获取实战落子信息"""
+        if not main_moves or move_num >= len(main_moves):
+            return None
+        return main_moves[move_num]
     
     def _classify_phase(self, move_num: int) -> str:
         """分类题目阶段"""
@@ -192,22 +200,50 @@ class Problem:
         else:
             return 'hard'
     
-    def _check_blunder(self, variations: List[Dict]) -> bool:
-        """检查是否为恶手题"""
+    def _check_blunder(self, variations: List[Dict], main_moves: List[Dict] = None, move_num: int = None) -> bool:
+        """检查是否为恶手题
+        
+        正确逻辑：实战落子对应的AI变化胜率比最高胜率差20%以上，才是恶手题
+        """
         if len(variations) < 2:
             return False
         
-        rates = []
-        for v in variations:
-            rate_info = self._parse_var_winrate(v)
-            if rate_info:
-                rates.append(rate_info['rate'])
-        
-        if len(rates) < 2:
+        # 获取实战落子坐标
+        if not main_moves or move_num is None or move_num >= len(main_moves):
             return False
         
-        rates.sort(reverse=True)
-        return (rates[0] - rates[1]) > 20
+        practical_move = main_moves[move_num]
+        practical_coord = practical_move.get('coord', '')
+        
+        if not practical_coord:
+            return False
+        
+        # 在变化图中找到实战落子对应的变化
+        practical_variation = None
+        practical_rate = None
+        max_rate = 0
+        
+        for v in variations:
+            rate_info = self._parse_var_winrate(v)
+            if not rate_info:
+                continue
+            
+            rate = rate_info['rate']
+            max_rate = max(max_rate, rate)
+            
+            # 检查这个变化的第一步是否等于实战落子
+            if v.get('moves') and len(v['moves']) > 0:
+                first_move = v['moves'][0]
+                if first_move.get('coord') == practical_coord:
+                    practical_variation = v
+                    practical_rate = rate
+        
+        # 如果没找到实战落子对应的变化，或者实战落子就是最高胜率的选择，不是恶手题
+        if practical_rate is None:
+            return False
+        
+        # 实战落子胜率比最高胜率差20%以上，才是恶手题
+        return (max_rate - practical_rate) > 20
     
     def _parse_var_winrate(self, variation: Dict) -> Optional[Dict]:
         """解析变化的胜率"""
@@ -290,7 +326,7 @@ def extract_problems(moves: List[Dict], variations: Dict, format_type: str = 'de
         # 截取历史局面
         position = moves[:move_num]
         
-        problem = Problem(move_num, position, deduped)
+        problem = Problem(move_num, position, deduped, moves)
         
         # 应用筛选
         if problem_type:
@@ -369,6 +405,48 @@ def generate_quiz_html(problems: List[Problem], game_info: Dict, sgf_content: st
         for j, opt in enumerate(options):
             opt['letter'] = letters[j] if j < len(letters) else f"{j+1}"
         
+        # 构建实战落子信息
+        practical_move_data = None
+        if p.practical_move:
+            # 查找实战落子在变化图中的胜率
+            practical_coord = p.practical_move.get('coord', '')
+            practical_color = p.practical_move.get('color', 'B')
+            practical_winrate = 0
+            practical_moves = []
+            
+            # 从主分支moves获取实战变化的后续着法（10-15手）
+            if p.main_moves and p.move_num < len(p.main_moves):
+                # 获取从当前手开始的后续着法，最多15手
+                follow_up_moves = p.main_moves[p.move_num:p.move_num + 15]
+                practical_moves = [
+                    {'color': m.get('color', 'B'), 'coord': m.get('coord', '')}
+                    for m in follow_up_moves if m.get('coord')
+                ]
+            
+            # 如果在主分支没有找到，回退到从变化图中查找
+            if not practical_moves:
+                for v in p.variations:
+                    if v.get('moves') and len(v['moves']) > 0:
+                        first_move = v['moves'][0]
+                        if first_move.get('coord') == practical_coord:
+                            # 解析胜率
+                            comment = v.get('comment', '')
+                            practical_winrate = _extract_rate(comment)
+                            practical_moves = v.get('moves', [])
+                            break
+            
+            # 计算是否是恶手（胜率比最高差20%以上）
+            max_rate = max([_extract_rate(opt.get('comment', '')) for opt in p.variations]) if p.variations else 0
+            is_practical_blunder = (max_rate - practical_winrate) > 20 if practical_winrate > 0 else False
+            
+            practical_move_data = {
+                'coord': practical_coord,
+                'color': practical_color,
+                'winrate': f"{practical_winrate:.1f}%" if practical_winrate > 0 else "N/A",
+                'is_blunder': is_practical_blunder,
+                'moves': practical_moves
+            }
+        
         problems_data.append({
             'index': i,
             'move_num': p.move_num,
@@ -376,7 +454,8 @@ def generate_quiz_html(problems: List[Problem], game_info: Dict, sgf_content: st
             'difficulty': p.difficulty,
             'is_blunder': p.is_blunder,
             'position': p.position,
-            'options': options
+            'options': options,
+            'practical_move': practical_move_data
         })
     
     # 准备模板变量

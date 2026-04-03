@@ -114,12 +114,12 @@
             color: white;
         }
         .btn-option {
-            width: 100px;
-            min-width: 100px;
-            max-width: 100px;
-            padding: 8px 4px;
+            width: 75px;
+            min-width: 75px;
+            max-width: 75px;
+            padding: 6px 2px;
             font-weight: bold;
-            font-size: 11px;
+            font-size: 10px;
             text-align: center;
             justify-content: center;
             white-space: nowrap;
@@ -288,6 +288,7 @@
             <div style="display: flex; align-items: center; gap: 6px;">
                 <span id="turnIndicator" style="font-size: 12px; color: #666; white-space: nowrap;">当前：黑棋下</span>
                 <button class="btn btn-icon" id="soundToggleBtn" onclick="toggleSound()" title="音效开关" style="background: #f0f0f0;">🔊</button>
+                <button class="btn btn-icon" onclick="saveToSGF()" title="保存SGF" style="background: #f0f0f0;">💾</button>
             </div>
         </div>
 
@@ -301,6 +302,7 @@
                 <button class="btn btn-icon" onclick="varPrev()" title="上一步">◀</button>
                 <span id="varProgress">0 / 0</span>
                 <button class="btn btn-icon" onclick="varNext()" title="下一步">▶</button>
+                <button class="btn btn-icon" onclick="saveToSGF()" title="保存SGF">💾</button>
                 <button class="btn btn-icon btn-danger" onclick="exitVariationView()" title="返回">↩</button>
             </div>
         </div>
@@ -311,6 +313,7 @@
                 <button class="btn btn-icon" onclick="tryPrev()" title="上一步">◀</button>
                 <span id="tryProgress">0 / 0</span>
                 <button class="btn btn-icon" onclick="tryNext()" title="下一步">▶</button>
+                <button class="btn btn-icon" onclick="saveToSGF()" title="保存SGF">💾</button>
                 <button class="btn btn-icon btn-danger" onclick="exitTryPlay()" title="退出试下">↩</button>
             </div>
         </div>
@@ -749,7 +752,7 @@
                 displayMove = position.length; // 试下显示到题目位置
             }
             
-            // 应用到当前步数的棋子
+            // 应用到当前步数的棋子（题目局面）
             for (let i = 0; i < displayMove && i < position.length; i++) {
                 const move = position[i];
                 const color = move.color === 'B' ? 'black' : 'white';
@@ -768,18 +771,87 @@
                 }
             }
             
-            // 绘制所有棋子
+            // 如果是变化图状态，先应用所有变化图着法（包含提子逻辑）
+            let varMoveMap = null;
+            if (currentState === STATE_VARIATION && varMoves.length > 0) {
+                // 应用所有变化图着法到棋盘
+                for (let i = 0; i < varIndex && i < varMoves.length; i++) {
+                    const move = varMoves[i];
+                    applyMove(board, move);
+                }
+                // 记录每个变化图位置的状态（用于手数标记）
+                varMoveMap = new Map();
+                for (let i = 0; i < varIndex && i < varMoves.length; i++) {
+                    const move = varMoves[i];
+                    const key = `${move.x},${move.y}`;
+                    varMoveMap.set(key, {
+                        x: move.x,
+                        y: move.y,
+                        color: move.color,
+                        moveNum: i + 1
+                    });
+                }
+            }
+            
+            // 如果是试下状态，先应用所有试下着法（包含提子逻辑）
+            let tryMoveMap = null;
+            if (currentState === STATE_TRYPLAY && tryMoves.length > 0) {
+                // 应用所有试下着法到棋盘
+                for (let i = 0; i < tryIndex && i < tryMoves.length; i++) {
+                    const move = tryMoves[i];
+                    applyMove(board, move);
+                }
+                // 记录每个试下位置的状态（用于手数标记）
+                tryMoveMap = new Map();
+                for (let i = 0; i < tryIndex && i < tryMoves.length; i++) {
+                    const move = tryMoves[i];
+                    const key = `${move.x},${move.y}`;
+                    tryMoveMap.set(key, {
+                        x: move.x,
+                        y: move.y,
+                        color: move.color,
+                        moveNum: i + 1
+                    });
+                }
+            }
+            
+            // 绘制所有棋子（基于应用完所有着法后的 board 状态）
             for (let y = 0; y < BOARD_SIZE; y++) {
                 for (let x = 0; x < BOARD_SIZE; x++) {
                     if (board[y][x]) {
-                        const isLast = lastStonePos && lastStonePos.x === x && lastStonePos.y === y;
-                        drawStone(x, y, board[y][x], isLast);
+                        const key = `${x},${y}`;
+                        
+                        if (currentState === STATE_VARIATION && varMoveMap) {
+                            // 变化图状态：检查是否是变化图着法
+                            const varMove = varMoveMap.get(key);
+                            if (varMove && varMove.color === board[y][x]) {
+                                drawStone(x, y, board[y][x], varMove.moveNum === varIndex, varMove.moveNum.toString());
+                            } else {
+                                // 题目棋子
+                                const isLast = lastStonePos && lastStonePos.x === x && lastStonePos.y === y;
+                                drawStone(x, y, board[y][x], isLast);
+                            }
+                        } else if (currentState === STATE_TRYPLAY && tryMoveMap) {
+                            // 试下状态：检查是否是试下着法
+                            const tryMove = tryMoveMap.get(key);
+                            if (tryMove && tryMove.color === board[y][x]) {
+                                drawStone(x, y, board[y][x], tryMove.moveNum === tryIndex, tryMove.moveNum.toString());
+                            } else {
+                                // 题目棋子
+                                const isLast = lastStonePos && lastStonePos.x === x && lastStonePos.y === y;
+                                drawStone(x, y, board[y][x], isLast);
+                            }
+                        } else {
+                            // 主面板状态
+                            const isLast = lastStonePos && lastStonePos.x === x && lastStonePos.y === y;
+                            drawStone(x, y, board[y][x], isLast);
+                        }
                     }
                 }
             }
             
-            // 绘制ABCD标记（主面板和试下面板都显示）
-            if (currentState === STATE_MAIN || currentState === STATE_TRYPLAY) {
+            // 绘制ABCD标记（仅在当前做题局面显示，浏览历史时不显示）
+            if ((currentState === STATE_MAIN || currentState === STATE_TRYPLAY) && currentMove === position.length) {
                 currentProblem.options.forEach((opt, idx) => {
                     const pos = coordToPos(opt.coord);
                     if (pos) {
@@ -794,80 +866,6 @@
                         drawOptionMarker(pos.x, pos.y, opt.letter, state);
                     }
                 });
-            }
-            
-            // 绘制变化图棋子
-            if (currentState === STATE_VARIATION && varMoves.length > 0) {
-                // 先应用所有变化图棋子到棋盘（包含提子逻辑）
-                for (let i = 0; i < varIndex && i < varMoves.length; i++) {
-                    const move = varMoves[i];
-                    applyMove(board, move);
-                }
-                // 记录每个变化图位置的最后状态（用于手数标记）
-                const varMoveStates = [];
-                for (let i = 0; i < varIndex && i < varMoves.length; i++) {
-                    const move = varMoves[i];
-                    varMoveStates.push({
-                        x: move.x,
-                        y: move.y,
-                        color: move.color,
-                        moveNum: i + 1,
-                        stillOnBoard: board[move.y][move.x] === move.color
-                    });
-                }
-                // 基于最终棋盘状态绘制所有棋子
-                for (let y = 0; y < BOARD_SIZE; y++) {
-                    for (let x = 0; x < BOARD_SIZE; x++) {
-                        if (board[y][x]) {
-                            // 检查是否是变化图的棋子（使用 reverse().find() 获取最新的记录）
-                            const varMove = varMoveStates.slice().reverse().find(m => m.x === x && m.y === y && m.stillOnBoard);
-                            if (varMove) {
-                                drawStone(x, y, board[y][x], varMove.moveNum === varIndex, varMove.moveNum.toString());
-                            } else {
-                                // 题目棋子，检查是否是最后一手
-                                const isLast = lastStonePos && lastStonePos.x === x && lastStonePos.y === y;
-                                drawStone(x, y, board[y][x], isLast);
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // 绘制试下棋子
-            if (currentState === STATE_TRYPLAY && tryMoves.length > 0) {
-                // 先应用所有试下棋子到棋盘（包含提子逻辑）
-                for (let i = 0; i < tryIndex && i < tryMoves.length; i++) {
-                    const move = tryMoves[i];
-                    applyMove(board, move);
-                }
-                // 记录每个试下位置的最后状态（用于手数标记）
-                const tryMoveStates = [];
-                for (let i = 0; i < tryIndex && i < tryMoves.length; i++) {
-                    const move = tryMoves[i];
-                    tryMoveStates.push({
-                        x: move.x,
-                        y: move.y,
-                        color: move.color,
-                        moveNum: i + 1,
-                        stillOnBoard: board[move.y][move.x] === move.color
-                    });
-                }
-                // 基于最终棋盘状态绘制所有棋子
-                for (let y = 0; y < BOARD_SIZE; y++) {
-                    for (let x = 0; x < BOARD_SIZE; x++) {
-                        if (board[y][x]) {
-                            // 检查是否是试下的棋子（使用 reverse().find() 获取最新的记录）
-                            const tryMove = tryMoveStates.slice().reverse().find(m => m.x === x && m.y === y && m.stillOnBoard);
-                            if (tryMove) {
-                                drawStone(x, y, board[y][x], tryMove.moveNum === tryIndex, tryMove.moveNum.toString());
-                            } else {
-                                // 题目棋子，检查是否是最后一手
-                                const isLast = lastStonePos && lastStonePos.x === x && lastStonePos.y === y;
-                                drawStone(x, y, board[y][x], isLast);
-                            }
-                        }
-                    }
-                }
             }
         }
 
@@ -1025,6 +1023,32 @@
         function renderVariationButtons() {
             const container = document.getElementById('variationOptions');
             container.innerHTML = '';
+            
+            // 先添加实战按钮（如果存在实战落子）
+            if (currentProblem.practical_move && currentProblem.practical_move.coord) {
+                const practicalBtn = document.createElement('button');
+                let practicalClass = 'btn btn-option';
+                
+                // 根据是否是恶手设置样式
+                if (currentProblem.practical_move.is_blunder) {
+                    practicalClass += ' wrong';
+                } else {
+                    practicalClass += ' neutral';
+                }
+                practicalBtn.className = practicalClass;
+                
+                // 构建按钮文字：实战 (胜率%) [✗如果是恶手]
+                let practicalMark = currentProblem.practical_move.is_blunder ? ' ✗' : '';
+                // 检查胜率是否有效（不是N/A、不是空字符串、不是undefined）
+                const winrate = currentProblem.practical_move.winrate;
+                const hasValidWinrate = winrate && winrate !== 'N/A' && winrate !== '';
+                const practicalWinrateText = hasValidWinrate ? ` ${winrate}` : '';
+                practicalBtn.textContent = `实战${practicalWinrateText}${practicalMark}`;
+                practicalBtn.onclick = () => loadPracticalVariation();
+                container.appendChild(practicalBtn);
+            }
+            
+            // 添加A/B/C/D选项按钮
             currentProblem.options.forEach((opt, idx) => {
                 const btn = document.createElement('button');
                 
@@ -1044,11 +1068,69 @@
                 if (opt.is_correct) mark = ' ✓';
                 else if (answered && selectedOption === idx && !opt.is_correct) mark = ' ✗';
                 
-                const winrate = opt.winrate !== undefined ? opt.winrate : (opt.is_correct ? 60 : 30);
-                btn.textContent = `${opt.letter} ${winrate}%${mark}`;
+                // 处理胜率：如果opt.winrate已包含%，则不再添加
+                let winrateText;
+                if (opt.winrate !== undefined && opt.winrate !== '') {
+                    winrateText = opt.winrate.endsWith('%') ? opt.winrate : `${opt.winrate}%`;
+                } else {
+                    winrateText = `${opt.is_correct ? 60 : 30}%`;
+                }
+                btn.textContent = `${opt.letter} ${winrateText}${mark}`;
                 btn.onclick = () => loadVariation(idx);
                 container.appendChild(btn);
             });
+        }
+        
+        // 加载实战变化图
+        function loadPracticalVariation() {
+            if (!currentProblem.practical_move) return;
+            
+            // 计算变化图着法的提子情况
+            const board = createBoard();
+            const position = currentProblem.position;
+            for (let i = 0; i < position.length; i++) {
+                const move = position[i];
+                const color = move.color === 'B' ? 'black' : 'white';
+                const pos = coordToPos(move.coord);
+                if (pos) {
+                    applyMove(board, { color, x: pos.x, y: pos.y });
+                }
+            }
+
+            varMoves = currentProblem.practical_move.moves.map((m, i) => {
+                const color = m.color === 'B' ? 'black' : 'white';
+                const x = m.coord.charCodeAt(0) - 97;
+                const y = m.coord.charCodeAt(1) - 97;
+                const result = applyMove(board, { color, x, y });
+                return {
+                    color: color,
+                    x: x,
+                    y: y,
+                    captured: result.captured
+                };
+            });
+            varIndex = 1;  // 默认只显示第一手
+            document.getElementById('varProgress').textContent = `${varIndex}/${varMoves.length}`;
+
+            // 隐藏变化图按钮，显示控制按钮
+            document.getElementById('variationOptions').style.display = 'none';
+            document.getElementById('variationControls').style.display = 'flex';
+            if (document.getElementById('variationHeader')) {
+                document.getElementById('variationHeader').style.display = 'none';
+            }
+
+            // 播放第一步的音效（默认显示第一手）
+            if (varMoves.length > 0) {
+                const firstMove = varMoves[0];
+                if (firstMove.captured > 0) {
+                    if (firstMove.captured >= 3) playMultiCaptureSound(firstMove.captured);
+                    else playCaptureSound();
+                } else {
+                    playStoneSound();
+                }
+            }
+
+            updateDisplay();
         }
 
         function loadVariation(idx) {
@@ -1079,7 +1161,7 @@
                     captured: result.captured
                 };
             });
-            varIndex = varMoves.length;
+            varIndex = 1;  // 默认只显示第一手
             document.getElementById('varProgress').textContent = `${varIndex}/${varMoves.length}`;
 
             // 隐藏变化图按钮，显示控制按钮
@@ -1089,11 +1171,11 @@
                 document.getElementById('variationHeader').style.display = 'none';
             }
 
-            // 播放最后一步的音效
+            // 播放第一步的音效（默认显示第一手）
             if (varMoves.length > 0) {
-                const lastMove = varMoves[varMoves.length - 1];
-                if (lastMove.captured > 0) {
-                    if (lastMove.captured >= 3) playMultiCaptureSound(lastMove.captured);
+                const firstMove = varMoves[0];
+                if (firstMove.captured > 0) {
+                    if (firstMove.captured >= 3) playMultiCaptureSound(firstMove.captured);
                     else playCaptureSound();
                 } else {
                     playStoneSound();
@@ -1329,6 +1411,94 @@
 
                 updateDisplay();
             }
+        }
+
+        // ==================== 保存SGF功能 ====================
+        function saveToSGF() {
+            if (!currentProblem) return;
+
+            // 获取游戏信息
+            const gameTitle = document.getElementById('gameTitle').textContent || '围棋棋谱';
+            const blackName = document.getElementById('blackName').textContent || '黑棋';
+            const whiteName = document.getElementById('whiteName').textContent || '白棋';
+            const date = new Date().toISOString().split('T')[0];
+
+            // 构建SGF内容
+            let sgf = '(;';
+            
+            // 添加文件头信息
+            sgf += `GM[1]FF[4]CA[UTF-8]AP[Weiqi-Move Quiz Generator]SZ[19]`;
+            sgf += `DT[${date}]`;
+            sgf += `PB[${blackName}]PW[${whiteName}]`;
+            sgf += `EV[${gameTitle}]`;
+            
+            // 添加题目信息
+            sgf += `C[第${currentProblemIndex + 1}题 - ${currentProblem.phase || '中盘'} ${currentProblem.difficulty || '中等'}]`;
+
+            // 添加让子（如果有）
+            if (handicapStones && handicapStones.length > 0) {
+                const abCoords = handicapStones.map(s => posToSgfCoord(s.x, s.y)).join('');
+                sgf += `AB[${abCoords}]`;
+            }
+
+            // 添加主分支着法（题目局面到当前手数）
+            const position = currentProblem.position;
+            const displayMove = Math.min(currentMove, position.length);
+            
+            for (let i = 0; i < displayMove; i++) {
+                const move = position[i];
+                const coord = posToSgfCoord(
+                    move.coord.charCodeAt(0) - 97,
+                    move.coord.charCodeAt(1) - 97
+                );
+                const prop = move.color === 'B' ? 'B' : 'W';
+                sgf += `;${prop}[${coord}]`;
+            }
+
+            // 根据当前状态添加额外的着法
+            if (currentState === STATE_VARIATION && varIndex > 0 && varMoves.length > 0) {
+                // 变化图模式：添加变化着法
+                sgf += 'C[变化图]';
+                for (let i = 0; i < varIndex && i < varMoves.length; i++) {
+                    const move = varMoves[i];
+                    const coord = posToSgfCoord(move.x, move.y);
+                    const prop = move.color === 'black' ? 'B' : 'W';
+                    sgf += `;${prop}[${coord}]`;
+                }
+            } else if (currentState === STATE_TRYPLAY && tryIndex > 0 && tryMoves.length > 0) {
+                // 试下模式：添加试下着法
+                sgf += 'C[试下着法]';
+                for (let i = 0; i < tryIndex && i < tryMoves.length; i++) {
+                    const move = tryMoves[i];
+                    const coord = posToSgfCoord(move.x, move.y);
+                    const prop = move.color === 'black' ? 'B' : 'W';
+                    sgf += `;${prop}[${coord}]`;
+                }
+            }
+
+            sgf += ')';
+
+            // 下载文件
+            const blob = new Blob([sgf], { type: 'application/x-go-sgf' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            
+            // 生成文件名
+            const problemNum = currentProblemIndex + 1;
+            const modeSuffix = currentState === STATE_VARIATION ? '_variation' : 
+                              currentState === STATE_TRYPLAY ? '_tryplay' : '';
+            link.download = `problem${problemNum}${modeSuffix}.sgf`;
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        // 将坐标转换为SGF格式（小写字母）
+        function posToSgfCoord(x, y) {
+            return String.fromCharCode(97 + x) + String.fromCharCode(97 + y);
         }
 
         // ==================== 题目导航 ====================
