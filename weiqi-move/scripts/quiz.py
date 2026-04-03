@@ -260,7 +260,8 @@ def deduplicate_variations(variations: List[Dict], format_type: str) -> List[Dic
 
 
 def extract_problems(moves: List[Dict], variations: Dict, format_type: str = 'default',
-                     problem_type: Optional[str] = None, phase: Optional[str] = None) -> List[Problem]:
+                     problem_type: Optional[str] = None, phase: Optional[str] = None,
+                     max_problems: int = 5) -> List[Problem]:
     """
     提取选点题
     
@@ -302,8 +303,13 @@ def extract_problems(moves: List[Dict], variations: Dict, format_type: str = 'de
         
         problems.append(problem)
     
-    # 按手数排序
-    problems.sort(key=lambda p: p.move_num)
+    # 恶手题优先，然后按手数排序
+    problems.sort(key=lambda p: (not p.is_blunder, p.move_num))
+    
+    # 限制题目数量
+    if max_problems and len(problems) > max_problems:
+        problems = problems[:max_problems]
+    
     return problems
 
 
@@ -415,17 +421,20 @@ def main():
   python3 quiz.py game.sgf -t blunder         # 只生成恶手题
   python3 quiz.py game.sgf --phase middle     # 只生成中盘题
   python3 quiz.py game.sgf -t easy --phase layout  # 布局阶段的简单题
+  python3 quiz.py game.sgf -n 10              # 生成10道题（默认5道）
         """
     )
     
     parser.add_argument('sgf', help='输入SGF文件路径')
     parser.add_argument('-o', '--output', help='输出HTML文件路径（默认: 输入文件名.html）')
-    parser.add_argument('-t', '--type', 
+    parser.add_argument('-t', '--type',
                        choices=['blunder', 'easy', 'medium', 'hard'],
                        help='题目类型筛选')
     parser.add_argument('--phase',
                        choices=['layout', 'middle', 'endgame'],
                        help='阶段筛选（布局/中盘/官子）')
+    parser.add_argument('-n', '--number', type=int, default=5,
+                       help='最大题目数量（默认: 5，恶手题优先）')
     
     args = parser.parse_args()
     
@@ -455,7 +464,7 @@ def main():
     
     # 提取题目
     print("\n正在提取选点题...")
-    problems = extract_problems(moves, variations, format_type, args.type, args.phase)
+    problems = extract_problems(moves, variations, format_type, args.type, args.phase, args.number)
     print(f"提取到 {len(problems)} 道题目")
     
     if not problems:
