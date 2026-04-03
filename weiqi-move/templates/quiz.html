@@ -114,10 +114,15 @@
             color: white;
         }
         .btn-option {
-            min-width: 80px;
-            padding: 8px 12px;
+            width: 100px;
+            min-width: 100px;
+            max-width: 100px;
+            padding: 8px 4px;
             font-weight: bold;
-            font-size: 13px;
+            font-size: 11px;
+            text-align: center;
+            justify-content: center;
+            white-space: nowrap;
         }
         .btn-option.correct {
             background: #4CAF50;
@@ -174,12 +179,18 @@
         .variation-panel.active {
             display: block;
         }
+        .variation-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
         .variation-options {
+            flex: 1;
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
-            justify-content: center;
-            margin-bottom: 12px;
+            justify-content: flex-start;
         }
         .variation-controls {
             display: flex;
@@ -274,19 +285,20 @@
                 <span class="progress-text" id="progressText">1 / 1</span>
                 <button class="btn btn-icon" onclick="nextProblem()" id="nextProblemBtn" title="下一题">➡️</button>
             </div>
+            <button class="btn btn-icon" id="soundToggleBtn" onclick="toggleSound()" title="音效开关" style="background: #f0f0f0;">🔊</button>
         </div>
 
         <!-- 变化图面板 -->
         <div class="variation-panel" id="variationPanel">
-            <div class="variation-options" id="variationOptions"></div>
-            <div class="variation-controls" id="variationControls" style="display: none;">
+            <div class="variation-header" id="variationHeader" style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px;">
+                <div class="variation-options" id="variationOptions" style="flex: 1; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start;"></div>
+                <button class="btn btn-icon btn-danger" onclick="backToMain()" title="返回主面板" style="flex-shrink: 0;">↩</button>
+            </div>
+            <div class="variation-controls" id="variationControls" style="display: none; justify-content: center; align-items: center; gap: 8px;">
                 <button class="btn btn-icon" onclick="varPrev()" title="上一步">◀</button>
                 <span id="varProgress">0 / 0</span>
                 <button class="btn btn-icon" onclick="varNext()" title="下一步">▶</button>
-                <button class="btn btn-icon btn-danger" onclick="exitVariationView()" title="返回">↩️</button>
-            </div>
-            <div class="variation-back" id="variationBack">
-                <button class="btn btn-icon btn-danger" onclick="backToMain()" title="返回主面板">🏠</button>
+                <button class="btn btn-icon btn-danger" onclick="exitVariationView()" title="返回">↩</button>
             </div>
         </div>
 
@@ -296,7 +308,7 @@
                 <button class="btn btn-icon" onclick="tryPrev()" title="上一步">◀</button>
                 <span id="tryProgress">0 / 0</span>
                 <button class="btn btn-icon" onclick="tryNext()" title="下一步">▶</button>
-                <button class="btn btn-icon btn-danger" onclick="exitTryPlay()" title="退出试下">↩️</button>
+                <button class="btn btn-icon btn-danger" onclick="exitTryPlay()" title="退出试下">↩</button>
             </div>
         </div>
 
@@ -313,6 +325,161 @@
     </div>
 
     <script>
+        // ==================== 音效系统 ====================
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let soundEnabled = true;
+        let audioUnlocked = false;
+        let noiseBuffer = null;
+
+        function createNoiseBuffer() {
+            const bufferSize = audioCtx.sampleRate * 0.1;
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+            return buffer;
+        }
+
+        function unlockAudio() {
+            if (!audioUnlocked && audioCtx.state === 'suspended') {
+                audioCtx.resume().then(() => { audioUnlocked = true; });
+            }
+            if (!noiseBuffer) noiseBuffer = createNoiseBuffer();
+        }
+        document.addEventListener('click', unlockAudio, { once: true });
+        document.addEventListener('touchstart', unlockAudio, { once: true });
+
+        function playStoneSound() {
+            if (!soundEnabled) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            if (!noiseBuffer) noiseBuffer = createNoiseBuffer();
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = noiseBuffer;
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 2500;
+            filter.Q.value = 1;
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.06);
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(audioCtx.destination);
+            noise.start(audioCtx.currentTime);
+            noise.stop(audioCtx.currentTime + 0.06);
+            const osc = audioCtx.createOscillator();
+            osc.type = 'triangle';
+            osc.frequency.value = 400;
+            const oscGain = audioCtx.createGain();
+            oscGain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            oscGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+            osc.connect(oscGain);
+            oscGain.connect(audioCtx.destination);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.05);
+        }
+
+        function playCaptureSound() {
+            if (!soundEnabled) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            if (!noiseBuffer) noiseBuffer = createNoiseBuffer();
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = noiseBuffer;
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 1200;
+            filter.frequency.linearRampToValueAtTime(600, audioCtx.currentTime + 0.15);
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.6, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.18);
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(audioCtx.destination);
+            noise.start(audioCtx.currentTime);
+            noise.stop(audioCtx.currentTime + 0.18);
+        }
+
+        function playMultiCaptureSound(count) {
+            if (!soundEnabled || count <= 0) return;
+            playCaptureSound();
+            const extraCount = Math.min(count - 1, 4);
+            for (let i = 0; i < extraCount; i++) {
+                setTimeout(() => {
+                    if (audioCtx.state === 'running' && soundEnabled) {
+                        const noise = audioCtx.createBufferSource();
+                        noise.buffer = noiseBuffer;
+                        const filter = audioCtx.createBiquadFilter();
+                        filter.type = 'bandpass';
+                        filter.frequency.value = 2000 - i * 200;
+                        const gain = audioCtx.createGain();
+                        gain.gain.setValueAtTime(0.3 - i * 0.05, audioCtx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+                        noise.connect(filter);
+                        filter.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        noise.start(audioCtx.currentTime);
+                        noise.stop(audioCtx.currentTime + 0.08);
+                    }
+                }, i * 60);
+            }
+        }
+
+        // ==================== 选择音效 ====================
+        function playSelectSound() {
+            if (!soundEnabled) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.08);
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.1);
+        }
+
+        // ==================== 正确音效 ====================
+        function playCorrectSound() {
+            if (!soundEnabled) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            // 播放两个音符：C5 和 E5（大三度，愉悦感）
+            [523.25, 659.25].forEach((freq, i) => {
+                const osc = audioCtx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(0, audioCtx.currentTime + i * 0.1);
+                gain.gain.linearRampToValueAtTime(0.4, audioCtx.currentTime + i * 0.1 + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + i * 0.1 + 0.25);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(audioCtx.currentTime + i * 0.1);
+                osc.stop(audioCtx.currentTime + i * 0.1 + 0.3);
+            });
+        }
+
+        // ==================== 错误音效 ====================
+        function playWrongSound() {
+            if (!soundEnabled) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            // 播放下降音调（不和谐感）
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(200, audioCtx.currentTime + 0.3);
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.3);
+        }
+
         // ==================== 数据 ====================
         const BOARD_SIZE = 19;
         const handicapStones = [];
@@ -696,6 +863,8 @@
             if (currentMove > 0) {
                 currentMove--;
                 document.getElementById('moveSlider').value = currentMove;
+                // 播放落子音效（回退后显示的是上一手的落子）
+                playStoneSound();
                 updateDisplay();
             }
         }
@@ -705,6 +874,15 @@
             if (currentMove < max) {
                 currentMove++;
                 document.getElementById('moveSlider').value = currentMove;
+                // 播放落子音效（移动到下一手时）
+                const move = currentProblem.position[currentMove - 1];
+                if (move) {
+                    const pos = coordToPos(move.coord);
+                    if (pos) {
+                        // 模拟落子音效，简化处理
+                        playStoneSound();
+                    }
+                }
                 updateDisplay();
             }
         }
@@ -713,6 +891,13 @@
             const max = currentProblem ? currentProblem.position.length : 0;
             const target = parseInt(moveNum);
             if (target >= 0 && target <= max) {
+                // 只在向前移动时播放音效
+                if (target > currentMove) {
+                    const move = currentProblem.position[target - 1];
+                    if (move) {
+                        playStoneSound();
+                    }
+                }
                 currentMove = target;
                 updateDisplay();
             }
@@ -732,12 +917,14 @@
             document.getElementById('mainPanel').style.display = 'none';
             document.getElementById('variationPanel').classList.add('active');
             document.getElementById('tryplayPanel').classList.remove('active');
-            
+
             // 默认显示变化图按钮，隐藏控制按钮
             document.getElementById('variationOptions').style.display = 'flex';
             document.getElementById('variationControls').style.display = 'none';
-            document.getElementById('variationBack').style.display = 'block';
-            
+            if (document.getElementById('variationHeader')) {
+                document.getElementById('variationHeader').style.display = 'flex';
+            }
+
             updateDisplay();
         }
 
@@ -754,6 +941,15 @@
             if (answered) return;
             selectedOption = idx;
             answered = true;
+            // 播放选择音效
+            playSelectSound();
+            // 根据答案是否正确播放不同音效
+            const opt = currentProblem.options[idx];
+            if (opt.is_correct) {
+                setTimeout(() => playCorrectSound(), 150);
+            } else {
+                setTimeout(() => playWrongSound(), 150);
+            }
             renderVariationButtons();
             showVariationPanel();
             // 注意：不再自动调用 loadVariation，而是让用户点击变化按钮选择查看哪个变化
@@ -791,19 +987,52 @@
         function loadVariation(idx) {
             const opt = currentProblem.options[idx];
             currentVariationOption = idx;
-            varMoves = opt.moves.map((m, i) => ({
-                color: m.color === 'B' ? 'black' : 'white',
-                x: m.coord.charCodeAt(0) - 97,
-                y: m.coord.charCodeAt(1) - 97
-            }));
+
+            // 计算变化图着法的提子情况
+            const board = createBoard();
+            const position = currentProblem.position;
+            for (let i = 0; i < position.length; i++) {
+                const move = position[i];
+                const color = move.color === 'B' ? 'black' : 'white';
+                const pos = coordToPos(move.coord);
+                if (pos) {
+                    applyMove(board, { color, x: pos.x, y: pos.y });
+                }
+            }
+
+            varMoves = opt.moves.map((m, i) => {
+                const color = m.color === 'B' ? 'black' : 'white';
+                const x = m.coord.charCodeAt(0) - 97;
+                const y = m.coord.charCodeAt(1) - 97;
+                const result = applyMove(board, { color, x, y });
+                return {
+                    color: color,
+                    x: x,
+                    y: y,
+                    captured: result.captured
+                };
+            });
             varIndex = varMoves.length;
             document.getElementById('varProgress').textContent = `${varIndex}/${varMoves.length}`;
-            
+
             // 隐藏变化图按钮，显示控制按钮
             document.getElementById('variationOptions').style.display = 'none';
             document.getElementById('variationControls').style.display = 'flex';
-            document.getElementById('variationBack').style.display = 'none';
-            
+            if (document.getElementById('variationHeader')) {
+                document.getElementById('variationHeader').style.display = 'none';
+            }
+
+            // 播放最后一步的音效
+            if (varMoves.length > 0) {
+                const lastMove = varMoves[varMoves.length - 1];
+                if (lastMove.captured > 0) {
+                    if (lastMove.captured >= 3) playMultiCaptureSound(lastMove.captured);
+                    else playCaptureSound();
+                } else {
+                    playStoneSound();
+                }
+            }
+
             updateDisplay();
         }
         
@@ -811,8 +1040,10 @@
             // 显示变化图按钮，隐藏控制按钮
             document.getElementById('variationOptions').style.display = 'flex';
             document.getElementById('variationControls').style.display = 'none';
-            document.getElementById('variationBack').style.display = 'block';
-            
+            if (document.getElementById('variationHeader')) {
+                document.getElementById('variationHeader').style.display = 'flex';
+            }
+
             varMoves = [];
             varIndex = 0;
             updateDisplay();
@@ -833,6 +1064,8 @@
             if (varIndex > 0) {
                 varIndex--;
                 document.getElementById('varProgress').textContent = `${varIndex}/${varMoves.length}`;
+                // 播放落子音效（回退后显示的是上一手的落子）
+                playStoneSound();
                 updateDisplay();
             }
         }
@@ -841,6 +1074,16 @@
             if (varIndex < varMoves.length) {
                 varIndex++;
                 document.getElementById('varProgress').textContent = `${varIndex}/${varMoves.length}`;
+
+                // 播放音效
+                const move = varMoves[varIndex - 1];
+                if (move && move.captured > 0) {
+                    if (move.captured >= 3) playMultiCaptureSound(move.captured);
+                    else playCaptureSound();
+                } else {
+                    playStoneSound();
+                }
+
                 updateDisplay();
             }
         }
@@ -879,7 +1122,7 @@
             // 检查位置是否已有棋子
             const board = createBoard();
             const position = currentProblem.position;
-            
+
             // 应用题目棋子到棋盘
             for (let i = 0; i < position.length; i++) {
                 const move = position[i];
@@ -889,46 +1132,101 @@
                     applyMove(board, { color, x: pos.x, y: pos.y });
                 }
             }
-            
+
             // 检查目标位置是否为空
             if (board[y][x] !== null) {
                 return; // 位置已有棋子，不能试下
             }
-            
+
             // 获取当前要下的颜色
             const lastColor = position.length > 0 ? position[position.length - 1].color : 'B';
             const nextColor = lastColor === 'B' ? 'white' : 'black';
-            
+
+            // 应用第一手并获取提子数量
+            const result = applyMove(board, { color: nextColor, x, y });
+
             tryMoves = [{
                 color: nextColor,
                 x: x,
-                y: y
+                y: y,
+                captured: result.captured
             }];
             tryIndex = 1;
             document.getElementById('tryProgress').textContent = `${tryIndex}/${tryMoves.length}`;
+
+            // 播放音效
+            if (result.captured > 0) {
+                if (result.captured >= 3) playMultiCaptureSound(result.captured);
+                else playCaptureSound();
+            } else {
+                playStoneSound();
+            }
+
             showTryplayPanel();
         }
         
         function addTryPlayMove(x, y) {
             // 获取当前棋盘状态（包含题目棋子和已试下的棋子）
             const board = getTryPlayBoard();
-            
+
             // 检查目标位置是否已有棋子
             if (!isEmptyPosition(board, x, y)) {
                 return; // 位置已有棋子，不能落子
             }
-            
+
             // 获取下一手颜色
-            const lastMove = tryMoves[tryMoves.length - 1];
-            const nextColor = lastMove.color === 'black' ? 'white' : 'black';
-            
+            let nextColor;
+            if (tryIndex === 0) {
+                // tryIndex=0 时，根据题目最后一手确定下一手颜色
+                const position = currentProblem.position;
+                const lastColor = position.length > 0 ? position[position.length - 1].color : 'B';
+                nextColor = lastColor === 'B' ? 'white' : 'black';
+            } else {
+                const lastMove = tryMoves[tryIndex - 1];
+                nextColor = lastMove.color === 'black' ? 'white' : 'black';
+            }
+
+            // 如果当前不是在最后一步，则清除后续着法
+            // 当 tryIndex=0 时，清除所有旧着法，开始新的试下序列
+            if (tryIndex < tryMoves.length) {
+                tryMoves = tryMoves.slice(0, tryIndex);
+            }
+
+            // 应用落子并获取提子数量
+            const boardCopy = createBoard();
+            const position = currentProblem.position;
+            for (let i = 0; i < position.length; i++) {
+                const move = position[i];
+                const color = move.color === 'B' ? 'black' : 'white';
+                const pos = coordToPos(move.coord);
+                if (pos) {
+                    applyMove(boardCopy, { color, x: pos.x, y: pos.y });
+                }
+            }
+            // 使用 tryIndex 而不是 tryMoves.length，因为前面可能已经截断了数组
+            for (let i = 0; i < tryIndex && i < tryMoves.length; i++) {
+                applyMove(boardCopy, tryMoves[i]);
+            }
+            const result = applyMove(boardCopy, { color: nextColor, x, y });
+
+            // 添加新着法
             tryMoves.push({
                 color: nextColor,
                 x: x,
-                y: y
+                y: y,
+                captured: result.captured
             });
             tryIndex = tryMoves.length;
             document.getElementById('tryProgress').textContent = `${tryIndex}/${tryMoves.length}`;
+
+            // 播放音效
+            if (result.captured > 0) {
+                if (result.captured >= 3) playMultiCaptureSound(result.captured);
+                else playCaptureSound();
+            } else {
+                playStoneSound();
+            }
+
             updateDisplay();
         }
 
@@ -942,6 +1240,8 @@
             if (tryIndex > 0) {
                 tryIndex--;
                 document.getElementById('tryProgress').textContent = `${tryIndex}/${tryMoves.length}`;
+                // 播放落子音效（回退后显示的是上一手的落子）
+                playStoneSound();
                 updateDisplay();
             }
         }
@@ -950,6 +1250,16 @@
             if (tryIndex < tryMoves.length) {
                 tryIndex++;
                 document.getElementById('tryProgress').textContent = `${tryIndex}/${tryMoves.length}`;
+
+                // 播放音效
+                const move = tryMoves[tryIndex - 1];
+                if (move && move.captured > 0) {
+                    if (move.captured >= 3) playMultiCaptureSound(move.captured);
+                    else playCaptureSound();
+                } else {
+                    playStoneSound();
+                }
+
                 updateDisplay();
             }
         }
