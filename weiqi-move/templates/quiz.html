@@ -261,7 +261,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1 id="gameTitle">测试黑棋 vs 测试白棋</h1>
+            <h1 id="gameTitle">{{GAME_TITLE}}</h1>
             <div class="info" id="gameInfo"> </div>
             <div class="problem-info" id="problemInfo">
                 <span class="tag tag-phase-middle" id="phaseTag">中盘</span>
@@ -282,10 +282,13 @@
             </div>
             <div class="main-panel-center">
                 <button class="btn btn-icon" onclick="prevProblem()" id="prevProblemBtn" title="上一题">⬅️</button>
-                <span class="progress-text" id="progressText">1 / 1</span>
+                <span class="progress-text" id="progressText">1 / {{TOTAL_PROBLEMS}}</span>
                 <button class="btn btn-icon" onclick="nextProblem()" id="nextProblemBtn" title="下一题">➡️</button>
             </div>
-            <button class="btn btn-icon" id="soundToggleBtn" onclick="toggleSound()" title="音效开关" style="background: #f0f0f0;">🔊</button>
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <span id="turnIndicator" style="font-size: 12px; color: #666; white-space: nowrap;">当前：黑棋下</span>
+                <button class="btn btn-icon" id="soundToggleBtn" onclick="toggleSound()" title="音效开关" style="background: #f0f0f0;">🔊</button>
+            </div>
         </div>
 
         <!-- 变化图面板 -->
@@ -315,11 +318,11 @@
         <div class="legend">
             <div class="legend-item">
                 <div class="stone-black"></div>
-                <span id="blackName">测试黑棋</span>
+                <span id="blackName">{{BLACK_NAME}}</span>
             </div>
             <div class="legend-item">
                 <div class="stone-white"></div>
-                <span id="whiteName">测试白棋</span>
+                <span id="whiteName">{{WHITE_NAME}}</span>
             </div>
         </div>
     </div>
@@ -442,6 +445,24 @@
             osc.stop(audioCtx.currentTime + 0.1);
         }
 
+        // ==================== 后退音效 ====================
+        function playBackSound() {
+            if (!soundEnabled) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            // 轻快的提示音，表示回退
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.08);
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.08);
+        }
+
         // ==================== 正确音效 ====================
         function playCorrectSound() {
             if (!soundEnabled) return;
@@ -483,7 +504,7 @@
         // ==================== 数据 ====================
         const BOARD_SIZE = 19;
         const handicapStones = [];
-        const problems = [{"index": 0, "move_num": 10, "phase": "layout", "difficulty": "hard", "is_blunder": false, "position": [{"color": "B", "coord": "pd"}, {"color": "W", "coord": "dp"}, {"color": "B", "coord": "pp"}, {"color": "W", "coord": "dd"}, {"color": "B", "coord": "cq"}, {"color": "W", "coord": "dq"}, {"color": "B", "coord": "cp"}, {"color": "W", "coord": "do"}, {"color": "B", "coord": "bn"}, {"color": "W", "coord": "qq"}], "options": [{"letter": "A", "coord": "qr", "color": "B", "winrate": "黑50%", "comment": "黑50%", "moves": [{"color": "B", "coord": "qr"}, {"color": "W", "coord": "pq"}, {"color": "B", "coord": "op"}, {"color": "W", "coord": "rp"}], "is_correct": true}, {"letter": "B", "coord": "em", "color": "W", "winrate": "白48.5%", "comment": "白48.5%", "moves": [{"color": "W", "coord": "em"}, {"color": "B", "coord": "pj"}, {"color": "W", "coord": "nc"}, {"color": "B", "coord": "qf"}], "is_correct": false}, {"letter": "C", "coord": "qp", "color": "B", "winrate": "黑45%", "comment": "黑45%", "moves": [{"color": "B", "coord": "qp"}, {"color": "W", "coord": "pq"}, {"color": "B", "coord": "op"}, {"color": "W", "coord": "rp"}], "is_correct": false}]}];
+        const problems = {{PROBLEMS_JSON}};
         let currentProblemIndex = 0;
         let currentProblem = problems[0];
         
@@ -858,6 +879,44 @@
             };
         }
 
+        // ==================== 当前行棋方显示 ====================
+        function updateTurnIndicator() {
+            const indicator = document.getElementById('turnIndicator');
+            if (!indicator) return;
+            
+            const position = currentProblem ? currentProblem.position : [];
+            let nextColor = 'B'; // B=黑, W=白
+            
+            if (currentMove === 0) {
+                // 初始状态，根据让子情况判断
+                if (handicapStones && handicapStones.length > 0) {
+                    nextColor = 'W';
+                } else {
+                    nextColor = 'B';
+                }
+            } else if (currentMove <= position.length) {
+                // 根据最后一手判断下一手
+                const lastMove = position[currentMove - 1];
+                if (lastMove && lastMove.color) {
+                    nextColor = lastMove.color === 'B' ? 'W' : 'B';
+                }
+            }
+            
+            // 简洁显示：棋子图标 + 黑先/白先
+            const stoneIcon = nextColor === 'B' ? '⚫' : '⚪';
+            const turnText = nextColor === 'B' ? '黑下' : '白下';
+            indicator.innerHTML = `${stoneIcon} ${turnText}`;
+        }
+
+        // ==================== 音效开关 ====================
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            const btn = document.getElementById('soundToggleBtn');
+            if (btn) {
+                btn.textContent = soundEnabled ? '🔊' : '🔇';
+            }
+        }
+
         // ==================== 打谱控制 ====================
         function prevMove() {
             if (currentMove > 0) {
@@ -865,6 +924,7 @@
                 document.getElementById('moveSlider').value = currentMove;
                 // 播放落子音效（回退后显示的是上一手的落子）
                 playStoneSound();
+                updateTurnIndicator();
                 updateDisplay();
             }
         }
@@ -883,6 +943,7 @@
                         playStoneSound();
                     }
                 }
+                updateTurnIndicator();
                 updateDisplay();
             }
         }
@@ -890,15 +951,21 @@
         function goToMove(moveNum) {
             const max = currentProblem ? currentProblem.position.length : 0;
             const target = parseInt(moveNum);
-            if (target >= 0 && target <= max) {
-                // 只在向前移动时播放音效
-                if (target > currentMove) {
+            if (target >= 0 && target <= max && target !== currentMove) {
+                const isForward = target > currentMove;
+                // 无论前进还是后退，只要位置改变就播放音效
+                if (isForward) {
+                    // 前进：播放落子音效
                     const move = currentProblem.position[target - 1];
                     if (move) {
                         playStoneSound();
                     }
+                } else {
+                    // 后退：播放轻一点的提示音
+                    playBackSound();
                 }
                 currentMove = target;
+                updateTurnIndicator();
                 updateDisplay();
             }
         }
@@ -1315,6 +1382,9 @@
             const slider = document.getElementById('moveSlider');
             slider.max = currentProblem.position.length;
             slider.value = currentProblem.position.length;
+            
+            // 更新行棋方显示
+            updateTurnIndicator();
             
             // 重置面板
             showMainPanel();

@@ -18,6 +18,7 @@
 import argparse
 import json
 import os
+import random
 import re
 import sys
 from pathlib import Path
@@ -344,18 +345,29 @@ def generate_quiz_html(problems: List[Problem], game_info: Dict, sgf_content: st
                            reverse=True)
         
         for j, var in enumerate(sorted_vars[:6]):  # 最多6个选项
-            letter = letters[j] if j < len(letters) else f"{j+1}"
             first_move = var['moves'][0] if var.get('moves') else None
             
+            # 提取胜率显示文本
+            comment = var.get('comment', '')
+            winrate_val = _extract_rate(comment)
+            winrate_text = f"{winrate_val:.1f}%" if winrate_val > 0 else ""
+            
             options.append({
-                'letter': letter,
                 'coord': first_move['coord'] if first_move else '',
                 'color': first_move['color'] if first_move else 'B',
-                'winrate': var.get('winRate', ''),
-                'comment': var.get('comment', ''),
+                'winrate': winrate_text,
+                'comment': comment,
                 'moves': var.get('moves', []),
-                'is_correct': j == 0  # 胜率最高的是正确答案
+                'is_correct': j == 0,  # 胜率最高的是正确答案
+                'sort_order': j  # 保存原始排序用于去重等逻辑
             })
+        
+        # 随机打乱选项顺序，使正确答案位置不固定
+        random.shuffle(options)
+        
+        # 重新分配字母标签
+        for j, opt in enumerate(options):
+            opt['letter'] = letters[j] if j < len(letters) else f"{j+1}"
         
         problems_data.append({
             'index': i,
@@ -402,6 +414,17 @@ def generate_quiz_html(problems: List[Problem], game_info: Dict, sgf_content: st
 
 def _extract_rate(comment: str) -> float:
     """从注释中提取胜率数值"""
+    if not comment:
+        return 0
+    # 优先匹配 "黑xx%" 或 "白xx%" 格式（野狐格式）
+    match = re.search(r'[黑白].*?(\d+\.?\d*)%', comment)
+    if match:
+        return float(match.group(1))
+    # 匹配 "B xx%" 或 "W xx%" 格式（KataGo格式）
+    match = re.search(r'[BW]\s+(\d+\.?\d*)%', comment)
+    if match:
+        return float(match.group(1))
+    # 通用匹配
     match = re.search(r'(\d+\.?\d*)%', comment)
     if match:
         return float(match.group(1))
