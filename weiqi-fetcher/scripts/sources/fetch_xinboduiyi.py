@@ -193,22 +193,23 @@ class XinboduiyiFetcher(BaseSourceFetcher):
             
             sgf_moves = None
             
-            # 首先尝试从 StepStr 获取棋谱（新格式）
-            step_str = data.get('StepStr', '')
-            if step_str:
-                print(f"Using StepStr: {len(step_str)} chars")
-                sgf_moves = step_str
-            
-            # 如果没有 StepStr，尝试从 part_qipu 获取（旧格式）
-            if not sgf_moves:
-                part_qipu = data.get('part_qipu', [])
-                if part_qipu:
-                    print(f"Found {len(part_qipu)} parts")
-                    for part in part_qipu:
-                        if part.get('part_id') == 0:
-                            sgf_moves = part.get('latest_full_qipu', '')
+            # 首先尝试从 part_qipu 获取棋谱（优先）
+            part_qipu = data.get('part_qipu', [])
+            if part_qipu:
+                print(f"Found {len(part_qipu)} parts")
+                for part in part_qipu:
+                    if part.get('part_id') == 0:
+                        sgf_moves = part.get('latest_full_qipu', '')
+                        if sgf_moves:
                             print(f"Using Part 0: {len(sgf_moves)} chars")
                             break
+            
+            # 如果没有 part_qipu，尝试从 StepStr 获取
+            if not sgf_moves:
+                step_str = data.get('StepStr', '')
+                if step_str:
+                    print(f"Using StepStr: {len(step_str)} chars")
+                    sgf_moves = step_str
             
             if not sgf_moves:
                 print(f"No StepStr or part_qipu found. Available keys: {list(data.keys())}")
