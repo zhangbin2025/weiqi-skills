@@ -625,6 +625,16 @@ def cmd_katago(args):
     
     print(f"✅ 下载完成: {len(downloaded)}/{len(dates)} 个文件")
     
+    # 检查下载完整性
+    if len(downloaded) < len(dates):
+        missing_dates = [d for d in dates if d not in downloaded]
+        print(f"\n❌ 错误: 下载不完整！缺失 {len(missing_dates)} 个文件:")
+        for d in missing_dates:
+            print(f"   - {d}")
+        print("\n可能原因: 网络超时或文件不存在")
+        print("建议: 使用 --resume 参数重新运行，或检查网络连接")
+        sys.exit(1)
+    
     # 处理阶段
     print(f"\n⚙️ 开始处理棋谱（前{args.first_n}手）...")
     
