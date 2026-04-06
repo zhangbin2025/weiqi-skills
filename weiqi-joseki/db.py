@@ -234,6 +234,8 @@ class DownloadManager:
             output_path = self.cache_dir / f"{date_str}rating.tar.bz2"
             
             if self._download_with_progress(url, output_path, date_str):
+                # 下载成功后延迟，避免触发服务器频率限制
+                time.sleep(2)
                 return date_str, output_path
             return date_str, None
         
@@ -2035,7 +2037,7 @@ def main():
     p_katago.add_argument("--end-date", required=True, help="结束日期 (YYYY-MM-DD)")
     p_katago.add_argument("--cache-dir", help="下载缓存目录（默认 ~/.weiqi-joseki/katago-cache）")
     p_katago.add_argument("--keep-cache", action="store_true", help="保留缓存文件")
-    p_katago.add_argument("--workers", type=int, default=3, help="并行下载线程数（默认3）")
+    p_katago.add_argument("--workers", type=int, default=1, help="并行下载线程数（默认1）")
     p_katago.add_argument("--max-memory-mb", type=int, default=512, help="内存上限MB（默认512）")
     p_katago.add_argument("--resume", action="store_true", help="断点续传")
     p_katago.add_argument("--min-count", type=int, default=10, help="最少出现次数才入库（默认10）")
