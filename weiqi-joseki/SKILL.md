@@ -201,25 +201,28 @@ python3 db.py import /path/to/sgf/dir \
 - 基础URL: https://katagoarchive.org/kata1/ratinggames/
 - 文件格式: YYYY-MM-DDrating.tar.bz2（每日一个压缩包，200KB-6MB）
 - 每个压缩包包含数百至数千局SGF棋谱
-- 数据更新至: 2022年底
+- 数据范围: 约2019年起 **持续更新中**（可获取最新日期数据）
 
 **基本用法：**
 ```bash
 # 下载一周的数据并提取定式
-python3 db.py katago --start-date 2022-12-17 --end-date 2022-12-23
+python3 db.py katago --start-date 2026-03-01 --end-date 2026-03-07
 
 # 只统计不入库（试运行）
-python3 db.py katago --start-date 2022-12-17 --end-date 2022-12-23 --dry-run
+python3 db.py katago --start-date 2026-03-01 --end-date 2026-03-07 --dry-run
 
 # 断点续传（中断后从上次位置继续）
-python3 db.py katago --start-date 2022-12-17 --end-date 2022-12-23 --resume
+python3 db.py katago --start-date 2026-03-01 --end-date 2026-03-07 --resume
+
+# 导入整个月的数据（如2026年3月）
+python3 db.py katago --start-date 2026-03-01 --end-date 2026-03-31 --min-count 5
 ```
 
 **完整参数：**
 ```bash
 python3 db.py katago \
-    --start-date 2022-12-17 \           # 起始日期（必需）
-    --end-date 2022-12-23 \             # 结束日期（必需）
+    --start-date 2026-03-01 \           # 起始日期（必需）
+    --end-date 2026-03-31 \             # 结束日期（必需）
     --cache-dir ~/.weiqi-joseki/katago-cache \  # 下载缓存目录
     --keep-cache \                      # 保留缓存文件（默认删除）
     --workers 3 \                       # 并行下载线程数（默认3）
@@ -234,7 +237,7 @@ python3 db.py katago \
 
 **输出示例：**
 ```
-📅 日期范围: 2022-12-17 至 2022-12-23（共7天）
+📅 日期范围: 2026-03-01 至 2026-03-31（共31天）
 💾 缓存目录: ~/.weiqi-joseki/katago-cache
 📊 进度文件: ~/.weiqi-joseki/katago-progress.json
 
@@ -247,13 +250,13 @@ python3 db.py katago \
 
 ⏳ 正在统计前缀频率...
 
-📊 统计结果（次数≥10，手数≥4，概率≥0.5%）：
-   总棋谱数: 2844，候选定式: 81
+📊 统计结果（次数≥5，手数≥4，概率≥0.5%）：
+   总棋谱数: 10375，候选定式: 290
 排名     频率       定式
 ------------------------------------------------------------
-1      647      pd qc qd pc od nb                        (6手)
-2      632      pd qc pc qd pe rf                        (6手)
-3      507      pd qc pc qd qf qe pe rf                  (8手)
+1      5225     pd qc pc qd                              (4手)
+2      5122     pd qc qd pc                              (4手)
+3      2669     pd qc pc qd pe                           (5手)
 ...
 
 ⏳ 开始入库（共81个候选）...
@@ -444,6 +447,10 @@ B[pd](右上) W[dp](右下) B[pp](右下) W[dd](左上) B[qf](右上) ...
 - 无第三方依赖（纯标准库）
 
 ## 版本更新
+
+### v1.1.1 (2026-04-06)
+- ✅ **文档修正**: 更新KataGo Archive数据时间范围说明（支持2019-2026年最新数据）
+- ✅ **示例更新**: 将示例日期更新为2026年，与实际数据保持一致
 
 ### v1.1.0 (2026-03-31)
 - ✅ **内存优化**: Hash表统计+前缀累加，支持百万级棋谱处理
