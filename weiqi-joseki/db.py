@@ -235,7 +235,7 @@ class DownloadManager:
             
             if self._download_with_progress(url, output_path, date_str):
                 # 下载成功后延迟，避免触发服务器频率限制
-                time.sleep(2)
+                time.sleep(10)
                 return date_str, output_path
             return date_str, None
         
