@@ -32,7 +32,7 @@ def load_template():
         return f.read()
 
 
-def generate_html(main_moves, game_info, variations, output_path, input_base_name='棋谱'):
+def generate_html(tree, game_info, output_path, input_base_name='棋谱'):
     """生成HTML打谱网页"""
     
     # 加载模板
@@ -42,16 +42,6 @@ def generate_html(main_moves, game_info, variations, output_path, input_base_nam
     board_size = int(game_info.get('board_size', '19'))
     handicap = game_info.get('handicap', '0')
     handicap_stones = game_info.get('handicap_stones', [])
-    komi = game_info.get('komi', '375')
-    
-    # 构建SGF字符串（单行格式，避免HTML模板中的换行问题）
-    sgf_moves = ''.join([f";{m['color']}[{m['coord']}]" for m in main_moves])
-    handicap_sgf = f"HA[{handicap}]" if int(handicap) > 0 else ""
-    for stone in handicap_stones:
-        coord = chr(97 + stone['x']) + chr(97 + stone['y'])
-        handicap_sgf += f"AB[{coord}]"
-    
-    sgf_raw = f"(;GM[1]FF[4]SZ[{board_size}]GN[{game_info.get('game_name', '围棋棋谱')}]DT[{game_info.get('date', '')}]PB[{game_info.get('black', '黑棋')}]PW[{game_info.get('white', '白棋')}]BR[{game_info.get('black_rank', '')}]WR[{game_info.get('white_rank', '')}]KM[{komi}]{handicap_sgf}RU[Chinese]RE[{game_info.get('result', '')}]{sgf_moves})"
     
     # 各种转义处理
     black_name = html.escape(game_info.get('black', '黑棋'))
@@ -69,8 +59,8 @@ def generate_html(main_moves, game_info, variations, output_path, input_base_nam
     if result:
         game_info_text += f" · {result}"
     
-    # 变化图数据 JSON
-    variations_json = html.escape(json.dumps(variations, ensure_ascii=False)).replace('\\', '&#92;')
+    # 树形数据 JSON（用于前端分支导航）
+    tree_json = html.escape(json.dumps(tree, ensure_ascii=False)).replace('\\', '&#92;')
     
     # 让子石 JSON
     handicap_stones_json = json.dumps(handicap_stones)
@@ -80,12 +70,10 @@ def generate_html(main_moves, game_info, variations, output_path, input_base_nam
     html_content = html_content.replace('{{GAME_NAME}}', game_name)
     html_content = html_content.replace('{{GAME_TITLE}}', game_title)
     html_content = html_content.replace('{{GAME_INFO}}', game_info_text)
-    html_content = html_content.replace('{{MOVE_COUNT}}', str(len(main_moves)))
-    html_content = html_content.replace('{{SGF_DATA}}', html.escape(sgf_raw))
     html_content = html_content.replace('{{BOARD_SIZE}}', str(board_size))
     html_content = html_content.replace('{{HANDICAP_STONES}}', handicap_stones_json)
-    html_content = html_content.replace('{{HANDICAP_COUNT}}', handicap)
-    html_content = html_content.replace('{{VARIATIONS_JSON}}', variations_json)
+    html_content = html_content.replace('{{HANDICAP_COUNT}}', str(handicap))
+    html_content = html_content.replace('{{TREE_JSON}}', tree_json)
     html_content = html_content.replace('{{BLACK_NAME}}', black_name + (' ' + black_rank if black_rank else ''))
     html_content = html_content.replace('{{WHITE_NAME}}', white_name + (' ' + white_rank if white_rank else ''))
     html_content = html_content.replace('{{DOWNLOAD_FILENAME}}', html.escape(input_base_name) + '.sgf')
@@ -95,7 +83,6 @@ def generate_html(main_moves, game_info, variations, output_path, input_base_nam
         f.write(html_content)
     
     print(f"✅ 已生成打谱网页: {output_path}")
-    print(f"   总手数: {len(main_moves)}")
     print(f"   黑棋: {black_name}")
     print(f"   白棋: {white_name}")
 
@@ -159,35 +146,36 @@ def main():
 
     # 解析 SGF
     print(f"📖 正在解析: {input_file}")
-    main_moves, variations, game_info, parse_info = parse_sgf(sgf_content)
+    result = parse_sgf(sgf_content)
+    
+    tree = result['tree']
+    game_info = result['game_info']
+    stats = result['stats']
+    errors = result['errors']
 
-    if not main_moves:
+    if stats['move_nodes'] == 0:
         print("❌ 错误: 无法从SGF中提取着法")
-        if parse_info['errors']:
+        if errors:
             print("   解析错误:")
-            for err in parse_info['errors']:
+            for err in errors:
                 print(f"     - {err}")
         sys.exit(1)
 
-    print(f"   解析器: {parse_info['parser_used']}")
-    print(f"   提取到 {len(main_moves)} 手主分支着法")
+    print(f"   总节点数: {stats['total_nodes']}")
+    print(f"   着法节点: {stats['move_nodes']}")
+    print(f"   最大深度: {stats['max_depth']}")
+    print(f"   分支数: {stats['branch_count']}")
 
-    if parse_info['warnings']:
-        for warn in parse_info['warnings']:
-            print(f"   ⚠️  {warn}")
-
-    if parse_info['errors'] and parse_info['parser_used'] == 'tree_parser':
-        print(f"   ⚠️  解析过程中遇到 {len(parse_info['errors'])} 个错误，已尽可能恢复")
-
-    if variations:
-        total = sum(len(v) for v in variations.values())
-        print(f"   提取到 {total} 个变化图")
+    if errors:
+        print(f"   ⚠️  解析过程中遇到 {len(errors)} 个错误/警告")
+        for err in errors[:5]:  # 最多显示5个
+            print(f"     - {err}")
 
     # 获取输入文件名（不含扩展名）
     input_base_name = os.path.splitext(os.path.basename(input_file))[0]
 
     # 生成HTML
-    generate_html(main_moves, game_info, variations, output_path, input_base_name)
+    generate_html(tree, game_info, output_path, input_base_name)
 
     print(f"\n✅ 生成完成: {output_path}")
 
