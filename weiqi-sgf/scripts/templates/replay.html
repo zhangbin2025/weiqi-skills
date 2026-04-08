@@ -35,6 +35,7 @@
         .variation-title { font-size: 12px; color: #666; margin-bottom: 8px; text-align: center; }
         .variation-list { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
         .controls-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin: 6px 0; flex-wrap: nowrap; padding: 0 2px; }
+        .variation-comment { font-size: 12px; color: #666; margin-right: 8px; white-space: nowrap; flex-shrink: 0; }
         .controls-group { display: flex; align-items: center; gap: 3px; flex: 1; }
         .controls-divider { width: 1px; height: 20px; background: #ddd; margin: 0 3px; flex-shrink: 0; }
         .slider-container { flex: 1; min-width: 80px; width: 100%; }
@@ -57,10 +58,12 @@
         <div class="board-container"><canvas id="board"></canvas></div>
         <div class="controls-row" id="mainControls">
             <div class="controls-group">
+                <div id="variationComment" class="variation-comment"></div>
                 <div class="slider-container"><input type="range" id="moveSlider" min="0" max="0" value="0" oninput="goToMove(this.value)"></div>
             </div>
             <div class="controls-divider"></div>
             <div class="controls-group" style="flex: 0; margin-left: auto;">
+                <button class="btn" id="backToParentBtn" onclick="backToParent()" title="返回上级" style="width: 32px; height: 32px; font-size: 14px; display: none;">⬅</button>
                 <button class="btn" id="prevBtn" onclick="prevMove()" title="上一手" style="width: 32px; height: 32px; font-size: 14px; flex-shrink: 0;">◀</button>
                 <button class="btn" id="nextBtn" onclick="nextMove()" title="下一手" style="width: 32px; height: 32px; font-size: 14px; flex-shrink: 0;">▶</button>
                 <button class="btn" id="soundToggleBtn" onclick="toggleSound()" title="音效开关" style="width: 32px; height: 32px; font-size: 14px;">🔊</button>
@@ -601,12 +604,32 @@
             return true;
         }
 
+        function backToParent() {
+            if (state.currentPath.length > 0) {
+                state.currentPath.pop();
+                
+                // 检查是否全是0
+                const allZeros = state.currentPath.every(idx => idx === 0);
+                if (allZeros) {
+                    state.displayIndex = state.currentPath.length;
+                    state.currentPath = [];
+                } else {
+                    state.displayIndex = 0;
+                }
+                
+                playUndoSound();
+                updateDisplay();
+            }
+        }
+
         function updateControls() {
             const prevBtn = document.getElementById('prevBtn');
             const nextBtn = document.getElementById('nextBtn');
             const slider = document.getElementById('moveSlider');
             const sliderContainer = slider.parentElement;  // 获取 slider-container
             const numBtn = document.getElementById('numToggleBtn');
+            const backBtn = document.getElementById('backToParentBtn');
+            const variationComment = document.getElementById('variationComment');
             prevBtn.disabled = state.displayIndex === 0 && state.currentPath.length === 0;
             const children = getCurrentChildren();
             nextBtn.disabled = children.length === 0;
@@ -617,15 +640,27 @@
                 const remainingDepth = getDefaultPathDepth(currentNode);
                 slider.max = currentDepth + remainingDepth;
                 slider.value = currentDepth;
-                slider.disabled = false;
+                slider.disabled = false;  // 确保明确设置为可滑动
                 slider.style.display = 'block';
                 sliderContainer.style.display = 'block';  // 显示容器
+                // 主分支时清空注释
+                variationComment.textContent = '';
             } else {
                 slider.style.display = 'none';
                 sliderContainer.style.display = 'none';  // 隐藏容器
+                slider.disabled = false;  // 修复：返回主分支后需要重新启用
+                // 非主分支时显示当前分支的注释
+                const currentNode = getNodeAtPathIndex();
+                if (currentNode && currentNode.properties && currentNode.properties.C) {
+                    variationComment.textContent = currentNode.properties.C;
+                } else {
+                    variationComment.textContent = '';
+                }
             }
             // 手数按钮只在主分支显示
             numBtn.style.display = isInMainBranch() ? 'flex' : 'none';
+            // 返回上级按钮仅在非主分支时显示
+            backBtn.style.display = !isInMainBranch() ? 'flex' : 'none';
         }
         
         function extractWinRate(comment) {
@@ -728,6 +763,16 @@
                 updateDisplay();
             } else if (state.currentPath.length > 0) {
                 state.currentPath.pop();
+                
+                // 检查是否全是0
+                const allZeros = state.currentPath.every(idx => idx === 0);
+                if (allZeros) {
+                    state.displayIndex = state.currentPath.length;
+                    state.currentPath = [];
+                } else {
+                    state.displayIndex = 0;
+                }
+                
                 if (state.currentPath.length === 0) {
                     state.variationBaseMove = 0;
                 }
