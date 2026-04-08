@@ -76,6 +76,7 @@ class _SGFParser:
     
     def __init__(self):
         self.errors: List[str] = []
+        self._pending_branch_props: Dict[str, Any] = {}  # 缓存分支起始处的属性
     
     def parse(self, sgf_content: str) -> dict:
         """解析 SGF 内容"""
@@ -154,6 +155,32 @@ class _SGFParser:
                 paren_count += 1
                 seq_current = None
                 i += 1
+                
+                # 预读并缓存 '(' 后的属性（如 C[...]），直到遇到 ';' 或 ')'
+                self._pending_branch_props = {}
+                while i < n:
+                    c = content[i]
+                    if c in '();':
+                        break
+                    if c in ' \t\n\r':
+                        i += 1
+                        continue
+                    if c.isupper():
+                        prop_name = ''
+                        while i < n and content[i].isupper():
+                            prop_name += content[i]
+                            i += 1
+                        values = []
+                        while i < n and content[i] == '[':
+                            value, i, closed = self._parse_property_value(content, i + 1)
+                            if not closed:
+                                self.errors.append(f"属性 {prop_name} 的值未闭合")
+                            values.append(value)
+                        if values:
+                            self._pending_branch_props[prop_name] = values if len(values) > 1 else values[0]
+                    else:
+                        self.errors.append(f"位置 {i}: 分支注释中意外字符 '{c}'，跳过")
+                        i += 1
             
             elif char == ')':
                 # 结束当前序列
@@ -229,6 +256,15 @@ class _SGFParser:
                 
                 # 解析属性
                 props, i = self._parse_properties(content, i + 1)
+                
+                # 合并缓存的分支属性（如果有）
+                if self._pending_branch_props:
+                    # 缓存的属性优先，但已被解析的属性不会被覆盖
+                    merged_props = self._pending_branch_props.copy()
+                    merged_props.update(props)
+                    props = merged_props
+                    self._pending_branch_props = {}  # 清空缓存
+                
                 new_node.properties = props
                 self._extract_move_info(new_node)
                 
