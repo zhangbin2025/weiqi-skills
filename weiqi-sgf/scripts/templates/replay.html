@@ -37,7 +37,7 @@
         .controls-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin: 6px 0; flex-wrap: nowrap; padding: 0 2px; }
         .controls-group { display: flex; align-items: center; gap: 3px; flex: 1; }
         .controls-divider { width: 1px; height: 20px; background: #ddd; margin: 0 3px; flex-shrink: 0; }
-        .slider-container { flex: 1; min-width: 80px; }
+        .slider-container { flex: 1; min-width: 80px; width: 100%; }
         #moveSlider { width: 100%; height: 18px; }
         .trial-panel { display: none; margin: 6px 0; padding: 8px 12px; background: #e8f5e9; border-radius: 8px; border: 1px solid #4caf50; justify-content: center; gap: 8px; }
         .trial-panel.visible { display: flex; }
@@ -57,16 +57,16 @@
         <div class="board-container"><canvas id="board"></canvas></div>
         <div class="controls-row" id="mainControls">
             <div class="controls-group">
-                <button class="btn" id="prevBtn" onclick="prevMove()" title="上一手" style="width: 32px; height: 32px; font-size: 14px; flex-shrink: 0;">◀</button>
                 <div class="slider-container"><input type="range" id="moveSlider" min="0" max="0" value="0" oninput="goToMove(this.value)"></div>
-                <button class="btn" id="nextBtn" onclick="nextMove()" title="下一手" style="width: 32px; height: 32px; font-size: 14px; flex-shrink: 0;">▶</button>
             </div>
             <div class="controls-divider"></div>
-            <div class="controls-group" style="flex: 0;">
+            <div class="controls-group" style="flex: 0; margin-left: auto;">
+                <button class="btn" id="prevBtn" onclick="prevMove()" title="上一手" style="width: 32px; height: 32px; font-size: 14px; flex-shrink: 0;">◀</button>
+                <button class="btn" id="nextBtn" onclick="nextMove()" title="下一手" style="width: 32px; height: 32px; font-size: 14px; flex-shrink: 0;">▶</button>
                 <button class="btn" id="soundToggleBtn" onclick="toggleSound()" title="音效开关" style="width: 32px; height: 32px; font-size: 14px;">🔊</button>
                 <button class="btn" id="numToggleBtn" onclick="toggleNumbers()" title="显示/隐藏手数" style="width: 32px; height: 32px; font-size: 11px;">1️⃣</button>
                 <button class="btn" onclick="downloadSGF()" title="下载SGF" style="width: 32px; height: 32px; font-size: 14px;">💾</button>
-                <button class="btn" id="playBtn" onclick="togglePlay()" title="播放/暂停" style="width: 32px; height: 32px; font-size: 13px; font-weight: bold;">▶</button>
+                <button class="btn" id="playBtn" onclick="togglePlay()" title="播放/暂停" style="width: 32px; height: 32px; font-size: 13px; font-weight: bold;">播</button>
             </div>
         </div>
         <div class="trial-panel" id="trialPanel">
@@ -95,7 +95,6 @@
         const state = {
             currentPath: [],
             displayIndex: 0,
-            inVariation: false,
             variationBaseMove: 0,
             trialMode: false,
             trialMoves: [],
@@ -104,6 +103,7 @@
         };
         
         let isPlaying = false, playInterval = null, showMoveNumbers = false, soundEnabled = true;
+        let currentBlackCaptured = 0, currentWhiteCaptured = 0;  // 全局变量，记录当前提子数
         
         function coordToDisplay(coord) {
             if (!coord || coord.length < 2) return coord;
@@ -533,39 +533,44 @@
                         }
                     }
                 }
-            } else if (state.inVariation) {
-                // 变化图模式同样根据 board 绘制
-                for (let y = 0; y < BOARD_SIZE; y++) {
-                    for (let x = 0; x < BOARD_SIZE; x++) {
-                        if (board[y][x]) {
-                            const isLast = moves.length > 0 &&
-                                moves[moves.length - 1].x === x &&
-                                moves[moves.length - 1].y === y;
-                            // 变化图模式下强制显示手数，忽略手数开关
-                            let moveNum = null;
-                            const idx = moves.findIndex(m => m.x === x && m.y === y);
-                            if (idx >= state.variationBaseMove) {
-                                moveNum = idx - state.variationBaseMove + 1;
+            } else {
+                const inMainBranch = isInMainBranch();
+                if (inMainBranch) {
+                    // 主分支：根据手数开关决定是否显示
+                    for (let y = 0; y < BOARD_SIZE; y++) {
+                        for (let x = 0; x < BOARD_SIZE; x++) {
+                            if (board[y][x]) {
+                                const isLast = moves.length > 0 &&
+                                    moves[moves.length - 1].x === x &&
+                                    moves[moves.length - 1].y === y;
+                                const moveNum = showMoveNumbers ? (moves.findIndex(m => m.x === x && m.y === y) + 1) : null;
+                                drawStone(x, y, board[y][x], isLast, moveNum);
                             }
-                            drawStone(x, y, board[y][x], isLast, moveNum);
                         }
                     }
-                }
-            } else {
-                // 普通模式：根据 board 状态绘制棋子（正确显示提子后的状态）
-                for (let y = 0; y < BOARD_SIZE; y++) {
-                    for (let x = 0; x < BOARD_SIZE; x++) {
-                        if (board[y][x]) {
-                            // 检查是否是最后一步
-                            const isLast = moves.length > 0 &&
-                                moves[moves.length - 1].x === x &&
-                                moves[moves.length - 1].y === y;
-                            const moveNum = showMoveNumbers ? (moves.findIndex(m => m.x === x && m.y === y) + 1) : null;
-                            drawStone(x, y, board[y][x], isLast, moveNum);
+                } else {
+                    // 变化图：强制显示手数
+                    for (let y = 0; y < BOARD_SIZE; y++) {
+                        for (let x = 0; x < BOARD_SIZE; x++) {
+                            if (board[y][x]) {
+                                const isLast = moves.length > 0 &&
+                                    moves[moves.length - 1].x === x &&
+                                    moves[moves.length - 1].y === y;
+                                let moveNum = null;
+                                const idx = moves.findIndex(m => m.x === x && m.y === y);
+                                if (idx >= state.variationBaseMove) {
+                                    moveNum = idx - state.variationBaseMove + 1;
+                                }
+                                drawStone(x, y, board[y][x], isLast, moveNum);
+                            }
                         }
                     }
                 }
             }
+            // 更新全局提子数
+            currentBlackCaptured = blackCaptured;
+            currentWhiteCaptured = whiteCaptured;
+            
             updateStatus(moves.length, blackCaptured, whiteCaptured);
             updateControls();
             updateVariationPanel();
@@ -600,18 +605,36 @@
             const prevBtn = document.getElementById('prevBtn');
             const nextBtn = document.getElementById('nextBtn');
             const slider = document.getElementById('moveSlider');
+            const sliderContainer = slider.parentElement;  // 获取 slider-container
             const numBtn = document.getElementById('numToggleBtn');
             prevBtn.disabled = state.displayIndex === 0 && state.currentPath.length === 0;
             const children = getCurrentChildren();
             nextBtn.disabled = children.length === 0;
-            const currentNode = getCurrentNode();
-            const currentDepth = (state.currentPath.length > 0 || state.displayIndex > 0) ? getMovesToCurrent().length : 0;
-            const remainingDepth = getDefaultPathDepth(currentNode);
-            slider.max = currentDepth + remainingDepth;
-            slider.value = currentDepth;
-            slider.disabled = false;
+            // 非主分支时隐藏滑条及其容器
+            if (isInMainBranch()) {
+                const currentNode = getCurrentNode();
+                const currentDepth = (state.currentPath.length > 0 || state.displayIndex > 0) ? getMovesToCurrent().length : 0;
+                const remainingDepth = getDefaultPathDepth(currentNode);
+                slider.max = currentDepth + remainingDepth;
+                slider.value = currentDepth;
+                slider.disabled = false;
+                slider.style.display = 'block';
+                sliderContainer.style.display = 'block';  // 显示容器
+            } else {
+                slider.style.display = 'none';
+                sliderContainer.style.display = 'none';  // 隐藏容器
+            }
             // 手数按钮只在主分支显示
             numBtn.style.display = isInMainBranch() ? 'flex' : 'none';
+        }
+        
+        function extractWinRate(comment) {
+            // 匹配 "jueyi白99.8%" 或 "jueyi黑0.4%"
+            const match = comment.match(/jueyi(黑|白)(\d+\.?\d*)%/);
+            if (match) {
+                return match[1] + ' ' + match[2] + '%';
+            }
+            return null;
         }
         
         function updateVariationPanel() {
@@ -623,28 +646,48 @@
                 panel.classList.remove('visible');
                 return;
             }
-            // 只要有子节点就显示变化图面板（至少1个子分支就可以显示）
             if (children.length <= 1) {
                 panel.classList.remove('visible');
                 return;
             }
+            
             panel.classList.add('visible');
-            children.forEach((child, index) => {
+            
+            for (let index = 1; index < children.length; index++) {
+                const child = children[index];
                 const btn = document.createElement('button');
                 btn.className = 'btn btn-variation';
-                const stoneIcon = document.createElement('span');
-                stoneIcon.className = 'stone-icon';
-                if (child.color === 'B') stoneIcon.classList.add('black');
-                else if (child.color === 'W') stoneIcon.classList.add('white');
-                else stoneIcon.classList.add('black');
-                btn.appendChild(stoneIcon);
+                
+                // 标签逻辑：优先N属性，其次C属性中的胜率，最后默认
+                let label;
+                if (child.properties && child.properties.N) {
+                    label = child.properties.N;
+                } else if (child.properties && child.properties.C) {
+                    const winRate = extractWinRate(child.properties.C);
+                    label = winRate || '变化' + index;
+                } else {
+                    label = '变化' + index;
+                }
+                
+                // 判断标签是否包含"黑"或"白"
+                const hasColorText = label.includes('黑') || label.includes('白');
+                
+                // 只有标签不包含颜色文字时才显示图标
+                if (!hasColorText) {
+                    const stoneIcon = document.createElement('span');
+                    stoneIcon.className = 'stone-icon';
+                    if (child.color === 'B') stoneIcon.classList.add('black');
+                    else if (child.color === 'W') stoneIcon.classList.add('white');
+                    else stoneIcon.classList.add('black');
+                    btn.appendChild(stoneIcon);
+                }
+                
                 const textSpan = document.createElement('span');
-                let label = child.properties && child.properties.N ? child.properties.N : '变化' + (index + 1);
                 textSpan.textContent = label;
                 btn.appendChild(textSpan);
                 btn.onclick = () => enterVariation(index);
                 list.appendChild(btn);
-            });
+            }
         }
         
         function updateTrialInfo() {
@@ -672,8 +715,7 @@
             // 然后添加选择的子分支
             state.currentPath.push(variationIndex);
             state.displayIndex = 0;
-            state.inVariation = true;
-            
+
             if (isPlaying) togglePlay();
             playStoneSound();
             updateDisplay();
@@ -687,7 +729,6 @@
             } else if (state.currentPath.length > 0) {
                 state.currentPath.pop();
                 if (state.currentPath.length === 0) {
-                    state.inVariation = false;
                     state.variationBaseMove = 0;
                 }
                 playUndoSound();
@@ -698,9 +739,19 @@
         function nextMove() {
             const children = getCurrentChildren();
             if (children.length === 0) return;
+            
+            const beforeBlack = currentBlackCaptured;
+            const beforeWhite = currentWhiteCaptured;
+            
             state.displayIndex++;
-            playStoneSound();
             updateDisplay();
+            
+            // 如果提子数增加了，说明有提子
+            if (currentBlackCaptured > beforeBlack || currentWhiteCaptured > beforeWhite) {
+                playCaptureSound();
+            } else {
+                playStoneSound();
+            }
         }
         
         function goToMove(moveNum) {
@@ -709,14 +760,23 @@
             const maxDepth = getDefaultPathDepth(currentNode);
             const currentDepth = getMovesToCurrent().length;
             if (target >= 0 && target <= maxDepth) {
+                const beforeBlack = currentBlackCaptured;
+                const beforeWhite = currentWhiteCaptured;
+                
+                state.displayIndex = target;
+                updateDisplay();
+                
                 // 根据方向播放声效
                 if (target > currentDepth) {
-                    playStoneSound();
+                    // 向前且有提子
+                    if (currentBlackCaptured > beforeBlack || currentWhiteCaptured > beforeWhite) {
+                        playCaptureSound();
+                    } else {
+                        playStoneSound();
+                    }
                 } else if (target < currentDepth) {
                     playUndoSound();
                 }
-                state.displayIndex = target;
-                updateDisplay();
             }
         }
         
@@ -725,12 +785,12 @@
             if (isPlaying) {
                 clearInterval(playInterval);
                 isPlaying = false;
-                btn.textContent = '▶';
+                btn.textContent = '播';
             } else {
                 const children = getCurrentChildren();
                 if (children.length === 0) return;
                 isPlaying = true;
-                btn.textContent = '⏸';
+                btn.textContent = '停';
                 playInterval = setInterval(() => {
                     const currentChildren = getCurrentChildren();
                     if (currentChildren.length > 0) {
