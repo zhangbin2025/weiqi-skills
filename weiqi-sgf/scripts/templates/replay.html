@@ -628,13 +628,15 @@
             const slider = document.getElementById('moveSlider');
             const sliderContainer = slider.parentElement;  // 获取 slider-container
             const numBtn = document.getElementById('numToggleBtn');
+            const soundBtn = document.getElementById('soundToggleBtn');
             const backBtn = document.getElementById('backToParentBtn');
             const variationComment = document.getElementById('variationComment');
             prevBtn.disabled = state.displayIndex === 0 && state.currentPath.length === 0;
             const children = getCurrentChildren();
             nextBtn.disabled = children.length === 0;
+            const inMainBranch = isInMainBranch();
             // 非主分支时隐藏滑条及其容器
-            if (isInMainBranch()) {
+            if (inMainBranch) {
                 const currentNode = getCurrentNode();
                 const currentDepth = (state.currentPath.length > 0 || state.displayIndex > 0) ? getMovesToCurrent().length : 0;
                 const remainingDepth = getDefaultPathDepth(currentNode);
@@ -658,9 +660,11 @@
                 }
             }
             // 手数按钮只在主分支显示
-            numBtn.style.display = isInMainBranch() ? 'flex' : 'none';
+            numBtn.style.display = inMainBranch ? 'flex' : 'none';
+            // 音效开关只在主分支显示
+            soundBtn.style.display = inMainBranch ? 'flex' : 'none';
             // 返回上级按钮仅在非主分支时显示
-            backBtn.style.display = !isInMainBranch() ? 'flex' : 'none';
+            backBtn.style.display = !inMainBranch ? 'flex' : 'none';
         }
         
         function extractWinRate(comment) {
