@@ -52,7 +52,7 @@ def generate_html(tree, game_info, output_path, input_base_name='棋谱'):
     result = html.escape(game_info.get('result', ''))
     
     # 构建游戏标题和信息
-    game_title = game_name.replace('<绝艺讲解>', '').replace('绝艺讲解', '')
+    game_title = game_name
     game_info_text = f"{black_name} vs {white_name}"
     if int(handicap) > 0:
         game_info_text += f" · 让{handicap}子"
