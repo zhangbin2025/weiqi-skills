@@ -882,14 +882,14 @@ class JosekiDB:
                 else:
                     c, r = CoordinateSystem.sgf_to_nums(move)
                     nc, nr = {
-                        'lurd': lambda c, r: (c, r),
-                        'ludr': lambda c, r: (r, c),
-                        'ldru': lambda c, r: (c, 18 - r),
-                        'ldur': lambda c, r: (18 - r, c),
-                        'ruld': lambda c, r: (18 - c, r),
-                        'rudl': lambda c, r: (r, 18 - c),
-                        'rdlu': lambda c, r: (18 - c, 18 - r),
-                        'rdul': lambda c, r: (18 - r, 18 - c),
+                        'ruld': lambda c, r: (c, r),
+                        'rudl': lambda c, r: (18 - r, 18 - c),
+                        'rdlu': lambda c, r: (c, 18 - r),
+                        'rdul': lambda c, r: (18 - r, c),
+                        'lurd': lambda c, r: (18 - c, r),
+                        'ludr': lambda c, r: (r, 18 - c),
+                        'ldru': lambda c, r: (18 - c, 18 - r),
+                        'ldur': lambda c, r: (r, c),
                     }[name](c, r)
                     var_moves.append(CoordinateSystem.nums_to_sgf(nc, nr))
             
