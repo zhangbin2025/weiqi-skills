@@ -7,6 +7,11 @@
 import re
 from typing import List, Dict, Optional, Tuple
 
+# 导入 SGF 解析模块
+try:
+    from .sgf_parser import parse_sgf
+except ImportError:
+    from sgf_parser import parse_sgf
 
 # 8个坐标系定义
 class CoordinateSystem:
@@ -196,15 +201,16 @@ def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None
     """
     # 解析前N手
     moves = []
-    for m in re.finditer(r';([BW])\[([a-z]{0,2})\]', sgf_data):
-        color = m.group(1)
-        coord = m.group(2)
-        if coord == '':  # pass
-            coord = 'tt'
-        moves.append((color, coord))
+    sgf = parse_sgf(sgf_data)
+    move = sgf['tree']
+    while len(move['children']) > 0:
+        move = move['children'][0]
+        if move['coord'] is None:
+            move['coord'] = 'tt'
+        moves.append((move['color'], move['coord']))
         if len(moves) >= first_n:
             break
-    
+       
     if not moves:
         return "(;CA[utf-8]FF[4]AP[JosekiExtract]SZ[19]GM[1]KM[0]MULTIGOGM[1])"
     
@@ -354,18 +360,20 @@ def parse_multigogm(sgf_data: str) -> Dict[str, Tuple[str, List[Tuple[str, str]]
     result = {}
     corner_map = {'左上': 'tl', '右上': 'tr', '左下': 'bl', '右下': 'br'}
     
-    # 找到每个分支 (C[comment];B[xx];W[yy]...)
-    for branch_match in re.finditer(r'\(C\[([^\]]+)\]([^)]*)\)', sgf_data):
-        comment = branch_match.group(1)
-        moves_str = branch_match.group(2)
+    sgf = parse_sgf(sgf_data)
+    for child in sgf['tree']['children']: 
+        comment = child['properties']['C']
         
-        # 解析着法
+        # 着法
         moves = []
-        for m in re.finditer(r';([BW])\[([a-z]{0,2})\]', moves_str):
-            color = m.group(1)
-            coord = m.group(2) if m.group(2) else 'tt'
-            moves.append((color, coord))
-        
+        while True: 
+            if child['coord'] is None:
+                child['coord'] = 'tt'
+            moves.append((child['color'], child['coord']))
+            if len(child['children']) == 0:
+                break
+            child = child['children'][0]
+                        
         # 从comment中判断是哪个角
         corner_key = None
         for cn, key in corner_map.items():
@@ -375,5 +383,5 @@ def parse_multigogm(sgf_data: str) -> Dict[str, Tuple[str, List[Tuple[str, str]]
         
         if corner_key:
             result[corner_key] = (comment, moves)
-    
+
     return result
