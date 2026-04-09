@@ -206,6 +206,8 @@ class DownloadManager:
                 
                 with self._lock:
                     self._completed += 1
+                # 下载成功后延迟，避免触发服务器频率限制
+                time.sleep(10)
                 return True
                 
             except Exception as e:
@@ -232,10 +234,8 @@ class DownloadManager:
             
             url = f"{KATAGO_BASE_URL}{date_str}rating.tar.bz2"
             output_path = self.cache_dir / f"{date_str}rating.tar.bz2"
-            
+            Path(output_path)
             if self._download_with_progress(url, output_path, date_str):
-                # 下载成功后延迟，避免触发服务器频率限制
-                time.sleep(10)
                 return date_str, output_path
             return date_str, None
         
