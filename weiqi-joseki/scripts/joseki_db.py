@@ -559,7 +559,7 @@ class JosekiDB:
             try:
                 sgf_data = []
                 if isinstance(source, Path):
-                    if source.suffix == 'sgf':
+                    if source.suffix == '.sgf':
                         sgf_data.append(source.read_text(encoding='utf-8', errors='ignore'))
                     else:
                         sgf_data = list(iter_sgf_from_tar(source))                    
