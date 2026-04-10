@@ -1,43 +1,60 @@
 ---
 name: 围棋定式数据库
-description: weiqi-joseki 围棋定式数据库 - 支持定式录入、自动角位识别、8向变化生成、去重、冲突检测、棋谱定式识别。数据存储于 ~/.weiqi-joseki/database.json
+description: weiqi-joseki 围棋定式数据库 - 支持定式录入、自动角位识别、8向变化生成、去重、冲突检测、棋谱定式识别。模块化设计，支持从KataGo Archive自动导入。数据存储于 ~/.weiqi-joseki/database.json
 tags: ["围棋", "weiqi", "go", "定式", "joseki", "变化图", "SGF", "定式识别"]
 ---
 
 # 围棋定式数据库
 
-单文件版围棋定式数据库，支持自动角位识别、8向变化生成、冲突检测、定式识别。
+模块化围棋定式数据库，支持自动角位识别、8向变化生成、冲突检测、定式识别。代码采用模块化设计，便于维护和扩展。
+
+## 项目结构
+
+```
+weiqi-joseki/
+├── db.py                    # 兼容性入口（已弃用，保留向后兼容）
+├── SKILL.md                 # 技能文档
+└── scripts/                 # 核心模块目录
+    ├── __init__.py          # 包初始化
+    ├── cli.py               # 命令行入口
+    ├── sgf_parser.py        # SGF解析器
+    ├── joseki_extractor.py  # 定式提取器
+    ├── joseki_db.py         # 定式数据库核心
+    └── katago_downloader.py # KataGo棋谱下载器
+```
 
 ## 数据存储
 
 - **数据库路径**: `~/.weiqi-joseki/database.json`
 - 自动创建目录和文件
 
-## 核心文件
-
-```
-weiqi-joseki/
-├── db.py          # 单文件，包含所有功能
-└── SKILL.md       # 技能文档
-```
-
 ## CLI 命令
+
+### 入口方式
+
+```bash
+# 推荐方式（模块化入口）
+python3 scripts/cli.py [命令] [选项]
+
+# 或从项目根目录
+python3 db.py [命令] [选项]
+```
 
 ### 初始化数据库
 ```bash
-python3 db.py init
+python3 scripts/cli.py init
 ```
 
 ### 添加定式
 ```bash
 # 从坐标添加
-python3 db.py add --name "星位小飞挂" --category "/星位/小飞挂" --moves "pd,qf,nc,rd"
+python3 scripts/cli.py add --name "星位小飞挂" --category "/星位/小飞挂" --moves "pd,qf,nc,rd"
 
 # 从SGF添加（自动识别角位并转换为右上角视角）
-python3 db.py add --name "定式名" --category "/分类" --sgf "(;B[pd];W[qf]...)"
+python3 scripts/cli.py add --name "定式名" --category "/分类" --sgf "(;B[pd];W[qf]...)"
 
 # 强制添加（跳过冲突检测）
-python3 db.py add ... --force
+python3 scripts/cli.py add ... --force
 ```
 
 **入库流程：**
@@ -47,27 +64,27 @@ python3 db.py add ... --force
 
 ### 删除定式
 ```bash
-python3 db.py remove joseki_001
+python3 scripts/cli.py remove joseki_001
 ```
 
 ### 清空数据库
 ```bash
-python3 db.py clear
+python3 scripts/cli.py clear
 ```
 
 ### 列出现式
 ```bash
-python3 db.py list
-python3 db.py list --category "/星位"
+python3 scripts/cli.py list
+python3 scripts/cli.py list --category "/星位"
 ```
 
 ### 生成8向变化SGF ⭐
 ```bash
 # 输出到控制台
-python3 db.py 8way joseki_001
+python3 scripts/cli.py 8way joseki_001
 
 # 保存到文件
-python3 db.py 8way joseki_001 --output joseki_8way.sgf
+python3 scripts/cli.py 8way joseki_001 --output joseki_8way.sgf
 ```
 
 **8向SGF格式示例：**
@@ -82,34 +99,34 @@ python3 db.py 8way joseki_001 --output joseki_8way.sgf
 ### 匹配定式
 ```bash
 # 匹配SGF中的某个角
-python3 db.py match --sgf "(;B[pd];W[qf]...)" --corner tr
-python3 db.py match --sgf-file game.sgf --corner tl
+python3 scripts/cli.py match --sgf "(;B[pd];W[qf]...)" --corner tr
+python3 scripts/cli.py match --sgf-file game.sgf --corner tl
 ```
 
 ### 识别整盘棋
 ```bash
-python3 db.py identify --sgf-file game.sgf
-python3 db.py identify --sgf-file game.sgf --output json
+python3 scripts/cli.py identify --sgf-file game.sgf
+python3 scripts/cli.py identify --sgf-file game.sgf --output json
 ```
 
 ### 统计信息
 ```bash
-python3 db.py stats
+python3 scripts/cli.py stats
 ```
 
 ### 从SGF提取定式 ⭐
 ```bash
 # 提取四角定式（输出MULTIGOGM格式）
-python3 db.py extract --sgf-file game.sgf
+python3 scripts/cli.py extract --sgf-file game.sgf
 
 # 只取前N手
-python3 db.py extract --sgf-file game.sgf --first-n 50
+python3 scripts/cli.py extract --sgf-file game.sgf --first-n 50
 
 # 只提取指定角（tl=左上, tr=右上, bl=左下, br=右下）
-python3 db.py extract --sgf-file game.sgf --corner tr
+python3 scripts/cli.py extract --sgf-file game.sgf --corner tr
 
 # 保存到文件
-python3 db.py extract --sgf-file game.sgf --output joseki.sgf
+python3 scripts/cli.py extract --sgf-file game.sgf --output joseki.sgf
 ```
 
 **输出格式：**
@@ -131,27 +148,27 @@ python3 db.py extract --sgf-file game.sgf --output joseki.sgf
 ### 批量导入定式 ⭐（自动提取+统计+入库）
 ```bash
 # 从SGF目录批量导入（自动提取、统计频率、入库）
-python3 db.py import /path/to/sgf/dir
+python3 scripts/cli.py import /path/to/sgf/dir
 
 # 设置最少出现次数（默认10）
-python3 db.py import /path/to/sgf/dir --min-count 5
+python3 scripts/cli.py import /path/to/sgf/dir --min-count 5
 
 # 设置最少手数（默认4手）
-python3 db.py import /path/to/sgf/dir --min-moves 3
+python3 scripts/cli.py import /path/to/sgf/dir --min-moves 3
 
 # 设置最小出现概率%（默认0）
-python3 db.py import /path/to/sgf/dir --min-rate 1.0
+python3 scripts/cli.py import /path/to/sgf/dir --min-rate 1.0
 
 # 设置每谱提取前N手（默认50）
-python3 db.py import /path/to/sgf/dir --first-n 80
+python3 scripts/cli.py import /path/to/sgf/dir --first-n 80
 
 # 试运行（只统计不真入库）
-python3 db.py import /path/to/sgf/dir --dry-run
+python3 scripts/cli.py import /path/to/sgf/dir --dry-run
 ```
 
 **完整示例：**
 ```bash
-python3 db.py import /path/to/sgf/dir \
+python3 scripts/cli.py import /path/to/sgf/dir \
     --min-count 10 \
     --min-moves 4 \
     --min-rate 0.5 \
@@ -206,21 +223,21 @@ python3 db.py import /path/to/sgf/dir \
 **基本用法：**
 ```bash
 # 下载一周的数据并提取定式
-python3 db.py katago --start-date 2026-03-01 --end-date 2026-03-07
+python3 scripts/cli.py katago --start-date 2026-03-01 --end-date 2026-03-07
 
 # 只统计不入库（试运行）
-python3 db.py katago --start-date 2026-03-01 --end-date 2026-03-07 --dry-run
+python3 scripts/cli.py katago --start-date 2026-03-01 --end-date 2026-03-07 --dry-run
 
 # 断点续传（中断后从上次位置继续）
-python3 db.py katago --start-date 2026-03-01 --end-date 2026-03-07 --resume
+python3 scripts/cli.py katago --start-date 2026-03-01 --end-date 2026-03-07 --resume
 
 # 导入整个月的数据（如2026年3月）
-python3 db.py katago --start-date 2026-03-01 --end-date 2026-03-31 --min-count 5
+python3 scripts/cli.py katago --start-date 2026-03-01 --end-date 2026-03-31 --min-count 5
 ```
 
 **完整参数：**
 ```bash
-python3 db.py katago \
+python3 scripts/cli.py katago \
     --start-date 2026-03-01 \           # 起始日期（必需）
     --end-date 2026-03-31 \             # 结束日期（必需）
     --cache-dir ~/.weiqi-joseki/katago-cache \  # 下载缓存目录
@@ -280,7 +297,7 @@ python3 db.py katago \
 ## Python API
 
 ```python
-from db import JosekiDB
+from scripts.joseki_db import JosekiDB
 
 # 初始化
 db = JosekiDB()  # 使用默认路径 ~/.weiqi-joseki/database.json
@@ -314,7 +331,7 @@ for corner, matches in results.items():
     print(f"{corner}: {matches[0].name if matches else '无匹配'}")
 
 # 从SGF提取四角定式
-from db import extract_joseki_from_sgf
+from scripts.joseki_extractor import extract_joseki_from_sgf
 sgf = open("game.sgf").read()
 result = extract_joseki_from_sgf(sgf, first_n=50)  # 输出MULTIGOGM格式
 print(result)
@@ -447,6 +464,17 @@ B[pd](右上) W[dp](右下) B[pp](右下) W[dd](左上) B[qf](右上) ...
 - 无第三方依赖（纯标准库）
 
 ## 版本更新
+
+### v1.2.0 (2026-04-10)
+- ✅ **代码重构**: 从单文件结构重构为模块化设计，代码更清晰、易于维护
+  - `sgf_parser.py` - 独立的SGF解析模块
+  - `joseki_extractor.py` - 定式提取逻辑
+  - `joseki_db.py` - 定式数据库核心
+  - `katago_downloader.py` - KataGo下载器
+  - `cli.py` - 统一的命令行入口
+- ✅ **向后兼容**: `db.py` 保留作为兼容性入口，原有命令仍然可用
+- ✅ **性能优化**: 修复内存溢出问题，优化KataGo下载缓存策略
+- ✅ **Bug修复**: 修复8向生成、SGF后缀解析等问题
 
 ### v1.1.1 (2026-04-06)
 - ✅ **文档修正**: 更新KataGo Archive数据时间范围说明（支持2019-2026年最新数据）
