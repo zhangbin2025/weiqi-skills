@@ -195,6 +195,12 @@ class DownloadManager:
         url = f"{KATAGO_BASE_URL}{date_str}rating.tar.bz2"
         output_path = self.cache_dir / f"{date_str}rating.tar.bz2"
         
+        # 如果文件已存在且有效，跳过
+        if output_path.exists() and output_path.stat().st_size > 1000:
+            with self._lock:
+                self._completed += 1
+            return date_str, output_path, None
+        
         # 先检查文件是否存在
         exists, error = self.check_file_exists(url)
         if not exists:
@@ -211,13 +217,6 @@ class DownloadManager:
             
             try:
                 self._current_file = f"{date_str}.tar.bz2"
-                
-                # 如果文件已存在且有效，跳过
-                if output_path.exists() and output_path.stat().st_size > 1000:
-                    with self._lock:
-                        self._completed += 1
-                    return date_str, output_path, None
-                
                 # 下载
                 req = urllib.request.Request(url, headers={
                     'User-Agent': 'Mozilla/5.0 (compatible; WeiqiJoseki/1.0)'

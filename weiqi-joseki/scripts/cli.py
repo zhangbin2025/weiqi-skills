@@ -471,29 +471,24 @@ def cmd_katago(args):
     
     print(f"✅ 下载完成: {len(downloaded)}/{len(dates)} 个文件")
     
-    # 收集所有SGF内容
-    print(f"\n⚙️ 开始提取定式（前{args.first_n}手）...")
     
-    sgf_list = []
+    tar_files = []
     for date_str, tar_path in downloaded.items():
         if tar_path and tar_path.exists():
-            for sgf_data in iter_sgf_from_tar(tar_path):
-                sgf_list.append(sgf_data)
-            progress.mark_completed(date_str, {'sgf_count': len(list(iter_sgf_from_tar(tar_path)))})
-    
-    print(f"✅ 提取到 {len(sgf_list)} 个SGF")
+            tar_files.append(tar_path)
     
     # 导入定式
-    print(f"\n⏳ 开始分析定式...")
+    print(f"\n⏳ 开始提取定式（前{args.first_n}手）...")
     
     db = JosekiDB(args.db)
     
-    def progress_callback(current, total):
+    def progress_callback(current, total, source, sgf_count):
         if current % 100 == 0 or current == total:
-            print(f"\r  分析进度: {current}/{total}", end='', flush=True)
+            print(f"\r  提取进度: {current}/{total}", end='', flush=True)
+            progress.mark_completed(str(source)[:10], {'sgf_count': sgf_count})
     
     added, skipped, candidates = db.import_from_sgfs(
-        sgf_sources=sgf_list,
+        sgf_sources=tar_files,
         min_count=args.min_count,
         min_moves=args.min_moves,
         min_rate=args.min_rate,

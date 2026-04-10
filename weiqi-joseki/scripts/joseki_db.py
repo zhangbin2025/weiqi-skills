@@ -19,12 +19,14 @@ try:
         extract_joseki_from_sgf, parse_multigogm,
         detect_corner, convert_to_top_right
     )
+    from .katago_downloader import iter_sgf_from_tar
 except ImportError:
     from joseki_extractor import (
         CoordinateSystem, COORDINATE_SYSTEMS,
         extract_joseki_from_sgf, parse_multigogm,
         detect_corner, convert_to_top_right
     )
+    from katago_downloader import iter_sgf_from_tar
 
 
 # 配置
@@ -538,7 +540,7 @@ class JosekiDB:
         从SGF文件列表批量导入定式
         
         Args:
-            sgf_sources: SGF文件路径列表，或包含SGF内容的字符串列表（自动识别）
+            sgf_sources: SGF文件路径列表，或包含多个SGF文件的tar.bz2文件，或包含SGF内容的字符串列表（自动识别）
             min_count: 最少出现次数才入库
             min_moves: 定式至少多少手
             min_rate: 最小出现概率%
@@ -554,24 +556,27 @@ class JosekiDB:
         
         # 1. 提取所有定式
         for i, source in enumerate(sgf_sources):
-            if progress_callback:
-                progress_callback(i + 1, total_sources)
-            
             try:
+                sgf_data = []
                 if isinstance(source, Path):
-                    sgf_data = source.read_text(encoding='utf-8', errors='ignore')
+                    if source.suffix == 'sgf':
+                        sgf_data.append(source.read_text(encoding='utf-8', errors='ignore'))
+                    else:
+                        sgf_data = list(iter_sgf_from_tar(source))                    
                 else:
-                    sgf_data = source
-                
-                # 使用 joseki_extractor 提取四角定式
-                multigogm = extract_joseki_from_sgf(sgf_data, first_n=first_n)
-                parsed = parse_multigogm(multigogm)
-                
-                for corner_key, (comment, moves) in parsed.items():
-                    coords = [coord for color, coord in moves if coord]
-                    if len(coords) >= 2:
-                        joseki_str = " ".join(coords)
-                        count_map[joseki_str] = count_map.get(joseki_str, 0) + 1
+                    sgf_data.append(source)
+                for sgf_item in sgf_data:
+                    # 使用 joseki_extractor 提取四角定式
+                    multigogm = extract_joseki_from_sgf(sgf_item, first_n=first_n)
+                    parsed = parse_multigogm(multigogm)
+                    
+                    for corner_key, (comment, moves) in parsed.items():
+                        coords = [coord for color, coord in moves if coord]
+                        if len(coords) >= 2:
+                            joseki_str = " ".join(coords)
+                            count_map[joseki_str] = count_map.get(joseki_str, 0) + 1
+                if progress_callback:
+                    progress_callback(i + 1, total_sources, source, len(sgf_data))
             except Exception:
                 continue
         
@@ -657,20 +662,13 @@ class JosekiDB:
         返回:
             (added_count, skipped_count)
         """
-        from .katago_downloader import iter_sgf_from_tar
         
         # 收集所有tar文件
         tar_files = list(cache_dir.glob("*rating.tar.bz2"))
         
-        # 收集所有SGF内容
-        sgf_list = []
-        for tar_path in tar_files:
-            for sgf_data in iter_sgf_from_tar(tar_path):
-                sgf_list.append(sgf_data)
-        
         # 使用 import_from_sgfs 导入
         added, skipped, _ = self.import_from_sgfs(
-            sgf_sources=sgf_list,
+            sgf_sources=tar_files,
             min_count=min_count,
             min_moves=min_moves,
             min_rate=min_rate,
