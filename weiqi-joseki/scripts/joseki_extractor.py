@@ -187,19 +187,13 @@ def convert_to_top_right(moves: List[str], source_corner: str) -> List[str]:
     return converted
 
 
-def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None) -> str:
+def _extract_moves_from_sgf(sgf_data: str, first_n: int = 50) -> List[Tuple[str, str]]:
     """
-    从SGF提取四角定式，输出MULTIGOGM格式
-    
-    Args:
-        sgf_data: SGF棋谱内容
-        first_n: 只取前N手（默认50）
-        corner: 指定提取哪个角 ('tl', 'tr', 'bl', 'br')，None表示全部
+    从SGF提取前N手着法（内部辅助函数）
     
     返回:
-        MULTIGOGM格式的SGF字符串
+        [(color, coord), ...] 颜色(B/W), 坐标(sgf格式或'tt')
     """
-    # 解析前N手
     moves = []
     sgf = parse_sgf(sgf_data)
     move = sgf['tree']
@@ -210,18 +204,24 @@ def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None
         moves.append((move['color'], move['coord']))
         if len(moves) >= first_n:
             break
-       
-    if not moves:
-        return "(;CA[utf-8]FF[4]AP[JosekiExtract]SZ[19]GM[1]KM[0]MULTIGOGM[1])"
+    return moves
+
+
+def _classify_to_corners(moves: List[Tuple[str, str]]) -> Dict[str, List[Tuple[str, str]]]:
+    """
+    将着法分类到四角（支持"角部-脱先-其他-回角部"完整序列）
     
-    # 分类到四角（支持"角部-脱先-其他-回角部"完整序列）
-    # 策略：为每个角维护独立序列，当回到该角时继续追加
+    策略：为每个角维护独立序列，当回到该角时继续追加
+    
+    返回:
+        {corner_key: [(color, coord), ...], ...}
+        corner_key: 'tr', 'tl', 'bl', 'br'
+    """
     corners = {'tr': [], 'tl': [], 'bl': [], 'br': []}
-    last_corner = None  # 上一手所属的角
+    last_corner = None
     
     for color, coord in moves:
         if coord == 'tt':
-            # 脱先：标记但不断开序列，保留在上一手所属的角
             if last_corner:
                 corners[last_corner].append((color, coord))
             continue
@@ -229,7 +229,6 @@ def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None
         col, row = CoordinateSystem.sgf_to_nums(coord)
         current_corner = None
         
-        # 判断属于哪个角 (0-8 或 10-18，9为边界)
         if col <= 8 and row <= 8:
             current_corner = 'tl'
         elif col >= 10 and row <= 8:
@@ -238,30 +237,138 @@ def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None
             current_corner = 'bl'
         elif col >= 10 and row >= 10:
             current_corner = 'br'
-        # col==9 或 row==9 为中央边界，不归属任何角
         
         if current_corner:
             corners[current_corner].append((color, coord))
             last_corner = current_corner
-        # 中央棋不影响 last_corner，脱先后若回角部能正确归属
+    
+    return corners
+
+
+def extract_joseki_from_sgf_raw(sgf_data: str, first_n: int = 50) -> Dict[str, List[Tuple[str, str]]]:
+    """
+    从SGF提取四角定式，直接返回解析后的数据结构（消除双重解析）
+    
+    Args:
+        sgf_data: SGF棋谱内容
+        first_n: 只取前N手（默认50）
+    
+    返回:
+        {corner_key: [(color, coord), ...], ...}
+        corner_key: 'tr', 'tl', 'bl', 'br'
+        坐标已转换为右上角视角，颜色已标准化为黑先
+    """
+    moves = _extract_moves_from_sgf(sgf_data, first_n)
+    
+    if not moves:
+        return {}
+    
+    corners = _classify_to_corners(moves)
+    
+    result = {}
+    for corner_key, seq in corners.items():
+        if len(seq) < 2:
+            continue
+        
+        processed = process_corner_sequence_raw(seq, corner_key)
+        if processed:
+            result[corner_key] = processed
+    
+    return result
+
+
+def process_corner_sequence_raw(
+    moves: List[Tuple[str, str]],
+    corner_key: str
+) -> Optional[List[Tuple[str, str]]]:
+    """
+    处理单角序列，直接返回处理后的着法列表（消除SGF字符串生成）
+    
+    Args:
+        moves: [(color, sgf_coord), ...]
+        corner_key: 角的键名 ('tl', 'tr', 'bl', 'br')
+    
+    返回:
+        [(color, coord), ...] - 颜色已标准化为黑先，坐标已转换到右上角视角
+    """
+    if len(moves) < 2:
+        return None
+    
+    # 1. 检测脱先（连续同色）并插入tt标记
+    processed = []
+    last_color = None
+    
+    for color, coord in moves:
+        if last_color == color:
+            pass_color = 'W' if color == 'B' else 'B'
+            processed.append((pass_color, 'tt'))
+        processed.append((color, coord))
+        last_color = color
+    
+    # 2. 分离颜色和坐标
+    colors = [c for c, _ in processed]
+    coords = [coord for _, coord in processed]
+    
+    # 3. 将坐标转换为视觉上的右上角区域
+    source_coord_sys = {
+        'tl': COORDINATE_SYSTEMS['lurd'],
+        'bl': COORDINATE_SYSTEMS['ldru'],
+        'tr': COORDINATE_SYSTEMS['ruld'],
+        'br': COORDINATE_SYSTEMS['rdlu'],
+    }[corner_key]
+    
+    target_coord_sys = COORDINATE_SYSTEMS['ruld']
+    
+    tr_coords = []
+    for coord in coords:
+        if coord == 'tt':
+            tr_coords.append('tt')
+            continue
+        local_x, local_y = source_coord_sys._to_local_cache.get(coord, (0, 0))
+        new_coord = target_coord_sys._to_sgf_cache.get((local_x, local_y), coord)
+        tr_coords.append(new_coord)
+    
+    # 4. 颜色标准化为黑先
+    if colors[0] == 'W':
+        colors = ['B' if c == 'W' else 'W' for c in colors]
+    
+    return list(zip(colors, tr_coords))
+
+
+def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None) -> str:
+    """
+    从SGF提取四角定式，输出MULTIGOGM格式（保持向后兼容）
+    
+    Args:
+        sgf_data: SGF棋谱内容
+        first_n: 只取前N手（默认50）
+        corner: 指定提取哪个角 ('tl', 'tr', 'bl', 'br')，None表示全部
+    
+    返回:
+        MULTIGOGM格式的SGF字符串
+    """
+    moves = _extract_moves_from_sgf(sgf_data, first_n)
+    
+    if not moves:
+        return "(;CA[utf-8]FF[4]AP[JosekiExtract]SZ[19]GM[1]KM[0]MULTIGOGM[1])"
+    
+    corners = _classify_to_corners(moves)
     
     # 处理每角
     branches = []
     corner_names = {'tl': '左上', 'tr': '右上', 'bl': '左下', 'br': '右下'}
     
-    # 如果指定了角，只处理该角
     corners_to_process = [corner] if corner else corners.keys()
     
     for corner_name in corners_to_process:
         seq = corners.get(corner_name, [])
-        if len(seq) < 2:  # 至少2手才算定式
+        if len(seq) < 2:
             continue
         
         branch = process_corner_sequence(seq, corner_names[corner_name], corner_name)
         if branch:
             branches.append(branch)
     
-    # 生成MULTIGOGM SGF
     return format_multigogm(branches)
 
 

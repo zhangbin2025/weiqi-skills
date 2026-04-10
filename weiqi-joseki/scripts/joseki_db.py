@@ -16,15 +16,15 @@ from collections import Counter
 try:
     from .joseki_extractor import (
         CoordinateSystem, COORDINATE_SYSTEMS,
-        extract_joseki_from_sgf, parse_multigogm,
-        detect_corner, convert_to_top_right
+        extract_joseki_from_sgf, extract_joseki_from_sgf_raw,
+        parse_multigogm, detect_corner, convert_to_top_right
     )
     from .katago_downloader import iter_sgf_from_tar
 except ImportError:
     from joseki_extractor import (
         CoordinateSystem, COORDINATE_SYSTEMS,
-        extract_joseki_from_sgf, parse_multigogm,
-        detect_corner, convert_to_top_right
+        extract_joseki_from_sgf, extract_joseki_from_sgf_raw,
+        parse_multigogm, detect_corner, convert_to_top_right
     )
     from katago_downloader import iter_sgf_from_tar
 
@@ -537,14 +537,14 @@ class JosekiDB:
         verbose: bool,
         progress_callback: Optional[Callable] = None
     ) -> Tuple[Dict[str, int], int, int, int, int]:
-        """步骤1: 从所有源提取定式
+        """步骤1: 从所有源提取定式（优化版：消除双重解析）
         返回: (count_map, total_sources, total_sgf_files, total_extracted, unique_count)
         total_sources: 源文件/压缩包数量
         total_sgf_files: 实际的SGF文件数量（解压后）
         """
         count_map = {}
         total_sources = len(sgf_sources)
-        total_sgf_files = 0  # 实际的SGF文件数量
+        total_sgf_files = 0
         total_joseki_extracted = 0
         unique_joseki_count = 0
 
@@ -562,13 +562,15 @@ class JosekiDB:
                 else:
                     sgf_data.append(source)
                 
-                total_sgf_files += len(sgf_data)  # 累加实际的SGF文件数量
+                total_sgf_files += len(sgf_data)
                 
+                # 优化：使用 extract_joseki_from_sgf_raw 直接获取解析后的数据
+                # 避免先生成 SGF 字符串再解析回来的双重开销
                 for sgf_item in sgf_data:
-                    multigogm = extract_joseki_from_sgf(sgf_item, first_n=first_n)
-                    parsed = parse_multigogm(multigogm)
-
-                    for corner_key, (comment, moves) in parsed.items():
+                    corner_dict = extract_joseki_from_sgf_raw(sgf_item, first_n=first_n)
+                    
+                    # corner_dict: {corner_key: [(color, coord), ...], ...}
+                    for corner_key, moves in corner_dict.items():
                         coords = [coord for color, coord in moves if coord]
                         if len(coords) >= 2:
                             joseki_str = " ".join(coords)
@@ -576,9 +578,10 @@ class JosekiDB:
                                 unique_joseki_count += 1
                             count_map[joseki_str] = count_map.get(joseki_str, 0) + 1
                             total_joseki_extracted += 1
+                
                 if progress_callback:
                     progress_callback(i + 1, total_sources, source, len(sgf_data))
-                if verbose and (i + 1) % 100 == 0 or i + 1 == total_sources:
+                if verbose and ((i + 1) % 100 == 0 or i + 1 == total_sources):
                     print(f"\r  提取进度: {i + 1}/{total_sources} | SGF文件: {total_sgf_files} | 累计定式: {total_joseki_extracted} | 唯一序列: {unique_joseki_count}", end='', flush=True)
             except Exception:
                 continue
