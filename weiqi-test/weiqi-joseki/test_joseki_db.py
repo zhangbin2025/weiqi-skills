@@ -10,10 +10,10 @@ import shutil
 import sys
 from pathlib import Path
 
-# 添加父目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# 添加 weiqi-joseki 项目路径
+sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki')
 
-from joseki_db import JosekiDB, MatchResult, ConflictCheck
+from scripts.joseki_db import JosekiDB, MatchResult, ConflictCheck
 
 
 class TestJosekiDB(unittest.TestCase):

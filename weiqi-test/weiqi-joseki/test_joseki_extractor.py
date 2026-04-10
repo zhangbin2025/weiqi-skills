@@ -7,10 +7,10 @@ import unittest
 import sys
 from pathlib import Path
 
-# 添加父目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# 添加 weiqi-joseki 项目路径
+sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki')
 
-from joseki_extractor import (
+from scripts.joseki_extractor import (
     extract_joseki_from_sgf, process_corner_sequence,
     format_multigogm, parse_multigogm,
     detect_corner, convert_to_top_right,

@@ -12,10 +12,10 @@ import sys
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-# 添加父目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# 添加 weiqi-joseki 项目路径
+sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki')
 
-from katago_downloader import (
+from scripts.katago_downloader import (
     MemoryMonitor, ProgressManager, DownloadManager,
     download_katago_games, iter_sgf_from_tar,
     KATAGO_BASE_URL
@@ -118,8 +118,8 @@ class TestDownloadManager(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir)
     
-    @patch('katago_downloader.urllib.request.urlopen')
-    @patch('katago_downloader.urllib.request.Request')
+    @patch('scripts.katago_downloader.urllib.request.urlopen')
+    @patch('scripts.katago_downloader.urllib.request.Request')
     def test_check_file_exists_true(self, mock_request, mock_urlopen):
         """检查文件存在"""
         mock_response = MagicMock()
@@ -130,8 +130,8 @@ class TestDownloadManager(unittest.TestCase):
         self.assertTrue(exists)
         self.assertIsNone(error)
     
-    @patch('katago_downloader.urllib.request.urlopen')
-    @patch('katago_downloader.urllib.request.Request')
+    @patch('scripts.katago_downloader.urllib.request.urlopen')
+    @patch('scripts.katago_downloader.urllib.request.Request')
     def test_check_file_exists_404(self, mock_request, mock_urlopen):
         """检查文件不存在（404）"""
         import urllib.error
@@ -143,8 +143,8 @@ class TestDownloadManager(unittest.TestCase):
         self.assertFalse(exists)
         self.assertIsNone(error)  # 404不算错误
     
-    @patch('katago_downloader.urllib.request.urlopen')
-    @patch('katago_downloader.urllib.request.Request')
+    @patch('scripts.katago_downloader.urllib.request.urlopen')
+    @patch('scripts.katago_downloader.urllib.request.Request')
     def test_download_single_404(self, mock_request, mock_urlopen):
         """下载单个文件404"""
         import urllib.error
@@ -157,8 +157,8 @@ class TestDownloadManager(unittest.TestCase):
         self.assertIsNone(path)  # 没有下载
         self.assertEqual(error, '404')  # 返回404标记
     
-    @patch('katago_downloader.urllib.request.urlopen')
-    @patch('katago_downloader.urllib.request.Request')
+    @patch('scripts.katago_downloader.urllib.request.urlopen')
+    @patch('scripts.katago_downloader.urllib.request.Request')
     def test_download_single_success(self, mock_request, mock_urlopen):
         """成功下载单个文件"""
         # 模拟文件存在检查
@@ -244,7 +244,7 @@ class TestIterSgfFromTar(unittest.TestCase):
 class TestDownloadKatagoGames(unittest.TestCase):
     """测试便捷下载函数（使用mock）"""
     
-    @patch('katago_downloader.DownloadManager')
+    @patch('scripts.katago_downloader.DownloadManager')
     def test_download_with_dates(self, mock_manager_class):
         """测试日期范围下载"""
         mock_manager = MagicMock()
