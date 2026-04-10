@@ -62,3 +62,6 @@ joseki:
 
 sgf:
 	$(PYTEST) $(TEST_DIR)/weiqi-sgf/ -v
+
+db:
+	$(PYTEST) $(TEST_DIR)/weiqi-db/ -v
