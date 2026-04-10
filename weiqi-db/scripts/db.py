@@ -21,23 +21,16 @@ from typing import List, Dict, Any, Optional
 from tinydb import TinyDB, Query
 from tinydb.operations import add, delete
 
+# 导入 SGF 解析器
+import importlib.util
+spec = importlib.util.spec_from_file_location("sgf_parser", Path(__file__).parent / "sgf_parser.py")
+sgf_parser = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sgf_parser)
+_parse_sgf_full = sgf_parser.parse_sgf
+
 # 数据库路径
 DB_DIR = Path.home() / ".weiqi-db"
 DB_PATH = DB_DIR / "database.json"
-
-# SGF 解析正则
-SGF_PATTERNS = {
-    'PB': r'PB\[([^\]]*)\]',
-    'PW': r'PW\[([^\]]*)\]',
-    'BR': r'BR\[([^\]]*)\]',
-    'WR': r'WR\[([^\]]*)\]',
-    'DT': r'DT\[([^\]]*)\]',
-    'EV': r'EV\[([^\]]*)\]',
-    'GN': r'GN\[([^\]]*)\]',
-    'RE': r'RE\[([^\]]*)\]',
-    'KM': r'KM\[([^\]]*)\]',
-    'HA': r'HA\[(\d+)\]',
-}
 
 
 def ensure_db() -> TinyDB:
@@ -47,33 +40,23 @@ def ensure_db() -> TinyDB:
 
 
 def parse_sgf(sgf_content: str) -> Dict[str, Any]:
-    """从SGF内容解析元数据"""
-    info = {}
+    """从SGF内容解析元数据（复用 weiqi-sgf 的解析器）"""
+    result = _parse_sgf_full(sgf_content)
+    info = result.get('game_info', {})
+    stats = result.get('stats', {})
     
-    for key, pattern in SGF_PATTERNS.items():
-        match = re.search(pattern, sgf_content)
-        if match:
-            info[key] = match.group(1)
-    
-    # 计算手数
-    moves = re.findall(r';[BW]\[[a-z]{2}\]', sgf_content)
-    info['movenum'] = len(moves)
-    
-    # 标准化字段名
-    result = {
-        'black': info.get('PB', '黑棋'),
-        'white': info.get('PW', '白棋'),
-        'black_rank': info.get('BR', ''),
-        'white_rank': info.get('WR', ''),
-        'date': info.get('DT', ''),
-        'event': info.get('EV', info.get('GN', '')),
-        'result': info.get('RE', ''),
-        'komi': info.get('KM', ''),
-        'handicap': int(info.get('HA', 0)),
-        'movenum': info.get('movenum', 0),
+    return {
+        'black': info.get('black', '黑棋'),
+        'white': info.get('white', '白棋'),
+        'black_rank': info.get('black_rank', ''),
+        'white_rank': info.get('white_rank', ''),
+        'date': info.get('date', ''),
+        'event': info.get('game_name', ''),
+        'result': info.get('result', ''),
+        'komi': info.get('komi', ''),
+        'handicap': info.get('handicap', 0),
+        'movenum': stats.get('move_nodes', 0),
     }
-    
-    return result
 
 
 def calc_hash(sgf_content: str) -> str:
@@ -81,72 +64,6 @@ def calc_hash(sgf_content: str) -> str:
     # 移除空白字符后计算哈希
     normalized = re.sub(r'\s+', '', sgf_content.strip())
     return hashlib.md5(normalized.encode('utf-8')).hexdigest()[:16]
-
-
-def calc_similarity_hash(sgf_content: str) -> str:
-    """计算棋谱相似度哈希（用于检测同一盘棋的不同SGF版本）
-    
-    忽略以下可变字段：
-    - 文件头信息（FF, AP, SZ等）
-    - 时间戳、日期格式差异
-    - 注释和标记
-    只保留：棋盘大小、 handicap、对局实质内容（落子序列）
-    """
-    # 移除所有空白
-    normalized = re.sub(r'\s+', '', sgf_content.strip())
-    
-    # 提取关键信息
-    size_match = re.search(r'SZ\[(\d+)\]', normalized)
-    size = size_match.group(1) if size_match else '19'
-    
-    # 提取 handicap
-    handicap_match = re.search(r'HA\[(\d+)\]', normalized)
-    handicap = handicap_match.group(1) if handicap_match else '0'
-    
-    # 提取所有落子（只保留坐标，去掉注释、标记等）
-    moves = re.findall(r';[BW]\[([a-z]{2})\]', normalized)
-    move_seq = ''.join(moves)
-    
-    # 组合关键信息计算哈希
-    key_content = f"SZ:{size}|HA:{handicap}|MOVES:{move_seq}"
-    return hashlib.md5(key_content.encode('utf-8')).hexdigest()[:16]
-
-
-def find_conflicts(table, meta: Dict[str, Any], content_hash: str, similarity_hash: str) -> List[Dict[str, Any]]:
-    """查找可能的冲突记录
-    
-    冲突类型：
-    1. exact - 完全重复（内容哈希相同）
-    2. similar - 相似棋谱（日期+黑白棋手相同）
-    3. potential - 潜在重复（相似哈希相同但内容不同）
-    """
-    conflicts = []
-    
-    for game in table.all():
-        conflict_type = None
-        
-        # 检查完全重复
-        if game.get('hash') == content_hash:
-            conflict_type = 'exact'
-        # 检查相似哈希（同一盘棋的不同SGF版本）
-        elif game.get('similarity_hash') == similarity_hash:
-            conflict_type = 'potential'
-        # 检查日期+棋手组合（同一盘棋的标识）
-        elif (meta.get('date') and meta.get('date') == game.get('date') and
-              meta.get('black') and meta.get('white') and
-              meta.get('black') == game.get('black') and
-              meta.get('white') == game.get('white')):
-            conflict_type = 'similar'
-        
-        if conflict_type:
-            conflicts.append({
-                'id': game.get('id'),
-                'type': conflict_type,
-                'existing': {k: v for k, v in game.items() if k not in ('sgf', 'hash', 'similarity_hash')},
-                'diff': calc_diff(meta, game)
-            })
-    
-    return conflicts
 
 
 def calc_diff(new_meta: Dict[str, Any], existing: Dict[str, Any]) -> Dict[str, Any]:
@@ -215,10 +132,8 @@ def find_conflicts(table, meta: Dict[str, Any], content_hash: str) -> List[Dict]
               game.get('white') == meta.get('white') and
               game.get('date') == meta.get('date') and
               meta.get('date')):  # 确保日期不为空
-            # 进一步检查：手数相近或结果相同
-            if (game.get('movenum') == meta.get('movenum') or
-                game.get('result') == meta.get('result')):
-                conflict_type = 'metadata'
+            # 同一对棋手在同一天的比赛，可能是重复棋谱
+            conflict_type = 'metadata'
         
         if conflict_type:
             conflicts.append({
@@ -256,12 +171,16 @@ def cmd_add(args):
     if not files:
         return {"success": False, "error": "未找到SGF文件"}
     
+    # 跟踪错误数量（文件不存在等）vs 跳过数量（冲突跳过）
+    error_count = 0
+    
     # 获取已有哈希（去重用）
     existing_hashes = {g.get('hash', '') for g in table.all()}
     
     for file_path in files:
         if not file_path.exists():
             results.append({"file": str(file_path), "success": False, "error": "文件不存在"})
+            error_count += 1
             continue
         
         try:
@@ -373,6 +292,20 @@ def cmd_add(args):
             
         except Exception as e:
             results.append({"file": str(file_path), "success": False, "error": str(e)})
+    
+    # 如果有错误（如文件不存在），返回失败
+    if error_count > 0 and error_count == len(files):
+        return {
+            "success": False,
+            "error": "所有文件处理失败",
+            "added": added_count,
+            "skipped": skipped_count,
+            "overwritten": overwritten_count,
+            "total": len(files),
+            "conflict_strategy": conflict_strategy,
+            "conflicts": conflict_details,
+            "results": results
+        }
     
     return {
         "success": True,
