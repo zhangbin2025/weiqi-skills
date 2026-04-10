@@ -109,10 +109,14 @@ def cmd_list(args):
     if args.limit:
         joseki_list = joseki_list[:args.limit]
     
-    print(f"{'ID':<12} {'名称':<30} {'分类':<25} {'手数':<8}")
-    print("-" * 80)
+    # 新格式：ID, 分类, 手数, 次数, 概率, 名称
+    print(f"{'ID':<10} {'分类':<18} {'手数':<5} {'次数':<7} {'概率':<8} {'名称':<20}")
+    print("-" * 75)
     for j in joseki_list:
-        print(f"{j['id']:<12} {j['name']:<30} {j['category_path']:<25} {j['move_count']:<8}")
+        freq = str(j['frequency']) if j.get('frequency') is not None else "-"
+        prob = f"{j['probability']:.2%}" if j.get('probability') is not None else "-"
+        name = j['name'] if j.get('name') else "(空)"
+        print(f"{j['id']:<10} {j['category_path']:<18} {j['move_count']:<5} {freq:<7} {prob:<8} {name:<20}")
 
 
 def cmd_8way(args):

@@ -714,10 +714,12 @@ class JosekiDB:
             probability = count / total_sgf_count if total_sgf_count > 0 else 0
 
             # 使用 hash set 进行 O(1) 冲突检测
+            # 检查逻辑：
+            # 1. 新定式的 ruld 是否在已有定式的 ruld_hashes 中（同方向重复）
+            # 2. 新定式的 ruld 是否在已有定式的 rudl_hashes 中（反方向重复）
             prefix_ruld = ",".join(coords)
-            prefix_rudl = ",".join(self._convert_to_rudl(coords))
             
-            if prefix_ruld in ruld_hashes or prefix_rudl in rudl_hashes:
+            if prefix_ruld in ruld_hashes or prefix_ruld in rudl_hashes:
                 skipped += 1
                 if verbose:
                     print(f"\r  [{idx+1}/{len(candidates)}] 跳过（冲突）| 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
@@ -737,7 +739,7 @@ class JosekiDB:
                 new_joseki_list.append(joseki_data)
                 # 更新 hash sets 防止本次批量添加中的重复
                 ruld_hashes.add(prefix_ruld)
-                rudl_hashes.add(prefix_rudl)
+                rudl_hashes.add(",".join(self._convert_to_rudl(coords)))
                 added += 1
                 if verbose:
                     print(f"\r  [{idx+1}/{len(candidates)}] 已入库 | 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
@@ -769,7 +771,7 @@ class JosekiDB:
                     added += 1
                     # 更新 hash sets
                     ruld_hashes.add(prefix_ruld)
-                    rudl_hashes.add(prefix_rudl)
+                    rudl_hashes.add(",".join(self._convert_to_rudl(coords)))
                     if verbose:
                         print(f"\r  [{idx+1}/{len(candidates)}] 已入库 | 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
                 else:
