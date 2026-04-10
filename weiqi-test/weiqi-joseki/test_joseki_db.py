@@ -281,15 +281,87 @@ class TestJosekiDB(unittest.TestCase):
             "(;GM[1];B[pd];W[qf];B[nc])",  # 重复
             "(;GM[1];B[dd];W[cc])",
         ]
-        
+
         added, skipped, candidates = self.db.import_from_sgfs(
             sgf_sources=sgf_list,
             min_count=1,
             min_moves=2
         )
-        
+
         self.assertGreater(added, 0)
         self.assertEqual(len(candidates), 2)  # 两个不同的定式
+
+    def test_import_from_sgfs_with_new_params(self):
+        """测试新参数（category, name_prefix, verbose）"""
+        sgf_list = [
+            "(;GM[1];B[pd];W[qf];B[nc])",
+            "(;GM[1];B[pd];W[qf];B[nc])",  # 重复
+        ]
+
+        added, skipped, candidates = self.db.import_from_sgfs(
+            sgf_sources=sgf_list,
+            min_count=1,
+            min_moves=2,
+            category="/测试分类",
+            name_prefix="测试前缀",
+            verbose=False
+        )
+
+        self.assertGreater(added, 0)
+        # 验证定式使用了正确的分类和名称
+        joseki_list = self.db.list_all(category="/测试分类")
+        self.assertEqual(len(joseki_list), added)
+        for j in joseki_list:
+            self.assertTrue(j['name'].startswith("测试前缀"))
+
+    def test_import_from_sgfs_katago_mode(self):
+        """测试KataGo导入模式（category=/katago）"""
+        sgf_list = [
+            "(;GM[1];B[pd];W[qf];B[nc])",
+            "(;GM[1];B[pd];W[qf];B[nc])",  # 重复
+            "(;GM[1];B[pd];W[qf];B[nc])",  # 重复
+        ]
+
+        added, skipped, candidates = self.db.import_from_sgfs(
+            sgf_sources=sgf_list,
+            min_count=1,
+            min_moves=2,
+            category="/katago",
+            verbose=False
+        )
+
+        self.assertGreater(added, 0)
+        # 验证KataGo模式的数据结构
+        joseki_list = self.db.list_all(category="/katago")
+        self.assertEqual(len(joseki_list), added)
+
+        for j in self.db.joseki_list:
+            if j.get('category_path') == '/katago':
+                # 验证KataGo模式的特殊字段
+                self.assertEqual(j.get('category_path'), '/katago')
+                self.assertIn('frequency', j)
+                self.assertIn('probability', j)
+                self.assertIn('move_count', j)
+                # name应该为空
+                self.assertEqual(j.get('name', ''), '')
+                # 验证数据类型
+                self.assertIsInstance(j['frequency'], int)
+                self.assertIsInstance(j['probability'], float)
+                self.assertIsInstance(j['move_count'], int)
+                # 验证probability范围
+                self.assertGreaterEqual(j['probability'], 0.0)
+                self.assertLessEqual(j['probability'], 1.0)
+                # 验证move_count与实际moves长度一致
+                self.assertEqual(j['move_count'], len(j.get('moves', [])))
+
+    def test_import_from_sgfs_default_first_n(self):
+        """测试first_n默认值改为80"""
+        # 检查函数签名中的默认值
+        import inspect
+        sig = inspect.signature(self.db.import_from_sgfs)
+        first_n_param = sig.parameters.get('first_n')
+        self.assertIsNotNone(first_n_param)
+        self.assertEqual(first_n_param.default, 80)
     
     def test_import_with_min_count(self):
         """导入时限制最少次数"""
@@ -298,13 +370,14 @@ class TestJosekiDB(unittest.TestCase):
             "(;GM[1];B[pd];W[qf])",  # 出现2次
             "(;GM[1];B[dd];W[cc])",  # 出现1次
         ]
-        
+
         added, skipped, candidates = self.db.import_from_sgfs(
             sgf_sources=sgf_list,
             min_count=2,  # 至少出现2次
-            min_moves=2
+            min_moves=2,
+            verbose=False
         )
-        
+
         # 只有出现2次的定式会被导入
         self.assertEqual(added, 1)
     
@@ -314,13 +387,14 @@ class TestJosekiDB(unittest.TestCase):
             "(;GM[1];B[pd])",  # 1手，不够
             "(;GM[1];B[pd];W[qf];B[nc])",  # 3手
         ]
-        
+
         added, skipped, candidates = self.db.import_from_sgfs(
             sgf_sources=sgf_list,
             min_count=1,
-            min_moves=2
+            min_moves=2,
+            verbose=False
         )
-        
+
         # 只有3手的定式会被考虑
         self.assertEqual(len(candidates), 1)
     
@@ -329,14 +403,15 @@ class TestJosekiDB(unittest.TestCase):
         sgf_list = [
             "(;GM[1];B[pd];W[qf];B[nc])",
         ]
-        
+
         added, skipped, candidates = self.db.import_from_sgfs(
             sgf_sources=sgf_list,
             min_count=1,
             min_moves=2,  # 指定最少2手
-            dry_run=True
+            dry_run=True,
+            verbose=False
         )
-        
+
         self.assertEqual(added, 0)  # 没有真正导入
         self.assertGreater(len(candidates), 0)  # 但有候选
     

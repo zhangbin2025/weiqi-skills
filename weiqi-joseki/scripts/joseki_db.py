@@ -533,12 +533,15 @@ class JosekiDB:
                         min_count: int = 10,
                         min_moves: int = 4,
                         min_rate: float = 0.0,
-                        first_n: int = 50,
+                        first_n: int = 80,
                         dry_run: bool = False,
-                        progress_callback: Optional[Callable] = None) -> Tuple[int, int, List[str]]:
+                        progress_callback: Optional[Callable] = None,
+                        category: str = "/自动",
+                        name_prefix: str = "自动提取",
+                        verbose: bool = True) -> Tuple[int, int, List[str]]:
         """
         从SGF文件列表批量导入定式
-        
+
         Args:
             sgf_sources: SGF文件路径列表，或包含多个SGF文件的tar.bz2文件，或包含SGF内容的字符串列表（自动识别）
             min_count: 最少出现次数才入库
@@ -547,13 +550,21 @@ class JosekiDB:
             first_n: 每谱提取前N手内的定式
             dry_run: 试运行，只统计不真入库
             progress_callback: 进度回调函数(current, total)
-        
+            category: 定式分类路径（默认"/自动"）
+            name_prefix: 名称前缀（默认"自动提取"）
+            verbose: 详细输出开关（默认True）
+
         返回:
             (added_count, skipped_count, candidates_list)
         """
         count_map = {}  # {joseki_str: count}
         total_sources = len(sgf_sources)
-        
+        total_joseki_extracted = 0
+        unique_joseki_count = 0
+
+        if verbose:
+            print(f"📊 开始从 {total_sources} 个源提取定式...")
+
         # 1. 提取所有定式
         for i, source in enumerate(sgf_sources):
             try:
@@ -562,25 +573,35 @@ class JosekiDB:
                     if source.suffix == '.sgf':
                         sgf_data.append(source.read_text(encoding='utf-8', errors='ignore'))
                     else:
-                        sgf_data = list(iter_sgf_from_tar(source))                    
+                        sgf_data = list(iter_sgf_from_tar(source))
                 else:
                     sgf_data.append(source)
                 for sgf_item in sgf_data:
                     # 使用 joseki_extractor 提取四角定式
                     multigogm = extract_joseki_from_sgf(sgf_item, first_n=first_n)
                     parsed = parse_multigogm(multigogm)
-                    
+
                     for corner_key, (comment, moves) in parsed.items():
                         coords = [coord for color, coord in moves if coord]
                         if len(coords) >= 2:
                             joseki_str = " ".join(coords)
+                            if joseki_str not in count_map:
+                                unique_joseki_count += 1
                             count_map[joseki_str] = count_map.get(joseki_str, 0) + 1
+                            total_joseki_extracted += 1
                 if progress_callback:
                     progress_callback(i + 1, total_sources, source, len(sgf_data))
+                if verbose and (i + 1) % 100 == 0 or i + 1 == total_sources:
+                    print(f"\r  提取进度: {i + 1}/{total_sources} | 累计定式: {total_joseki_extracted} | 唯一序列: {unique_joseki_count}", end='', flush=True)
             except Exception:
                 continue
-        
+
+        if verbose:
+            print(f"\n✅ 提取完成: 共 {total_joseki_extracted} 个定式，{unique_joseki_count} 个唯一序列")
+
         # 2. 前缀累加
+        if verbose:
+            print(f"🔄 开始前缀累加计算...")
         sorted_joseki = sorted(count_map.keys())
         for i in range(len(sorted_joseki)):
             current = sorted_joseki[i]
@@ -590,8 +611,15 @@ class JosekiDB:
                     count_map[current] += count_map[later]
                 else:
                     break
-        
+            if verbose and (i + 1) % 1000 == 0 or i + 1 == len(sorted_joseki):
+                print(f"\r  前缀累加进度: {i + 1}/{len(sorted_joseki)}", end='', flush=True)
+
+        if verbose:
+            print(f"\n✅ 前缀累加完成")
+
         # 3. 筛选候选
+        if verbose:
+            print(f"🔍 筛选候选定式（次数≥{min_count}，手数≥{min_moves}，概率≥{min_rate}%）...")
         candidates = []
         for prefix, count in count_map.items():
             if len(prefix.split()) < min_moves:
@@ -601,48 +629,80 @@ class JosekiDB:
             if min_rate > 0 and (count/total_sources)*100 < min_rate:
                 continue
             candidates.append((prefix, count))
-        
+
         # 按频率排序
         candidates.sort(key=lambda x: -x[1])
-        
+
+        if verbose:
+            print(f"✅ 筛选完成: {len(candidates)} 个候选定式")
+
         if dry_run:
             return 0, 0, [f"{prefix} ({count}次)" for prefix, count in candidates]
-        
+
         # 4. 入库
         added, skipped = 0, 0
-        
-        for prefix, count in candidates:
+
+        if verbose:
+            print(f"💾 开始入库（分类: {category}）...")
+
+        for idx, (prefix, count) in enumerate(candidates):
             coords = prefix.split()
-            
+            move_count = len(coords)
+            probability = count / total_sources if total_sources > 0 else 0
+
             # 构造SGF格式
             sgf_moves = []
             color = 'B'
             for c in coords:
                 sgf_moves.append(f"{color}[{c}]")
                 color = 'W' if color == 'B' else 'B'
-            
+
             # 检查冲突
             conflict = self.check_conflict(sgf_moves)
             if conflict.has_conflict:
                 skipped += 1
+                if verbose:
+                    print(f"\r  [{idx+1}/{len(candidates)}] 跳过（冲突）| 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
                 continue
-            
-            # 自动命名和分类
-            name = f"自动提取-{len(coords)}手"
-            category = "/自动"
-            
-            joseki_id, _ = self.add(
-                name=name,
-                category_path=category,
-                moves=sgf_moves,
-                force=False
-            )
-            
+
+            # 根据category决定定式数据结构
+            if category == "/katago":
+                # KataGo导入模式
+                name = ""
+                joseki_data = {
+                    "id": f"joseki_{len(self.joseki_list) + 1:03d}",
+                    "category_path": "/katago",
+                    "moves": coords,
+                    "frequency": count,
+                    "probability": round(probability, 4),
+                    "move_count": move_count,
+                    "created_at": self._now()
+                }
+                self.joseki_list.append(joseki_data)
+                self._save()
+                joseki_id = joseki_data["id"]
+            else:
+                # 普通模式
+                name = f"{name_prefix}-{move_count}手"
+                joseki_id, _ = self.add(
+                    name=name,
+                    category_path=category,
+                    moves=sgf_moves,
+                    force=False
+                )
+
             if joseki_id:
                 added += 1
+                if verbose:
+                    print(f"\r  [{idx+1}/{len(candidates)}] 已入库 | 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
             else:
                 skipped += 1
-        
+                if verbose:
+                    print(f"\r  [{idx+1}/{len(candidates)}] 跳过 | 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
+
+        if verbose:
+            print(f"\n✅ 入库完成: 新增 {added} 个定式，跳过 {skipped} 个")
+
         return added, skipped, [f"{prefix} ({count}次)" for prefix, count in candidates]
     
     def import_from_katago_cache(self,

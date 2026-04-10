@@ -494,7 +494,9 @@ def cmd_katago(args):
         min_rate=args.min_rate,
         first_n=args.first_n,
         dry_run=args.dry_run,
-        progress_callback=progress_callback
+        progress_callback=progress_callback,
+        category="/katago",
+        verbose=True
     )
     
     print()  # 换行
@@ -580,7 +582,7 @@ def main():
     p_import.add_argument("--min-count", type=int, default=10, help="最少出现次数才入库（默认10）")
     p_import.add_argument("--min-moves", type=int, default=4, help="定式至少多少手才入库（默认4）")
     p_import.add_argument("--min-rate", type=float, default=0.0, help="最小出现概率%%才入库（默认0，例如：1表示1%%，0.5表示0.5%%）")
-    p_import.add_argument("--first-n", type=int, default=50, help="每谱提取前N手内的定式（默认50）")
+    p_import.add_argument("--first-n", type=int, default=80, help="每谱提取前N手内的定式（默认80）")
     p_import.add_argument("--dry-run", action="store_true", help="试运行，只统计不真入库")
     
     # 新增 export 命令
@@ -604,7 +606,7 @@ def main():
     p_katago.add_argument("--min-count", type=int, default=10, help="最少出现次数才入库（默认10）")
     p_katago.add_argument("--min-moves", type=int, default=4, help="定式至少多少手才入库（默认4）")
     p_katago.add_argument("--min-rate", type=float, default=0.5, help="最小出现概率%%才入库（默认0.5）")
-    p_katago.add_argument("--first-n", type=int, default=50, help="每谱提取前N手内的定式（默认50）")
+    p_katago.add_argument("--first-n", type=int, default=80, help="每谱提取前N手内的定式（默认80）")
     p_katago.add_argument("--dry-run", action="store_true", help="试运行，只统计不真入库")
     p_katago.add_argument("--progress-file", help="进度文件路径（默认 ~/.weiqi-joseki/katago-progress.json）")
     
