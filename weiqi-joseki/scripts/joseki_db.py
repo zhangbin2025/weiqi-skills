@@ -7,7 +7,7 @@
 import json
 import re
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple, Callable
+from typing import List, Dict, Optional, Tuple, Callable, Set
 from dataclasses import dataclass
 from datetime import datetime
 from collections import Counter
@@ -346,9 +346,11 @@ class JosekiDB:
         
         return [{
             "id": j["id"],
-            "name": j.get("name", j["id"]),
+            "name": j.get("name", ""),
             "category_path": j.get("category_path", ""),
             "move_count": len(j.get("moves", [])),
+            "frequency": j.get("frequency"),
+            "probability": j.get("probability"),
             "tags": j.get("tags", [])
         } for j in result]
     
@@ -528,6 +530,263 @@ class JosekiDB:
     
     # ========== 导入功能 ==========
     
+    def _extract_joseki_from_sources(
+        self,
+        sgf_sources: List,
+        first_n: int,
+        verbose: bool,
+        progress_callback: Optional[Callable] = None
+    ) -> Tuple[Dict[str, int], int, int, int, int]:
+        """步骤1: 从所有源提取定式
+        返回: (count_map, total_sources, total_sgf_files, total_extracted, unique_count)
+        total_sources: 源文件/压缩包数量
+        total_sgf_files: 实际的SGF文件数量（解压后）
+        """
+        count_map = {}
+        total_sources = len(sgf_sources)
+        total_sgf_files = 0  # 实际的SGF文件数量
+        total_joseki_extracted = 0
+        unique_joseki_count = 0
+
+        if verbose:
+            print(f"📊 开始从 {total_sources} 个源提取定式...")
+
+        for i, source in enumerate(sgf_sources):
+            try:
+                sgf_data = []
+                if isinstance(source, Path):
+                    if source.suffix == '.sgf':
+                        sgf_data.append(source.read_text(encoding='utf-8', errors='ignore'))
+                    else:
+                        sgf_data = list(iter_sgf_from_tar(source))
+                else:
+                    sgf_data.append(source)
+                
+                total_sgf_files += len(sgf_data)  # 累加实际的SGF文件数量
+                
+                for sgf_item in sgf_data:
+                    multigogm = extract_joseki_from_sgf(sgf_item, first_n=first_n)
+                    parsed = parse_multigogm(multigogm)
+
+                    for corner_key, (comment, moves) in parsed.items():
+                        coords = [coord for color, coord in moves if coord]
+                        if len(coords) >= 2:
+                            joseki_str = " ".join(coords)
+                            if joseki_str not in count_map:
+                                unique_joseki_count += 1
+                            count_map[joseki_str] = count_map.get(joseki_str, 0) + 1
+                            total_joseki_extracted += 1
+                if progress_callback:
+                    progress_callback(i + 1, total_sources, source, len(sgf_data))
+                if verbose and (i + 1) % 100 == 0 or i + 1 == total_sources:
+                    print(f"\r  提取进度: {i + 1}/{total_sources} | SGF文件: {total_sgf_files} | 累计定式: {total_joseki_extracted} | 唯一序列: {unique_joseki_count}", end='', flush=True)
+            except Exception:
+                continue
+
+        if verbose:
+            print(f"\n✅ 提取完成: {total_sgf_files} 个SGF文件，{total_joseki_extracted} 个定式，{unique_joseki_count} 个唯一序列")
+
+        return count_map, total_sources, total_sgf_files, total_joseki_extracted, unique_joseki_count
+
+    def _accumulate_prefix_counts(
+        self,
+        count_map: Dict[str, int],
+        verbose: bool
+    ) -> Dict[str, int]:
+        """步骤2: 前缀累加统计
+        返回: 更新后的 count_map
+        """
+        if verbose:
+            print(f"🔄 开始前缀累加计算...")
+        
+        sorted_joseki = sorted(count_map.keys())
+        for i in range(len(sorted_joseki)):
+            current = sorted_joseki[i]
+            for j in range(i+1, len(sorted_joseki)):
+                later = sorted_joseki[j]
+                if later.startswith(current + " "):
+                    count_map[current] += count_map[later]
+                else:
+                    break
+            if verbose and (i + 1) % 1000 == 0 or i + 1 == len(sorted_joseki):
+                print(f"\r  前缀累加进度: {i + 1}/{len(sorted_joseki)}", end='', flush=True)
+
+        if verbose:
+            print(f"\n✅ 前缀累加完成")
+        
+        return count_map
+
+    def _filter_candidates(
+        self,
+        count_map: Dict[str, int],
+        total_sgf_count: int,
+        min_count: int,
+        min_moves: int,
+        min_rate: float,
+        verbose: bool
+    ) -> List[Tuple[str, int]]:
+        """步骤3: 筛选候选定式
+        返回: [(prefix, count), ...] 按频率降序排序
+        """
+        if verbose:
+            print(f"🔍 筛选候选定式（次数≥{min_count}，手数≥{min_moves}，概率≥{min_rate}%）...")
+        
+        candidates = []
+        for prefix, count in count_map.items():
+            if len(prefix.split()) < min_moves:
+                continue
+            if count < min_count:
+                continue
+            if min_rate > 0 and (count/total_sgf_count)*100 < min_rate:
+                continue
+            candidates.append((prefix, count))
+
+        candidates.sort(key=lambda x: -x[1])
+
+        if verbose:
+            print(f"✅ 筛选完成: {len(candidates)} 个候选定式")
+
+        return candidates
+
+    def _build_conflict_hash_sets(
+        self,
+        existing_joseki: List[dict]
+    ) -> Tuple[Set[str], Set[str]]:
+        """步骤4: 预计算已有定式的 hash sets
+        返回: (ruld_hashes, rudl_hashes)
+        """
+        ruld_hashes = set()
+        rudl_hashes = set()
+        
+        for joseki in existing_joseki:
+            moves = joseki.get("moves", [])
+            if moves:
+                ruld_hashes.add(",".join(moves))
+                rudl_moves = self._convert_to_rudl(moves)
+                rudl_hashes.add(",".join(rudl_moves))
+        
+        return ruld_hashes, rudl_hashes
+
+    def _convert_to_rudl(self, moves: List[str]) -> List[str]:
+        """辅助: 将 ruld 方向的 moves 转换为 rudl 方向"""
+        ruld = COORDINATE_SYSTEMS['ruld']
+        rudl = COORDINATE_SYSTEMS['rudl']
+        
+        rudl_moves = []
+        for m in moves:
+            if not m or m == 'pass':
+                rudl_moves.append(m)
+            else:
+                local = ruld._to_local_cache.get(m)
+                new_sgf = rudl._to_sgf_cache.get(local, m)
+                rudl_moves.append(new_sgf)
+        
+        return rudl_moves
+
+    def _batch_add_joseki(
+        self,
+        candidates: List[Tuple[str, int]],
+        total_sgf_count: int,
+        category: str,
+        name_prefix: str,
+        ruld_hashes: Set[str],
+        rudl_hashes: Set[str],
+        verbose: bool
+    ) -> Tuple[int, int, List[str]]:
+        """步骤5: 批量添加定式（性能优化版）
+        
+        优化点：
+        1. 使用 hash set 进行 O(1) 冲突检测
+        2. 批量收集新定式，只调用一次 _save()
+        
+        返回: (added, skipped, candidate_strings)
+        """
+        added = 0
+        skipped = 0
+        new_joseki_list = []
+        
+        if verbose:
+            print(f"💾 开始入库（分类: {category}）...")
+
+        for idx, (prefix, count) in enumerate(candidates):
+            coords = prefix.split()
+            move_count = len(coords)
+            probability = count / total_sgf_count if total_sgf_count > 0 else 0
+
+            # 使用 hash set 进行 O(1) 冲突检测
+            prefix_ruld = ",".join(coords)
+            prefix_rudl = ",".join(self._convert_to_rudl(coords))
+            
+            if prefix_ruld in ruld_hashes or prefix_rudl in rudl_hashes:
+                skipped += 1
+                if verbose:
+                    print(f"\r  [{idx+1}/{len(candidates)}] 跳过（冲突）| 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
+                continue
+
+            if category == "/katago":
+                # KataGo导入模式
+                joseki_data = {
+                    "id": f"joseki_{len(self.joseki_list) + len(new_joseki_list) + 1:03d}",
+                    "category_path": "/katago",
+                    "moves": coords,
+                    "frequency": count,
+                    "probability": round(probability, 4),
+                    "move_count": move_count,
+                    "created_at": self._now()
+                }
+                new_joseki_list.append(joseki_data)
+                # 更新 hash sets 防止本次批量添加中的重复
+                ruld_hashes.add(prefix_ruld)
+                rudl_hashes.add(prefix_rudl)
+                added += 1
+                if verbose:
+                    print(f"\r  [{idx+1}/{len(candidates)}] 已入库 | 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
+            else:
+                # 普通模式 - 使用 add 方法
+                sgf_moves = []
+                color = 'B'
+                for c in coords:
+                    sgf_moves.append(f"{color}[{c}]")
+                    color = 'W' if color == 'B' else 'B'
+                
+                # 检查冲突（使用 check_conflict）
+                conflict = self.check_conflict(sgf_moves)
+                if conflict.has_conflict:
+                    skipped += 1
+                    if verbose:
+                        print(f"\r  [{idx+1}/{len(candidates)}] 跳过（冲突）| 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
+                    continue
+                
+                name = f"{name_prefix}-{move_count}手"
+                joseki_id, _ = self.add(
+                    name=name,
+                    category_path=category,
+                    moves=sgf_moves,
+                    force=False
+                )
+                
+                if joseki_id:
+                    added += 1
+                    # 更新 hash sets
+                    ruld_hashes.add(prefix_ruld)
+                    rudl_hashes.add(prefix_rudl)
+                    if verbose:
+                        print(f"\r  [{idx+1}/{len(candidates)}] 已入库 | 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
+                else:
+                    skipped += 1
+                    if verbose:
+                        print(f"\r  [{idx+1}/{len(candidates)}] 跳过 | 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
+
+        # 批量保存（只调用一次）
+        if new_joseki_list:
+            self.joseki_list.extend(new_joseki_list)
+            self._save()
+
+        if verbose:
+            print(f"\n✅ 入库完成: 新增 {added} 个定式，跳过 {skipped} 个")
+
+        return added, skipped, [f"{prefix} ({count}次)" for prefix, count in candidates]
+
     def import_from_sgfs(self,
                         sgf_sources: List,
                         min_count: int = 10,
@@ -540,7 +799,7 @@ class JosekiDB:
                         name_prefix: str = "自动提取",
                         verbose: bool = True) -> Tuple[int, int, List[str]]:
         """
-        从SGF文件列表批量导入定式
+        从SGF文件列表批量导入定式 - 主控流程
 
         Args:
             sgf_sources: SGF文件路径列表，或包含多个SGF文件的tar.bz2文件，或包含SGF内容的字符串列表（自动识别）
@@ -557,152 +816,28 @@ class JosekiDB:
         返回:
             (added_count, skipped_count, candidates_list)
         """
-        count_map = {}  # {joseki_str: count}
-        total_sources = len(sgf_sources)
-        total_joseki_extracted = 0
-        unique_joseki_count = 0
-
-        if verbose:
-            print(f"📊 开始从 {total_sources} 个源提取定式...")
-
-        # 1. 提取所有定式
-        for i, source in enumerate(sgf_sources):
-            try:
-                sgf_data = []
-                if isinstance(source, Path):
-                    if source.suffix == '.sgf':
-                        sgf_data.append(source.read_text(encoding='utf-8', errors='ignore'))
-                    else:
-                        sgf_data = list(iter_sgf_from_tar(source))
-                else:
-                    sgf_data.append(source)
-                for sgf_item in sgf_data:
-                    # 使用 joseki_extractor 提取四角定式
-                    multigogm = extract_joseki_from_sgf(sgf_item, first_n=first_n)
-                    parsed = parse_multigogm(multigogm)
-
-                    for corner_key, (comment, moves) in parsed.items():
-                        coords = [coord for color, coord in moves if coord]
-                        if len(coords) >= 2:
-                            joseki_str = " ".join(coords)
-                            if joseki_str not in count_map:
-                                unique_joseki_count += 1
-                            count_map[joseki_str] = count_map.get(joseki_str, 0) + 1
-                            total_joseki_extracted += 1
-                if progress_callback:
-                    progress_callback(i + 1, total_sources, source, len(sgf_data))
-                if verbose and (i + 1) % 100 == 0 or i + 1 == total_sources:
-                    print(f"\r  提取进度: {i + 1}/{total_sources} | 累计定式: {total_joseki_extracted} | 唯一序列: {unique_joseki_count}", end='', flush=True)
-            except Exception:
-                continue
-
-        if verbose:
-            print(f"\n✅ 提取完成: 共 {total_joseki_extracted} 个定式，{unique_joseki_count} 个唯一序列")
-
-        # 2. 前缀累加
-        if verbose:
-            print(f"🔄 开始前缀累加计算...")
-        sorted_joseki = sorted(count_map.keys())
-        for i in range(len(sorted_joseki)):
-            current = sorted_joseki[i]
-            for j in range(i+1, len(sorted_joseki)):
-                later = sorted_joseki[j]
-                if later.startswith(current + " "):
-                    count_map[current] += count_map[later]
-                else:
-                    break
-            if verbose and (i + 1) % 1000 == 0 or i + 1 == len(sorted_joseki):
-                print(f"\r  前缀累加进度: {i + 1}/{len(sorted_joseki)}", end='', flush=True)
-
-        if verbose:
-            print(f"\n✅ 前缀累加完成")
-
-        # 3. 筛选候选
-        if verbose:
-            print(f"🔍 筛选候选定式（次数≥{min_count}，手数≥{min_moves}，概率≥{min_rate}%）...")
-        candidates = []
-        for prefix, count in count_map.items():
-            if len(prefix.split()) < min_moves:
-                continue
-            if count < min_count:
-                continue
-            if min_rate > 0 and (count/total_sources)*100 < min_rate:
-                continue
-            candidates.append((prefix, count))
-
-        # 按频率排序
-        candidates.sort(key=lambda x: -x[1])
-
-        if verbose:
-            print(f"✅ 筛选完成: {len(candidates)} 个候选定式")
-
+        # 步骤1: 提取
+        count_map, total_sources, total_sgf_files, total_extracted, unique_count = \
+            self._extract_joseki_from_sources(sgf_sources, first_n, verbose, progress_callback)
+        
+        # 步骤2: 前缀累加
+        count_map = self._accumulate_prefix_counts(count_map, verbose)
+        
+        # 步骤3: 筛选（使用实际的SGF文件数量）
+        candidates = self._filter_candidates(count_map, total_sgf_files, min_count, min_moves, min_rate, verbose)
+        
         if dry_run:
             return 0, 0, [f"{prefix} ({count}次)" for prefix, count in candidates]
-
-        # 4. 入库
-        added, skipped = 0, 0
-
-        if verbose:
-            print(f"💾 开始入库（分类: {category}）...")
-
-        for idx, (prefix, count) in enumerate(candidates):
-            coords = prefix.split()
-            move_count = len(coords)
-            probability = count / total_sources if total_sources > 0 else 0
-
-            # 构造SGF格式
-            sgf_moves = []
-            color = 'B'
-            for c in coords:
-                sgf_moves.append(f"{color}[{c}]")
-                color = 'W' if color == 'B' else 'B'
-
-            # 检查冲突
-            conflict = self.check_conflict(sgf_moves)
-            if conflict.has_conflict:
-                skipped += 1
-                if verbose:
-                    print(f"\r  [{idx+1}/{len(candidates)}] 跳过（冲突）| 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
-                continue
-
-            # 根据category决定定式数据结构
-            if category == "/katago":
-                # KataGo导入模式
-                name = ""
-                joseki_data = {
-                    "id": f"joseki_{len(self.joseki_list) + 1:03d}",
-                    "category_path": "/katago",
-                    "moves": coords,
-                    "frequency": count,
-                    "probability": round(probability, 4),
-                    "move_count": move_count,
-                    "created_at": self._now()
-                }
-                self.joseki_list.append(joseki_data)
-                self._save()
-                joseki_id = joseki_data["id"]
-            else:
-                # 普通模式
-                name = f"{name_prefix}-{move_count}手"
-                joseki_id, _ = self.add(
-                    name=name,
-                    category_path=category,
-                    moves=sgf_moves,
-                    force=False
-                )
-
-            if joseki_id:
-                added += 1
-                if verbose:
-                    print(f"\r  [{idx+1}/{len(candidates)}] 已入库 | 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
-            else:
-                skipped += 1
-                if verbose:
-                    print(f"\r  [{idx+1}/{len(candidates)}] 跳过 | 手数:{move_count} | 频率:{count} | 概率:{probability:.2%}", end='', flush=True)
-
-        if verbose:
-            print(f"\n✅ 入库完成: 新增 {added} 个定式，跳过 {skipped} 个")
-
+        
+        # 步骤4: 预计算 hash
+        ruld_hashes, rudl_hashes = self._build_conflict_hash_sets(self.joseki_list)
+        
+        # 步骤5: 批量入库（使用实际的SGF文件数量计算概率）
+        added, skipped, _ = self._batch_add_joseki(
+            candidates, total_sgf_files, category, name_prefix,
+            ruld_hashes, rudl_hashes, verbose
+        )
+        
         return added, skipped, [f"{prefix} ({count}次)" for prefix, count in candidates]
     
     def import_from_katago_cache(self,

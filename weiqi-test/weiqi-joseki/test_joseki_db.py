@@ -474,6 +474,197 @@ class TestJosekiDB(unittest.TestCase):
         sim = JosekiDB.lcs_similarity([], ["a", "b"])
         self.assertEqual(sim, 0.0)
 
+    # ========== list_all 返回新字段测试 ==========
+    
+    def test_list_all_returns_frequency_and_probability(self):
+        """验证 list_all 返回新字段 frequency 和 probability"""
+        # 添加一个普通定式（无frequency/probability）
+        self.db.add(name="普通定式", category_path="/测试", moves=["B[pd]", "W[qf]"])
+        
+        # 添加一个KataGo模式的定式（有frequency/probability）
+        joseki_data = {
+            "id": "joseki_002",
+            "category_path": "/katago",
+            "moves": ["dd", "cc"],
+            "frequency": 100,
+            "probability": 0.85,
+            "move_count": 2,
+            "created_at": "2024-01-01T00:00:00"
+        }
+        self.db.joseki_list.append(joseki_data)
+        self.db._save()
+        
+        # 获取列表
+        joseki_list = self.db.list_all()
+        
+        # 验证普通定式
+        normal_joseki = next((j for j in joseki_list if j['id'] == 'joseki_001'), None)
+        self.assertIsNotNone(normal_joseki)
+        self.assertIn('frequency', normal_joseki)
+        self.assertIn('probability', normal_joseki)
+        self.assertIsNone(normal_joseki['frequency'])
+        self.assertIsNone(normal_joseki['probability'])
+        
+        # 验证KataGo定式
+        katago_joseki = next((j for j in joseki_list if j['id'] == 'joseki_002'), None)
+        self.assertIsNotNone(katago_joseki)
+        self.assertEqual(katago_joseki['frequency'], 100)
+        self.assertEqual(katago_joseki['probability'], 0.85)
+    
+    # ========== import_from_sgfs 拆分函数测试 ==========
+    
+    def test_extract_joseki_from_sources(self):
+        """测试步骤1: _extract_joseki_from_sources"""
+        sgf_list = [
+            "(;GM[1];B[pd];W[qf];B[nc])",
+            "(;GM[1];B[pd];W[qf];B[nc])",  # 重复
+            "(;GM[1];B[dd];W[cc])",
+        ]
+        
+        count_map, total_sources, total_sgf_files, total_extracted, unique_count = \
+            self.db._extract_joseki_from_sources(sgf_list, first_n=80, verbose=False)
+        
+        self.assertEqual(total_sources, 3)
+        self.assertEqual(total_sgf_files, 3)  # 3个SGF字符串，每个作为一个SGF文件
+        self.assertGreater(total_extracted, 0)
+        self.assertGreater(unique_count, 0)
+        # 验证count_map结构
+        self.assertIsInstance(count_map, dict)
+        self.assertGreater(len(count_map), 0)
+    
+    def test_accumulate_prefix_counts(self):
+        """测试步骤2: _accumulate_prefix_counts"""
+        # 构造测试数据
+        count_map = {
+            "pd qf": 2,
+            "pd qf nc": 1,
+            "dd cc": 1
+        }
+        
+        result = self.db._accumulate_prefix_counts(count_map, verbose=False)
+        
+        # 前缀累加后，"pd qf"应该包含"pd qf nc"的计数
+        self.assertEqual(result["pd qf"], 3)  # 2 + 1
+        self.assertEqual(result["pd qf nc"], 1)  # 不变
+        self.assertEqual(result["dd cc"], 1)  # 不变
+    
+    def test_filter_candidates(self):
+        """测试步骤3: _filter_candidates"""
+        count_map = {
+            "pd qf": 10,
+            "pd qf nc": 5,
+            "dd": 1,  # 手数不够，应该被过滤
+            "cc dd ee": 3
+        }
+        total_sgf_count = 100  # 实际的SGF文件数量
+        
+        candidates = self.db._filter_candidates(
+            count_map, total_sgf_count, 
+            min_count=2, min_moves=2, min_rate=0.0, verbose=False
+        )
+        
+        # 验证返回格式
+        self.assertIsInstance(candidates, list)
+        self.assertIsInstance(candidates[0], tuple)
+        self.assertEqual(len(candidates[0]), 2)  # (prefix, count)
+        
+        # 验证按频率降序排序
+        counts = [c[1] for c in candidates]
+        self.assertEqual(counts, sorted(counts, reverse=True))
+        
+        # 验证过滤效果："dd"只有1手，应该被过滤
+        prefixes = [c[0] for c in candidates]
+        self.assertNotIn("dd", prefixes)
+    
+    def test_build_conflict_hash_sets(self):
+        """测试步骤4: _build_conflict_hash_sets"""
+        # 添加测试定式
+        self.db.add(name="测试1", moves=["B[pd]", "W[qf]"])
+        self.db.add(name="测试2", moves=["B[dd]", "W[cc]"])
+        
+        ruld_hashes, rudl_hashes = self.db._build_conflict_hash_sets(self.db.joseki_list)
+        
+        # 验证返回类型
+        self.assertIsInstance(ruld_hashes, set)
+        self.assertIsInstance(rudl_hashes, set)
+        
+        # 验证包含预期的hash
+        self.assertEqual(len(ruld_hashes), 2)  # 两个定式
+        self.assertEqual(len(rudl_hashes), 2)  # 两个定式的rudl转换
+    
+    def test_convert_to_rudl(self):
+        """测试辅助函数 _convert_to_rudl"""
+        # ruld 方向的坐标
+        ruld_moves = ["pd", "qf", "nc"]
+        
+        rudl_moves = self.db._convert_to_rudl(ruld_moves)
+        
+        # 验证转换后的坐标不同
+        self.assertEqual(len(rudl_moves), len(ruld_moves))
+        self.assertNotEqual(rudl_moves, ruld_moves)
+        
+        # 验证空值/pass处理
+        moves_with_pass = ["pd", "", "qf"]
+        result = self.db._convert_to_rudl(moves_with_pass)
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result[1], "")  # pass保持为空
+    
+    def test_batch_add_joseki_performance(self):
+        """测试批量入库性能和正确性"""
+        candidates = [
+            ("pd qf", 10),
+            ("dd cc", 8),
+            ("qq rr", 5)
+        ]
+        total_sgf_count = 100  # 实际的SGF文件数量
+        
+        ruld_hashes, rudl_hashes = self.db._build_conflict_hash_sets([])
+        
+        added, skipped, _ = self.db._batch_add_joseki(
+            candidates, total_sgf_count, "/katago", "测试",
+            ruld_hashes, rudl_hashes, verbose=False
+        )
+        
+        # 验证所有候选都被添加
+        self.assertEqual(added, 3)
+        self.assertEqual(skipped, 0)
+        
+        # 验证只调用了一次_save（通过检查数据是否正确保存）
+        self.assertEqual(len(self.db.joseki_list), 3)
+        
+        # 验证数据结构
+        for j in self.db.joseki_list:
+            self.assertIn('frequency', j)
+            self.assertIn('probability', j)
+            self.assertIsInstance(j['frequency'], int)
+            self.assertIsInstance(j['probability'], float)
+    
+    def test_batch_add_joseki_conflict_detection(self):
+        """验证 hash 冲突检测正确性"""
+        # 先添加一个定式
+        self.db.add(name="已有定式", moves=["B[pd]", "W[qf]"])
+        
+        # 准备候选，包含相同定式
+        candidates = [
+            ("pd qf", 10),  # 应该冲突
+            ("dd cc", 8),   # 应该不冲突
+        ]
+        total_sgf_count = 100  # 实际的SGF文件数量
+        
+        # 重新加载以清空缓存
+        self.db.joseki_list = self.db._load().get("joseki_list", [])
+        
+        ruld_hashes, rudl_hashes = self.db._build_conflict_hash_sets(self.db.joseki_list)
+        
+        added, skipped, _ = self.db._batch_add_joseki(
+            candidates, total_sgf_count, "/katago", "测试",
+            ruld_hashes, rudl_hashes, verbose=False
+        )
+        
+        # 验证冲突检测
+        self.assertEqual(added, 1)   # 只有 dd cc 被添加
+        self.assertEqual(skipped, 1) # pd qf 因为冲突被跳过
+
 
 class TestConflictCheck(unittest.TestCase):
     """测试冲突检测"""
