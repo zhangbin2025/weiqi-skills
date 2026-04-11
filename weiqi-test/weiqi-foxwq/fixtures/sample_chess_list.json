@@ -1,0 +1,65 @@
+{
+  "result": 0,
+  "chesslist": [
+    {
+      "chessid": "20240115123456",
+      "blacknick": "柯洁",
+      "whitenick": "申真谞",
+      "blackdan": 109,
+      "whitedan": 109,
+      "starttime": "2024-01-15 14:30:00",
+      "movenum": 256,
+      "winner": 1,
+      "point": 3,
+      "reason": 1
+    },
+    {
+      "chessid": "20240114111222",
+      "blacknick": "李轩豪",
+      "whitenick": "辜梓豪",
+      "blackdan": 109,
+      "whitedan": 109,
+      "starttime": "2024-01-14 16:00:00",
+      "movenum": 180,
+      "winner": 2,
+      "point": 0,
+      "reason": 4
+    },
+    {
+      "chessid": "20240113105678",
+      "blacknick": "朴廷桓",
+      "whitenick": "卞相壹",
+      "blackdan": 109,
+      "whitedan": 109,
+      "starttime": "2024-01-13 10:30:00",
+      "movenum": 220,
+      "winner": 1,
+      "point": 0,
+      "reason": 3
+    },
+    {
+      "chessid": "20240112094532",
+      "blacknick": "王星昊",
+      "whitenick": "杨鼎新",
+      "blackdan": 105,
+      "whitedan": 109,
+      "starttime": "2024-01-12 09:45:00",
+      "movenum": 195,
+      "winner": 2,
+      "point": 0,
+      "reason": 2
+    },
+    {
+      "chessid": "20240111083210",
+      "blacknick": "业余棋手1",
+      "whitenick": "业余棋手2",
+      "blackdan": 25,
+      "whitedan": 24,
+      "starttime": "2024-01-11 08:32:00",
+      "movenum": 150,
+      "winner": 0,
+      "point": 0,
+      "reason": 1
+    }
+  ]
+}

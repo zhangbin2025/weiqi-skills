@@ -65,3 +65,6 @@ sgf:
 
 db:
 	$(PYTEST) $(TEST_DIR)/weiqi-db/ -v
+
+foxwq:
+	$(PYTEST) $(TEST_DIR)/weiqi-foxwq/ -v
