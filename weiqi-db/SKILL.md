@@ -83,6 +83,19 @@ python3 db.py query --where '{"player": "示例棋手", "tags": "名局"}'
 
 # AND/OR 组合
 python3 db.py query --where '{"$and": [{"player": "示例棋手"}, {"date": "2026-03-23"}]}'
+
+# 使用简化参数（无需 JSON）
+python3 db.py query --player "柯洁"
+python3 db.py query --date "2024-01-15"
+python3 db.py query --event "LG杯"
+python3 db.py query --event-like "杯赛"
+
+# 组合简化参数
+python3 db.py query --player "柯洁" --date "2024-01-15"
+
+# 从文件读取查询条件（解决 exec 安全限制）
+echo '{"player": "柯洁"}' > /tmp/where.json
+python3 db.py query --where-file /tmp/where.json
 ```
 
 ### 列出所有棋谱
@@ -104,16 +117,28 @@ python3 db.py get --id "2026032383118500"
 
 ```bash
 python3 db.py update --id "2026032383118500" --set '{"black": "修正名", "event": "测试赛事"}'
+
+# 从文件读取更新内容（解决 exec 安全限制）
+echo '{"black": "修正名", "event": "测试赛事"}' > /tmp/set.json
+python3 db.py update --id "2026032383118500" --set-file /tmp/set.json
 ```
 
 ### 标签管理
 
 ```bash
-# 添加标签
+# 添加单个标签
 python3 db.py tag --id "xxx" --add "名局"
 
-# 移除标签
+# 移除单个标签
 python3 db.py tag --id "xxx" --remove "测试"
+
+# 从文件批量添加标签（JSON 数组）
+echo '["名局", "经典", "AI讲解"]' > /tmp/tags.json
+python3 db.py tag --id "xxx" --add-file /tmp/tags.json
+
+# 从文件批量移除标签（JSON 数组）
+echo '["临时标签", "测试"]' > /tmp/remove_tags.json
+python3 db.py tag --id "xxx" --remove-file /tmp/remove_tags.json
 ```
 
 ### 删除棋谱
@@ -143,6 +168,58 @@ python3 db.py stats
 | `{"keyword": "中盘"}` | 全字段模糊搜索 | 任意字段含"中盘" |
 | `{"$and": [{}, {}]}` | AND 组合 | 同时满足多个条件 |
 | `{"$or": [{}, {}]}` | OR 组合 | 满足任一条件 |
+
+## Exec 安全限制与 Workaround
+
+在某些环境中（如受限的 exec 调用），直接传递 JSON 参数可能会遇到转义或安全限制问题。
+
+### 问题示例
+```bash
+# 复杂的 JSON 参数在 exec 中可能无法正常传递
+python3 db.py query --where '{"$and": [{"player": "柯洁"}, {"date>=": "2024-01-01"}]}'
+python3 db.py update --id "xxx" --set '{"black": "新名字", "event": "新赛事", "tags": ["标签1", "标签2"]}'
+```
+
+### 解决方案：使用文件传递参数
+
+**1. 将 JSON 内容写入临时文件**
+```bash
+# 查询条件
+cat > /tmp/where.json << 'EOF'
+{"$and": [{"player": "柯洁"}, {"date>=": "2024-01-01"}]}
+EOF
+
+# 更新内容
+cat > /tmp/set.json << 'EOF'
+{"black": "新名字", "event": "新赛事"}
+EOF
+```
+
+**2. 使用 --*-file 参数**
+```bash
+# 查询
+python3 db.py query --where-file /tmp/where.json
+
+# 更新
+python3 db.py update --id "xxx" --set-file /tmp/set.json
+
+# 批量添加标签
+echo '["名局", "经典", "AI讲解"]' > /tmp/tags.json
+python3 db.py tag --id "xxx" --add-file /tmp/tags.json
+```
+
+**3. 使用简化参数（无需 JSON）**
+```bash
+# 对于简单查询，可以直接使用简化参数
+python3 db.py query --player "柯洁" --date "2024-01-15"
+python3 db.py query --event-like "LG杯"
+```
+
+### 参数互斥规则
+- `--where` 和 `--where-file` 不能同时使用
+- `--set` 和 `--set-file` 不能同时使用
+- `--add` 和 `--add-file` 不能同时使用
+- `--remove` 和 `--remove-file` 不能同时使用
 
 ## 数据格式
 
@@ -211,6 +288,14 @@ python3 db.py tag --id "xxx" --add "名局"
 - [weiqi-yunbisai](../weiqi-yunbisai) - 云比赛网查询（比赛信息查询，不提供棋谱下载）
 
 ## 版本更新
+
+### v1.0.4 (2026-04-11)
+- ✅ 解决 exec 安全限制导致的 JSON 参数传递问题
+  - `query` 命令新增 `--where-file` 参数，支持从文件读取 JSON 查询条件
+  - `update` 命令新增 `--set-file` 参数，支持从文件读取 JSON 更新内容
+  - `tag` 命令新增 `--add-file` 和 `--remove-file` 参数，支持批量标签操作
+  - 新增简化查询参数：`--date`, `--player`, `--event`, `--event-like`
+  - 新参数与原有参数互斥，保持向后兼容
 
 ### v1.0.3 (2026-04-11)
 - ✅ 实现 SGF 自动压缩功能

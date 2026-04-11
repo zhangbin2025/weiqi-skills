@@ -420,11 +420,38 @@ def cmd_query(args):
     
     # 解析 where 条件
     where = {}
-    if args.where:
+    
+    # 检查 --where 和 --where-file 是否同时使用
+    if args.where and args.where_file:
+        return {"success": False, "error": "不能同时使用 --where 和 --where-file"}
+    
+    if args.where_file:
+        # 从文件读取 where 条件
+        try:
+            where_file_path = Path(args.where_file)
+            if not where_file_path.exists():
+                return {"success": False, "error": f"where 文件不存在: {args.where_file}"}
+            where_content = where_file_path.read_text(encoding='utf-8')
+            where = json.loads(where_content)
+        except json.JSONDecodeError as e:
+            return {"success": False, "error": f"where 文件 JSON 解析错误: {e}"}
+        except Exception as e:
+            return {"success": False, "error": f"读取 where 文件失败: {e}"}
+    elif args.where:
         try:
             where = json.loads(args.where)
         except json.JSONDecodeError as e:
             return {"success": False, "error": f"JSON解析错误: {e}"}
+    
+    # 处理简化查询参数
+    if args.date:
+        where['date'] = args.date
+    if args.player:
+        where['player'] = args.player
+    if args.event:
+        where['event'] = args.event
+    if args.event_like:
+        where['event~'] = args.event_like
     
     # 过滤
     games = [g for g in table.all() if evaluate_where(g, where)]
@@ -493,10 +520,30 @@ def cmd_update(args):
     if not args.id:
         return {"success": False, "error": "需要指定 --id"}
     
-    try:
-        updates = json.loads(args.set) if args.set else {}
-    except json.JSONDecodeError as e:
-        return {"success": False, "error": f"JSON解析错误: {e}"}
+    # 检查 --set 和 --set-file 是否同时使用
+    if args.set and args.set_file:
+        return {"success": False, "error": "不能同时使用 --set 和 --set-file"}
+    
+    updates = {}
+    if args.set_file:
+        # 从文件读取 set 内容
+        try:
+            set_file_path = Path(args.set_file)
+            if not set_file_path.exists():
+                return {"success": False, "error": f"set 文件不存在: {args.set_file}"}
+            set_content = set_file_path.read_text(encoding='utf-8')
+            updates = json.loads(set_content)
+        except json.JSONDecodeError as e:
+            return {"success": False, "error": f"set 文件 JSON 解析错误: {e}"}
+        except Exception as e:
+            return {"success": False, "error": f"读取 set 文件失败: {e}"}
+    elif args.set:
+        try:
+            updates = json.loads(args.set)
+        except json.JSONDecodeError as e:
+            return {"success": False, "error": f"JSON解析错误: {e}"}
+    else:
+        return {"success": False, "error": "需要指定 --set 或 --set-file"}
     
     Game = Query()
     games = table.search(Game.id == args.id)
@@ -522,14 +569,72 @@ def cmd_tag(args):
     if not args.id:
         return {"success": False, "error": "需要指定 --id"}
     
+    # 检查 --add 和 --add-file 是否同时使用
+    if args.add and args.add_file:
+        return {"success": False, "error": "不能同时使用 --add 和 --add-file"}
+    
+    # 检查 --remove 和 --remove-file 是否同时使用
+    if args.remove and args.remove_file:
+        return {"success": False, "error": "不能同时使用 --remove 和 --remove-file"}
+    
     Game = Query()
     games = table.search(Game.id == args.id)
     
     if not games:
         return {"success": False, "error": f"未找到ID: {args.id}"}
     
-    if args.add:
-        # 添加标签（避免重复）
+    # 处理 --add-file
+    if args.add_file:
+        try:
+            add_file_path = Path(args.add_file)
+            if not add_file_path.exists():
+                return {"success": False, "error": f"add 文件不存在: {args.add_file}"}
+            add_content = add_file_path.read_text(encoding='utf-8')
+            tags_to_add = json.loads(add_content)
+            if not isinstance(tags_to_add, list):
+                return {"success": False, "error": "add 文件内容必须是 JSON 数组"}
+        except json.JSONDecodeError as e:
+            return {"success": False, "error": f"add 文件 JSON 解析错误: {e}"}
+        except Exception as e:
+            return {"success": False, "error": f"读取 add 文件失败: {e}"}
+        
+        def add_tags(doc):
+            tags = doc.get('tags', [])
+            for tag in tags_to_add:
+                if tag not in tags:
+                    tags.append(tag)
+            return {'tags': tags}
+        
+        table.update(add_tags, Game.id == args.id)
+        return {"success": True, "id": args.id, "action": "add_tags", "tags": tags_to_add}
+    
+    # 处理 --remove-file
+    elif args.remove_file:
+        try:
+            remove_file_path = Path(args.remove_file)
+            if not remove_file_path.exists():
+                return {"success": False, "error": f"remove 文件不存在: {args.remove_file}"}
+            remove_content = remove_file_path.read_text(encoding='utf-8')
+            tags_to_remove = json.loads(remove_content)
+            if not isinstance(tags_to_remove, list):
+                return {"success": False, "error": "remove 文件内容必须是 JSON 数组"}
+        except json.JSONDecodeError as e:
+            return {"success": False, "error": f"remove 文件 JSON 解析错误: {e}"}
+        except Exception as e:
+            return {"success": False, "error": f"读取 remove 文件失败: {e}"}
+        
+        def remove_tags(doc):
+            tags = doc.get('tags', [])
+            for tag in tags_to_remove:
+                if tag in tags:
+                    tags.remove(tag)
+            return {'tags': tags}
+        
+        table.update(remove_tags, Game.id == args.id)
+        return {"success": True, "id": args.id, "action": "remove_tags", "tags": tags_to_remove}
+    
+    elif args.add:
+        # 添加单个标签（避免重复）
         def add_tag(doc):
             tags = doc.get('tags', [])
             if args.add not in tags:
@@ -540,7 +645,7 @@ def cmd_tag(args):
         return {"success": True, "id": args.id, "action": "add_tag", "tag": args.add}
     
     elif args.remove:
-        # 移除标签
+        # 移除单个标签
         def remove_tag(doc):
             tags = doc.get('tags', [])
             if args.remove in tags:
@@ -723,6 +828,11 @@ def main():
     # query
     query_parser = subparsers.add_parser('query', help='查询棋谱')
     query_parser.add_argument('--where', help='查询条件（JSON）')
+    query_parser.add_argument('--where-file', help='从文件读取查询条件（JSON）')
+    query_parser.add_argument('--date', help='按日期查询（简化参数）')
+    query_parser.add_argument('--player', help='按棋手查询（简化参数，匹配黑棋或白棋）')
+    query_parser.add_argument('--event', help='按赛事查询（简化参数，精确匹配）')
+    query_parser.add_argument('--event-like', help='按赛事模糊查询（简化参数）')
     query_parser.add_argument('--sort', help='排序字段（前缀-表示倒序）')
     query_parser.add_argument('--limit', type=int, help='限制数量')
     
@@ -733,13 +843,16 @@ def main():
     # update
     update_parser = subparsers.add_parser('update', help='更新元数据')
     update_parser.add_argument('--id', required=True, help='棋谱ID')
-    update_parser.add_argument('--set', required=True, help='更新内容（JSON）')
+    update_parser.add_argument('--set', help='更新内容（JSON）')
+    update_parser.add_argument('--set-file', help='从文件读取更新内容（JSON）')
     
     # tag
     tag_parser = subparsers.add_parser('tag', help='标签管理')
     tag_parser.add_argument('--id', required=True, help='棋谱ID')
-    tag_parser.add_argument('--add', help='添加标签')
-    tag_parser.add_argument('--remove', help='移除标签')
+    tag_parser.add_argument('--add', help='添加单个标签')
+    tag_parser.add_argument('--add-file', help='从文件读取标签列表（JSON数组）')
+    tag_parser.add_argument('--remove', help='移除单个标签')
+    tag_parser.add_argument('--remove-file', help='从文件读取要移除的标签列表（JSON数组）')
     
     # delete
     delete_parser = subparsers.add_parser('delete', help='删除棋谱')

@@ -255,6 +255,11 @@ class TestQueryBasic:
         # 按黑棋名查询
         query_args = type('Args', (), {
             'where': '{"black": "柯洁"}',
+            'where_file': None,
+            'date': None,
+            'player': None,
+            'event': None,
+            'event_like': None,
             'sort': None, 'limit': None
         })()
         result = db.cmd_query(query_args)
@@ -834,3 +839,484 @@ class TestGetExport:
         assert result['success'] is False
         assert 'error' in result
         assert '文件写入失败' in result['error']
+
+
+class TestQueryFileParameters:
+    """测试 query 命令的 --where-file 和简化参数"""
+    
+    def test_query_with_where_file(self, temp_db, sample1_path):
+        """测试使用 --where-file 从文件读取查询条件"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': None, 'dir': str(FIXTURES_DIR),
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        db.cmd_add(args)
+        
+        # 创建 where 条件文件
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump({'black': '柯洁'}, f)
+            where_file = f.name
+        
+        try:
+            # 使用 --where-file 查询
+            query_args = type('Args', (), {
+                'where': None,
+                'where_file': where_file,
+                'date': None,
+                'player': None,
+                'event': None,
+                'event_like': None,
+                'sort': None, 'limit': None
+            })()
+            result = db.cmd_query(query_args)
+            
+            assert result['success'] is True
+            assert result['count'] >= 1
+            for game in result['games']:
+                assert game['black'] == '柯洁'
+        finally:
+            os.unlink(where_file)
+    
+    def test_query_where_and_where_file_conflict(self, temp_db):
+        """测试同时使用 --where 和 --where-file 报错"""
+        query_args = type('Args', (), {
+            'where': '{"black": "柯洁"}',
+            'where_file': '/tmp/test.json',
+            'date': None,
+            'player': None,
+            'event': None,
+            'event_like': None,
+            'sort': None, 'limit': None
+        })()
+        result = db.cmd_query(query_args)
+        
+        assert result['success'] is False
+        assert '不能同时使用' in result['error']
+    
+    def test_query_where_file_not_exists(self, temp_db):
+        """测试 --where-file 文件不存在时报错"""
+        query_args = type('Args', (), {
+            'where': None,
+            'where_file': '/nonexistent/file.json',
+            'date': None,
+            'player': None,
+            'event': None,
+            'event_like': None,
+            'sort': None, 'limit': None
+        })()
+        result = db.cmd_query(query_args)
+        
+        assert result['success'] is False
+        assert '不存在' in result['error']
+    
+    def test_query_simplified_date(self, temp_db, sample1_path):
+        """测试使用 --date 简化参数"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        db.cmd_add(args)
+        
+        # 使用 --date 简化参数查询
+        query_args = type('Args', (), {
+            'where': None,
+            'where_file': None,
+            'date': '2024-01-15',
+            'player': None,
+            'event': None,
+            'event_like': None,
+            'sort': None, 'limit': None
+        })()
+        result = db.cmd_query(query_args)
+        
+        assert result['success'] is True
+        assert result['count'] == 1
+        assert result['games'][0]['date'] == '2024-01-15'
+    
+    def test_query_simplified_player(self, temp_db, sample1_path):
+        """测试使用 --player 简化参数"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        db.cmd_add(args)
+        
+        # 使用 --player 简化参数查询
+        query_args = type('Args', (), {
+            'where': None,
+            'where_file': None,
+            'date': None,
+            'player': '柯洁',
+            'event': None,
+            'event_like': None,
+            'sort': None, 'limit': None
+        })()
+        result = db.cmd_query(query_args)
+        
+        assert result['success'] is True
+        assert result['count'] == 1
+        assert result['games'][0]['black'] == '柯洁'
+    
+    def test_query_simplified_event(self, temp_db, sample1_path):
+        """测试使用 --event 简化参数"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        db.cmd_add(args)
+        
+        # 使用 --event 简化参数查询
+        query_args = type('Args', (), {
+            'where': None,
+            'where_file': None,
+            'date': None,
+            'player': None,
+            'event': '第28届LG杯世界棋王赛决赛',
+            'event_like': None,
+            'sort': None, 'limit': None
+        })()
+        result = db.cmd_query(query_args)
+        
+        assert result['success'] is True
+        assert result['count'] == 1
+    
+    def test_query_simplified_event_like(self, temp_db, sample1_path):
+        """测试使用 --event-like 简化参数"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        db.cmd_add(args)
+        
+        # 使用 --event-like 简化参数查询
+        query_args = type('Args', (), {
+            'where': None,
+            'where_file': None,
+            'date': None,
+            'player': None,
+            'event': None,
+            'event_like': 'LG杯',
+            'sort': None, 'limit': None
+        })()
+        result = db.cmd_query(query_args)
+        
+        assert result['success'] is True
+        assert result['count'] == 1
+    
+    def test_query_combined_simplified_params(self, temp_db, sample1_path):
+        """测试组合使用简化参数"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        db.cmd_add(args)
+        
+        # 使用多个简化参数组合查询
+        query_args = type('Args', (), {
+            'where': None,
+            'where_file': None,
+            'date': '2024-01-15',
+            'player': '柯洁',
+            'event': None,
+            'event_like': None,
+            'sort': None, 'limit': None
+        })()
+        result = db.cmd_query(query_args)
+        
+        assert result['success'] is True
+        assert result['count'] == 1
+        assert result['games'][0]['date'] == '2024-01-15'
+        assert result['games'][0]['black'] == '柯洁'
+
+
+class TestUpdateFileParameters:
+    """测试 update 命令的 --set-file 参数"""
+    
+    def test_update_with_set_file(self, temp_db, sample1_path):
+        """测试使用 --set-file 从文件读取更新内容"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        # 创建 set 内容文件
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump({'black': '文件更新名', 'event': '文件更新赛事'}, f)
+            set_file = f.name
+        
+        try:
+            # 使用 --set-file 更新
+            update_args = type('Args', (), {
+                'id': game_id,
+                'set': None,
+                'set_file': set_file
+            })()
+            result = db.cmd_update(update_args)
+            
+            assert result['success'] is True
+            assert result['id'] == game_id
+            
+            # 验证更新
+            database = db.ensure_db()
+            table = database.table('games')
+            game = table.get(db.Query().id == game_id)
+            assert game['black'] == '文件更新名'
+            assert game['event'] == '文件更新赛事'
+        finally:
+            os.unlink(set_file)
+    
+    def test_update_set_and_set_file_conflict(self, temp_db, sample1_path):
+        """测试同时使用 --set 和 --set-file 报错"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        update_args = type('Args', (), {
+            'id': game_id,
+            'set': '{"black": "test"}',
+            'set_file': '/tmp/test.json'
+        })()
+        result = db.cmd_update(update_args)
+        
+        assert result['success'] is False
+        assert '不能同时使用' in result['error']
+    
+    def test_update_set_file_not_exists(self, temp_db, sample1_path):
+        """测试 --set-file 文件不存在时报错"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        update_args = type('Args', (), {
+            'id': game_id,
+            'set': None,
+            'set_file': '/nonexistent/file.json'
+        })()
+        result = db.cmd_update(update_args)
+        
+        assert result['success'] is False
+        assert '不存在' in result['error']
+    
+    def test_update_missing_set_and_set_file(self, temp_db, sample1_path):
+        """测试既不指定 --set 也不指定 --set-file 时报错"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        update_args = type('Args', (), {
+            'id': game_id,
+            'set': None,
+            'set_file': None
+        })()
+        result = db.cmd_update(update_args)
+        
+        assert result['success'] is False
+        assert '需要指定' in result['error']
+
+
+class TestTagFileParameters:
+    """测试 tag 命令的 --add-file 和 --remove-file 参数"""
+    
+    def test_tag_add_file(self, temp_db, sample1_path):
+        """测试使用 --add-file 批量添加标签"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        # 创建标签文件
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(['标签A', '标签B', '标签C'], f)
+            add_file = f.name
+        
+        try:
+            # 使用 --add-file 批量添加标签
+            tag_args = type('Args', (), {
+                'id': game_id,
+                'add': None,
+                'add_file': add_file,
+                'remove': None,
+                'remove_file': None
+            })()
+            result = db.cmd_tag(tag_args)
+            
+            assert result['success'] is True
+            assert result['action'] == 'add_tags'
+            
+            # 验证标签已添加
+            database = db.ensure_db()
+            table = database.table('games')
+            game = table.get(db.Query().id == game_id)
+            assert '标签A' in game['tags']
+            assert '标签B' in game['tags']
+            assert '标签C' in game['tags']
+        finally:
+            os.unlink(add_file)
+    
+    def test_tag_remove_file(self, temp_db, sample1_path):
+        """测试使用 --remove-file 批量移除标签"""
+        # 先添加带标签的棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': ['标签1', '标签2', '标签3', '标签4'], 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        # 创建移除标签文件
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(['标签1', '标签3'], f)
+            remove_file = f.name
+        
+        try:
+            # 使用 --remove-file 批量移除标签
+            tag_args = type('Args', (), {
+                'id': game_id,
+                'add': None,
+                'add_file': None,
+                'remove': None,
+                'remove_file': remove_file
+            })()
+            result = db.cmd_tag(tag_args)
+            
+            assert result['success'] is True
+            assert result['action'] == 'remove_tags'
+            
+            # 验证标签已移除
+            database = db.ensure_db()
+            table = database.table('games')
+            game = table.get(db.Query().id == game_id)
+            assert '标签1' not in game['tags']
+            assert '标签2' in game['tags']
+            assert '标签3' not in game['tags']
+            assert '标签4' in game['tags']
+        finally:
+            os.unlink(remove_file)
+    
+    def test_tag_add_and_add_file_conflict(self, temp_db, sample1_path):
+        """测试同时使用 --add 和 --add-file 报错"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        tag_args = type('Args', (), {
+            'id': game_id,
+            'add': '单个标签',
+            'add_file': '/tmp/test.json',
+            'remove': None,
+            'remove_file': None
+        })()
+        result = db.cmd_tag(tag_args)
+        
+        assert result['success'] is False
+        assert '不能同时使用' in result['error']
+    
+    def test_tag_remove_and_remove_file_conflict(self, temp_db, sample1_path):
+        """测试同时使用 --remove 和 --remove-file 报错"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        tag_args = type('Args', (), {
+            'id': game_id,
+            'add': None,
+            'add_file': None,
+            'remove': '单个标签',
+            'remove_file': '/tmp/test.json'
+        })()
+        result = db.cmd_tag(tag_args)
+        
+        assert result['success'] is False
+        assert '不能同时使用' in result['error']
+    
+    def test_tag_add_file_not_array(self, temp_db, sample1_path):
+        """测试 --add-file 内容不是数组时报错"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        # 创建非数组内容的文件
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump('不是数组', f)
+            add_file = f.name
+        
+        try:
+            tag_args = type('Args', (), {
+                'id': game_id,
+                'add': None,
+                'add_file': add_file,
+                'remove': None,
+                'remove_file': None
+            })()
+            result = db.cmd_tag(tag_args)
+            
+            assert result['success'] is False
+            assert '必须是 JSON 数组' in result['error']
+        finally:
+            os.unlink(add_file)
