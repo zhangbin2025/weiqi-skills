@@ -202,6 +202,56 @@ def mock_websocket_binary_data():
 
 
 @pytest.fixture
+def mock_jueyi_live_binary_data():
+    """模拟绝艺解说直播二进制数据"""
+    # 绝艺直播数据特征：
+    # 1. 包含 "jueyi" 字符串
+    # 2. 包含主分支标记 10 cb 01
+    # 3. 着法格式：08 xx 10 yy 18 color
+    data = bytearray()
+    # 添加一些随机头部数据
+    data.extend(b'\x00\x01\x02\x03')
+    # 添加 jueyi 标识
+    data.extend(b'jueyi')
+    # 添加主分支标记和第一手 (B[pd] = 08 0f 10 03 18 01)
+    data.extend([0x10, 0xcb, 0x01])  # 主分支标记
+    data.extend([0x1a, 0x12])  # 头部
+    data.extend([0x08, 0x0f, 0x10, 0x03, 0x18, 0x01])  # B[pd]
+    data.extend('jueyi[62.0%]'.encode('utf-8'))  # 绝艺评论
+    # 第二手 (W[dc] = 08 03 10 02 18 02)
+    data.extend([0x10, 0xcb, 0x01])
+    data.extend([0x1a, 0x12])
+    data.extend([0x08, 0x03, 0x10, 0x02, 0x18, 0x02])  # W[dc]
+    data.extend('jueyi[61.0%]'.encode('utf-8'))
+    # 第三手 (B[dp] = 08 03 10 0f 18 01)
+    data.extend([0x10, 0xcb, 0x01])
+    data.extend([0x1a, 0x12])
+    data.extend([0x08, 0x03, 0x10, 0x0f, 0x18, 0x01])  # B[dp]
+    return bytes(data)
+
+
+@pytest.fixture
+def mock_jueyi_live_with_comments():
+    """模拟包含完整绝艺评论的直播数据"""
+    data = bytearray()
+    data.extend(b'jueyi')
+    # 多手棋谱数据
+    moves = [
+        (0x0f, 0x03, 0x01, 'jueyi[62.0% - 3.75]'),  # B[pd]
+        (0x03, 0x02, 0x02, 'jueyi[61.0% - 3.75]'),  # W[dc]
+        (0x03, 0x0f, 0x01, 'jueyi[39.5% - 3.75]'),  # B[dp]
+        (0x0f, 0x10, 0x02, 'jueyi[61.0% | +1.5]'),  # W[pq]
+        (0x02, 0x04, 0x01, 'jueyi[39.0% | -1.5]'),  # B[ce]
+    ]
+    for x, y, color, comment in moves:
+        data.extend([0x10, 0xcb, 0x01])
+        data.extend([0x1a, 0x12])
+        data.extend([0x08, x, 0x10, y, 0x18, color])
+        data.extend(comment.encode('utf-8'))
+    return bytes(data)
+
+
+@pytest.fixture
 def mock_websocket_handicap_data():
     """模拟包含让子信息的 WebSocket 二进制数据"""
     # GameRule 模式: 08 13 10 01 18 xx

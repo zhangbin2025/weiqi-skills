@@ -19,8 +19,10 @@ from download_share import (
     extract_via_websocket,
     extract_game_info,
     extract_moves_from_binary,
+    extract_jueyi_live_from_binary,
     extract_handicap_from_binary,
     extract_player_names,
+    is_jueyi_live_data,
     create_sgf,
     parse_sgf_info,
     extract_from_share_link,
@@ -194,7 +196,7 @@ class TestWebSocketExtraction:
         with patch.dict('sys.modules', {'playwright.async_api': None}):
             result = await extract_via_websocket("https://test.com", timeout=1)
             
-            assert result == (None, None, 0)
+            assert result == (None, None, 0, None)
     
     @pytest.mark.asyncio
     async def test_extract_via_websocket_success(self):
@@ -212,8 +214,8 @@ class TestWebSocketExtraction:
         # 由于会尝试真实连接，我们捕获超时异常
         try:
             result = await extract_via_websocket("https://localhost:99999", timeout=0.5)
-            # 如果超时或出错，应该返回 (None, None, 0)
-            assert result == (None, None, 0) or result[0] is None
+            # 如果超时或出错，应该返回 (None, None, 0, None)
+            assert result == (None, None, 0, None) or result[0] is None
         except Exception:
             # 任何异常都应该被处理，返回空结果
             pass
@@ -228,6 +230,113 @@ class TestWebSocketExtraction:
         # mock_websocket_binary_data 包含 08 03 10 03 (D3) 和 08 0f 10 0f (O15)
         assert len(moves) >= 1
         assert (3, 3) in moves or (15, 15) in moves
+
+
+class TestJueyiLiveExtraction:
+    """绝艺解说直播棋谱提取测试"""
+    
+    def test_is_jueyi_live_data_with_jueyi_string(self):
+        """测试包含 jueyi 字符串的数据识别"""
+        data = b'some_random_data_jueyi_comment_more_data'
+        
+        result = is_jueyi_live_data(data)
+        
+        assert result is True
+    
+    def test_is_jueyi_live_data_with_marker(self):
+        """测试包含主分支标记的数据识别"""
+        # 包含主分支标记 10 cb 01
+        data = bytes([0x00, 0x01, 0x10, 0xcb, 0x01, 0x02])
+        
+        result = is_jueyi_live_data(data)
+        
+        assert result is True
+    
+    def test_is_jueyi_live_data_normal_data(self):
+        """测试普通数据不被识别为绝艺直播"""
+        # 注意：不能包含 "jueyi" 子串，否则会被识别为绝艺数据
+        data = b'normal_websocket_binary_data_regular'
+        
+        result = is_jueyi_live_data(data)
+        
+        assert result is False
+    
+    def test_is_jueyi_live_data_empty(self):
+        """测试空数据"""
+        result = is_jueyi_live_data(b'')
+        
+        assert result is False
+    
+    def test_extract_jueyi_live_from_binary_basic(self, mock_jueyi_live_binary_data):
+        """测试从绝艺直播数据中提取基本着法"""
+        moves = extract_jueyi_live_from_binary(mock_jueyi_live_binary_data)
+        
+        # 应该提取到至少3手棋
+        assert len(moves) >= 3
+        # 验证第一手是 B[pd] (15, 3)
+        assert moves[0] == (15, 3)
+        # 验证第二手是 W[dc] (3, 2)
+        assert moves[1] == (3, 2)
+        # 验证第三手是 B[dp] (3, 15)
+        assert moves[2] == (3, 15)
+    
+    def test_extract_jueyi_live_from_binary_with_comments(self, mock_jueyi_live_with_comments):
+        """测试从绝艺直播数据中提取带评论的着法"""
+        moves = extract_jueyi_live_from_binary(mock_jueyi_live_with_comments)
+        
+        # 应该提取到5手棋
+        assert len(moves) == 5
+        # 验证前几手坐标
+        assert moves[0] == (15, 3)  # B[pd]
+        assert moves[1] == (3, 2)   # W[dc]
+        assert moves[2] == (3, 15)  # B[dp]
+        assert moves[3] == (15, 16) # W[pq]
+        assert moves[4] == (2, 4)   # B[ce]
+    
+    def test_extract_jueyi_live_from_binary_empty(self):
+        """测试从空数据中提取"""
+        moves = extract_jueyi_live_from_binary(b'')
+        
+        assert moves == []
+    
+    def test_extract_jueyi_live_from_binary_no_marker(self):
+        """测试无绝艺标记的数据"""
+        data = b'random_binary_data_without_jueyi_marker_08_03_10_03'
+        
+        moves = extract_jueyi_live_from_binary(data)
+        
+        assert moves == []
+    
+    def test_extract_jueyi_live_from_binary_partial_data(self):
+        """测试不完整的绝艺数据"""
+        # 只有主分支标记，没有完整的着法数据
+        data = bytes([0x10, 0xcb, 0x01, 0x1a, 0x12, 0x08])
+        
+        moves = extract_jueyi_live_from_binary(data)
+        
+        # 应该返回空列表或跳过不完整的着法
+        assert len(moves) == 0
+    
+    def test_jueyi_vs_normal_extraction(self):
+        """测试绝艺提取与普通提取的差异"""
+        # 构造同时包含两种模式的数据
+        data = bytearray()
+        # 普通模式着法 (08 03 10 03)
+        data.extend([0x08, 0x03, 0x10, 0x03])
+        # 绝艺模式着法 (10 cb 01 1a 12 08 0f 10 03 18 01)
+        data.extend([0x10, 0xcb, 0x01])
+        data.extend([0x1a, 0x12])
+        data.extend([0x08, 0x0f, 0x10, 0x03, 0x18, 0x01])
+        data = bytes(data)
+        
+        # 普通提取应该能找到更多着法（包括误匹配的）
+        normal_moves = extract_moves_from_binary(data)
+        jueyi_moves = extract_jueyi_live_from_binary(data)
+        
+        # 绝艺提取应该只返回主分支着法
+        assert len(jueyi_moves) >= 1
+        # 验证绝艺提取的着法是主分支着法 (15, 3)
+        assert jueyi_moves[0] == (15, 3)
 
 
 class TestSgfCreation:
