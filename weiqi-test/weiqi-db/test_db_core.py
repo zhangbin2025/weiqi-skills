@@ -289,6 +289,11 @@ class TestQueryAdvanced:
         # 模糊查询赛事（包含"LG杯"）
         query_args = type('Args', (), {
             'where': '{"event~": "LG杯"}',
+            'where_file': None,
+            'date': None,
+            'player': None,
+            'event': None,
+            'event_like': None,
             'sort': None, 'limit': None
         })()
         result = db.cmd_query(query_args)
@@ -311,6 +316,11 @@ class TestQueryAdvanced:
         # 按日期范围查询（>= 2024-01-01）
         query_args = type('Args', (), {
             'where': '{"date>=": "2024-01-01"}',
+            'where_file': None,
+            'date': None,
+            'player': None,
+            'event': None,
+            'event_like': None,
             'sort': None, 'limit': None
         })()
         result = db.cmd_query(query_args)
@@ -333,6 +343,11 @@ class TestQueryAdvanced:
         # 使用$and组合条件
         query_args = type('Args', (), {
             'where': '{"$and": [{"black": "柯洁"}, {"date>=": "2024-01-01"}]}',
+            'where_file': None,
+            'date': None,
+            'player': None,
+            'event': None,
+            'event_like': None,
             'sort': None, 'limit': None
         })()
         result = db.cmd_query(query_args)
@@ -356,6 +371,11 @@ class TestQueryAdvanced:
         # 关键词搜索
         query_args = type('Args', (), {
             'where': '{"keyword": "柯洁"}',
+            'where_file': None,
+            'date': None,
+            'player': None,
+            'event': None,
+            'event_like': None,
             'sort': None, 'limit': None
         })()
         result = db.cmd_query(query_args)
@@ -384,7 +404,8 @@ class TestUpdateDelete:
         # 更新元数据
         update_args = type('Args', (), {
             'id': game_id,
-            'set': '{"event": "更新后的赛事", "black_rank": "10d"}'
+            'set': '{"event": "更新后的赛事", "black_rank": "10d"}',
+            'set_file': None
         })()
         result = db.cmd_update(update_args)
         
@@ -426,7 +447,8 @@ class TestUpdateDelete:
         """测试更新不存在的ID"""
         update_args = type('Args', (), {
             'id': 'nonexistent123',
-            'set': '{"event": "测试"}'
+            'set': '{"event": "测试"}',
+            'set_file': None
         })()
         result = db.cmd_update(update_args)
         
@@ -450,7 +472,7 @@ class TestTagManagement:
         game_id = add_result['results'][0]['id']
         
         # 添加标签
-        tag_args = type('Args', (), {'id': game_id, 'add': '重要', 'remove': None})()
+        tag_args = type('Args', (), {'id': game_id, 'add': '重要', 'add_file': None, 'remove': None, 'remove_file': None})()
         result = db.cmd_tag(tag_args)
         
         assert result['success'] is True
@@ -475,7 +497,7 @@ class TestTagManagement:
         game_id = add_result['results'][0]['id']
         
         # 移除标签
-        tag_args = type('Args', (), {'id': game_id, 'add': None, 'remove': '标签1'})()
+        tag_args = type('Args', (), {'id': game_id, 'add': None, 'add_file': None, 'remove': '标签1', 'remove_file': None})()
         result = db.cmd_tag(tag_args)
         
         assert result['success'] is True
@@ -501,7 +523,7 @@ class TestTagManagement:
         game_id = add_result['results'][0]['id']
         
         # 列出标签
-        tag_args = type('Args', (), {'id': game_id, 'add': None, 'remove': None})()
+        tag_args = type('Args', (), {'id': game_id, 'add': None, 'add_file': None, 'remove': None, 'remove_file': None})()
         result = db.cmd_tag(tag_args)
         
         assert result['success'] is True
@@ -983,7 +1005,7 @@ class TestQueryFileParameters:
             'where_file': None,
             'date': None,
             'player': None,
-            'event': '第28届LG杯世界棋王赛决赛',
+            'event': '第25届LG杯决赛',
             'event_like': None,
             'sort': None, 'limit': None
         })()
