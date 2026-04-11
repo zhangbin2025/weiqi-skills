@@ -19,6 +19,33 @@ tags: ["围棋", "weiqi", "go", "棋谱", "数据库", "SGF", "管理"]
 - **标签系统**: 多标签分类管理
 - **SGF压缩**: 自动压缩存储，节省约75%磁盘空间
 
+## AI 执行规范（必读）
+
+最短执行路径，最少 token 消耗：
+
+### 1. 查询棋谱（使用简化参数）
+```bash
+python3 ~/.openclaw/workspace/weiqi-db/scripts/db.py query --date YYYY-MM-DD --limit 10
+python3 ~/.openclaw/workspace/weiqi-db/scripts/db.py query --player "柯洁"
+python3 ~/.openclaw/workspace/weiqi-db/scripts/db.py query --event-like "烂柯杯"
+```
+
+### 2. 导出 SGF 文件（最高效方式）
+```bash
+python3 ~/.openclaw/workspace/weiqi-db/scripts/db.py get --id "棋谱ID" -o /tmp/game.sgf
+```
+
+### 3. 生成打谱网页（与 weiqi-sgf 配合）
+```bash
+python3 ~/.openclaw/workspace/weiqi-db/scripts/db.py get --id "棋谱ID" -o /tmp/game.sgf
+python3 ~/.openclaw/workspace/weiqi-sgf/scripts/replay.py /tmp/game.sgf -o /tmp/
+```
+
+### 4. 禁止行为 ❌
+- **禁止**直接读取 `~/.weiqi-db/database.json` 文件
+- **禁止**使用 JSON 输出后再用 Python 解析提取 SGF
+- **禁止**不必要的 `cd` 命令，直接使用绝对路径
+
 ## 安装依赖
 
 ```bash
@@ -109,6 +136,9 @@ python3 db.py list --limit 10
 
 ```bash
 python3 db.py get --id "2026032383118500"
+
+# 导出到文件（推荐，最高效）
+python3 db.py get --id "2026032383118500" -o /tmp/game.sgf
 ```
 
 返回完整的棋谱数据，包括 `sgf` 字段（SGF文件内容）。
@@ -268,7 +298,7 @@ python3 db.py query --where '{"date": "2026-03-23"}'
 
 **用户**: "获取某盘棋的SGF"
 ```bash
-python3 db.py get --id "xxx"
+python3 db.py get --id "xxx" -o /tmp/game.sgf
 ```
 
 **用户**: "把刚才那盘棋标为名局"
@@ -288,6 +318,13 @@ python3 db.py tag --id "xxx" --add "名局"
 - [weiqi-yunbisai](../weiqi-yunbisai) - 云比赛网查询（比赛信息查询，不提供棋谱下载）
 
 ## 版本更新
+
+### v1.0.5 (2026-04-11)
+- ✅ 优化 AI 执行规范
+  - 使用绝对路径执行，无需 `cd`
+  - 突出 `-o` 参数的文件导出功能
+  - 删除多余的步骤，最短执行路径
+  - 明确禁止直接读取 database.json 和 JSON 解析
 
 ### v1.0.4 (2026-04-11)
 - ✅ 解决 exec 安全限制导致的 JSON 参数传递问题
