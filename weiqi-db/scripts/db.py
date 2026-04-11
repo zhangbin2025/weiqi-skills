@@ -537,6 +537,26 @@ def cmd_tag(args):
         return {"success": True, "id": args.id, "tags": game.get('tags', [])}
 
 
+def cmd_get(args):
+    """通过ID获取单个棋谱的完整内容"""
+    db = ensure_db()
+    table = db.table('games')
+
+    if not args.id:
+        return {"success": False, "error": "需要指定 --id"}
+
+    Game = Query()
+    games = table.search(Game.id == args.id)
+
+    if not games:
+        return {"success": False, "error": f"未找到ID: {args.id}"}
+
+    return {
+        "success": True,
+        "game": games[0]
+    }
+
+
 def cmd_delete(args):
     """删除棋谱"""
     db = ensure_db()
@@ -634,7 +654,6 @@ def cmd_stats(args):
 
 def main():
     parser = argparse.ArgumentParser(description='围棋棋谱数据库')
-    parser.add_argument('--json', action='store_true', help='JSON格式输出')
     subparsers = parser.add_subparsers(dest='command', help='命令')
     
     # init
@@ -683,7 +702,11 @@ def main():
     # delete
     delete_parser = subparsers.add_parser('delete', help='删除棋谱')
     delete_parser.add_argument('--id', required=True, help='棋谱ID')
-    
+
+    # get
+    get_parser = subparsers.add_parser('get', help='通过ID获取棋谱完整内容')
+    get_parser.add_argument('--id', required=True, help='棋谱ID')
+
     # stats
     subparsers.add_parser('stats', help='统计信息')
     
@@ -703,14 +726,14 @@ def main():
         'update': cmd_update,
         'tag': cmd_tag,
         'delete': cmd_delete,
+        'get': cmd_get,
         'stats': cmd_stats,
     }
     
     result = commands[args.command](args)
     
-    # 输出结果
-    if args.json or True:  # 默认JSON输出
-        print(format_output(result))
+    # 输出结果（JSON格式）
+    print(format_output(result))
     
     # 根据结果返回退出码
     sys.exit(0 if result.get('success', True) else 1)

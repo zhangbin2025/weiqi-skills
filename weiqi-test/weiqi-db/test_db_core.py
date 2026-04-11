@@ -504,6 +504,95 @@ class TestTagManagement:
         assert '标签B' in result['tags']
 
 
+class TestGetCommand:
+    """测试获取单个棋谱功能 (get 命令)"""
+    
+    def test_get_game_success(self, temp_db, sample1_path):
+        """测试成功获取单个棋谱（含SGF）"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        # 获取棋谱
+        get_args = type('Args', (), {'id': game_id})()
+        result = db.cmd_get(get_args)
+        
+        assert result['success'] is True
+        assert result['game']['id'] == game_id
+        assert result['game']['black'] == '柯洁'
+        assert result['game']['white'] == '申真谞'
+        # 验证包含SGF字段
+        assert 'sgf' in result['game']
+        assert 'sgf_content' in result['game'] or len(result['game']['sgf']) > 0
+    
+    def test_get_game_not_found(self, temp_db):
+        """测试获取不存在的棋谱ID"""
+        get_args = type('Args', (), {'id': 'nonexistent123456'})()
+        result = db.cmd_get(get_args)
+        
+        assert result['success'] is False
+        assert 'error' in result
+        assert '未找到ID' in result['error']
+    
+    def test_get_game_without_id(self, temp_db):
+        """测试不指定ID时获取棋谱"""
+        get_args = type('Args', (), {'id': None})()
+        result = db.cmd_get(get_args)
+        
+        assert result['success'] is False
+        assert 'error' in result
+        assert '需要指定 --id' in result['error']
+    
+    def test_get_returns_full_game_data(self, temp_db, sample1_path):
+        """测试获取的棋谱包含完整数据（包括SGF）"""
+        # 添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': ['测试标签'], 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        # 获取棋谱
+        get_args = type('Args', (), {'id': game_id})()
+        result = db.cmd_get(get_args)
+        
+        assert result['success'] is True
+        game = result['game']
+        
+        # 验证所有字段都存在
+        assert 'id' in game
+        assert 'sgf' in game
+        assert 'hash' in game
+        assert 'black' in game
+        assert 'white' in game
+        assert 'black_rank' in game
+        assert 'white_rank' in game
+        assert 'date' in game
+        assert 'event' in game
+        assert 'result' in game
+        assert 'komi' in game
+        assert 'handicap' in game
+        assert 'movenum' in game
+        assert 'tags' in game
+        assert 'created' in game
+        
+        # 验证标签正确
+        assert '测试标签' in game['tags']
+        
+        # 验证SGF内容不为空
+        assert len(game['sgf']) > 0
+        assert game['sgf'].startswith('(;')
+
+
 class TestStats:
     """测试统计功能"""
     

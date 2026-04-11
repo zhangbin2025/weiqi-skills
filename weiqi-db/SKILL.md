@@ -38,13 +38,13 @@ python3 db.py init
 
 ```bash
 # 添加单个SGF文件
-python3 db.py add --file game.sgf --json
+python3 db.py add --file game.sgf
 
 # 添加整个目录
-python3 db.py add --dir <TEMP_DIR>/foxwq_downloads/2026-03-23/ --tag "野狐" --json
+python3 db.py add --dir <TEMP_DIR>/foxwq_downloads/2026-03-23/ --tag "野狐"
 
 # 添加时补充/覆盖元数据
-python3 db.py add --file game.sgf --black "棋手A" --white "棋手B" --event "示例赛事" --json
+python3 db.py add --file game.sgf --black "棋手A" --white "棋手B" --event "示例赛事"
 
 # 冲突处理策略
 python3 db.py add --dir ./downloads/ --conflict skip     # 默认：跳过重复
@@ -60,63 +60,71 @@ python3 db.py add --dir ./downloads/ --conflict keep      # 保留两者
 
 ```bash
 # 查询棋手（自动匹配黑棋或白棋）
-python3 db.py query --where '{"player": "示例棋手"}' --json
+python3 db.py query --where '{"player": "示例棋手"}'
 
 # 查询赛事
-python3 db.py query --where '{"event": "示例赛事"}' --json
+python3 db.py query --where '{"event": "示例赛事"}'
 
 # 模糊搜索赛事
-python3 db.py query --where '{"event~": "联赛"}' --json
+python3 db.py query --where '{"event~": "联赛"}'
 
 # 按标签查询
-python3 db.py query --where '{"tags": "名局"}' --json
+python3 db.py query --where '{"tags": "名局"}'
 
 # 日期范围
-python3 db.py query --where '{"date>=": "2026-01-01"}' --json
+python3 db.py query --where '{"date>=": "2026-01-01"}'
 
 # 全字段模糊搜索
-python3 db.py query --where '{"keyword": "中盘胜"}' --json
+python3 db.py query --where '{"keyword": "中盘胜"}'
 
 # 组合条件
-python3 db.py query --where '{"player": "示例棋手", "tags": "名局"}' --json
+python3 db.py query --where '{"player": "示例棋手", "tags": "名局"}'
 
 # AND/OR 组合
-python3 db.py query --where '{"$and": [{"player": "示例棋手"}, {"date": "2026-03-23"}]}' --json
+python3 db.py query --where '{"$and": [{"player": "示例棋手"}, {"date": "2026-03-23"}]}'
 ```
 
 ### 列出所有棋谱
 
 ```bash
-python3 db.py list --json
-python3 db.py list --limit 10 --json
+python3 db.py list
+python3 db.py list --limit 10
 ```
+
+### 获取单个棋谱（含SGF）
+
+```bash
+python3 db.py get --id "2026032383118500"
+```
+
+返回完整的棋谱数据，包括 `sgf` 字段（SGF文件内容）。
 
 ### 更新元数据
 
 ```bash
-python3 db.py update --id "2026032383118500" --set '{"black": "修正名", "event": "测试赛事"}' --json
+python3 db.py update --id "2026032383118500" --set '{"black": "修正名", "event": "测试赛事"}'
 ```
 
 ### 标签管理
 
 ```bash
 # 添加标签
-python3 db.py tag --id "xxx" --add "名局" --json
+python3 db.py tag --id "xxx" --add "名局"
 
 # 移除标签
-python3 db.py tag --id "xxx" --remove "测试" --json
+python3 db.py tag --id "xxx" --remove "测试"
 ```
 
 ### 删除棋谱
 
 ```bash
-python3 db.py delete --id "xxx" --json
+python3 db.py delete --id "xxx"
 ```
 
 ### 统计信息
 
 ```bash
-python3 db.py stats --json
+python3 db.py stats
 ```
 
 ## 查询语法（--where 参数）
@@ -167,22 +175,27 @@ python3 db.py stats --json
 
 **用户**: "找某棋手的棋"
 ```bash
-python3 db.py query --where '{"player": "示例棋手"}' --json
+python3 db.py query --where '{"player": "示例棋手"}'
 ```
 
 **用户**: "某杯赛决赛的名局"
 ```bash
-python3 db.py query --where '{"event~": "杯赛", "tags": "名局"}' --json
+python3 db.py query --where '{"event~": "杯赛", "tags": "名局"}'
 ```
 
 **用户**: "昨天下的棋"
 ```bash
-python3 db.py query --where '{"date": "2026-03-23"}' --json
+python3 db.py query --where '{"date": "2026-03-23"}'
+```
+
+**用户**: "获取某盘棋的SGF"
+```bash
+python3 db.py get --id "xxx"
 ```
 
 **用户**: "把刚才那盘棋标为名局"
 ```bash
-python3 db.py tag --id "xxx" --add "名局" --json
+python3 db.py tag --id "xxx" --add "名局"
 ```
 
 ## 技术说明
@@ -197,6 +210,10 @@ python3 db.py tag --id "xxx" --add "名局" --json
 - [weiqi-yunbisai](../weiqi-yunbisai) - 云比赛网查询（比赛信息查询，不提供棋谱下载）
 
 ## 版本更新
+
+### v1.0.2 (2026-04-11)
+- ✅ 新增 `get` 命令，支持通过 ID 获取完整棋谱（含 SGF）
+- ✅ 清理 `--json` 参数（默认始终 JSON 输出）
 
 ### v1.0.1 (2026-03-27)
 - ✅ 导入冲突检测功能
