@@ -718,3 +718,119 @@ class TestStats:
         assert result['total_games'] == 0
         assert result['top_players'] == []
         assert result['top_tags'] == []
+
+
+class TestGetExport:
+    """测试 get 命令导出SGF到文件功能"""
+    
+    def test_get_export_to_file(self, temp_db, sample1_path):
+        """测试使用 --output 导出SGF到文件"""
+        # 读取原始SGF内容
+        with open(sample1_path, 'r', encoding='utf-8') as f:
+            original_sgf = f.read()
+        
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        # 导出到临时文件
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / 'exported.sgf'
+            
+            # 使用 --output 参数获取并导出
+            get_args = type('Args', (), {'id': game_id, 'output': str(output_path)})()
+            result = db.cmd_get(get_args)
+            
+            # 验证导出成功
+            assert result['success'] is True
+            assert result['exported'] is True
+            assert 'output_path' in result
+            assert str(output_path.absolute()) == result['output_path']
+            assert game_id == result['game_id']
+            
+            # 验证文件内容正确
+            assert output_path.exists()
+            exported_content = output_path.read_text(encoding='utf-8')
+            assert exported_content == original_sgf
+    
+    def test_get_export_with_short_option(self, temp_db, sample1_path):
+        """测试使用 -o 短选项导出SGF到文件"""
+        # 读取原始SGF内容
+        with open(sample1_path, 'r', encoding='utf-8') as f:
+            original_sgf = f.read()
+        
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        # 导出到临时文件
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / 'exported_short.sgf'
+            
+            # 使用 -o 参数获取并导出
+            get_args = type('Args', (), {'id': game_id, 'output': str(output_path)})()
+            result = db.cmd_get(get_args)
+            
+            # 验证导出成功
+            assert result['success'] is True
+            assert result['exported'] is True
+            
+            # 验证文件内容正确
+            assert output_path.exists()
+            exported_content = output_path.read_text(encoding='utf-8')
+            assert exported_content == original_sgf
+    
+    def test_get_without_output_returns_json(self, temp_db, sample1_path):
+        """测试不指定 --output 时返回JSON（向后兼容）"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        # 不指定 output 参数
+        get_args = type('Args', (), {'id': game_id, 'output': None})()
+        result = db.cmd_get(get_args)
+        
+        # 验证返回JSON格式
+        assert result['success'] is True
+        assert 'game' in result
+        assert 'exported' not in result
+        assert 'sgf' in result['game']
+    
+    def test_get_export_invalid_path(self, temp_db, sample1_path):
+        """测试导出到无效路径时返回错误"""
+        # 先添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        # 尝试导出到不存在的目录
+        get_args = type('Args', (), {'id': game_id, 'output': '/nonexistent_dir/file.sgf'})()
+        result = db.cmd_get(get_args)
+        
+        # 验证返回错误
+        assert result['success'] is False
+        assert 'error' in result
+        assert '文件写入失败' in result['error']

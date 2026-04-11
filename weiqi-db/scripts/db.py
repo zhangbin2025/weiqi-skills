@@ -572,7 +572,26 @@ def cmd_get(args):
 
     # 解压SGF内容
     game = games[0].copy()
-    game['sgf'] = decompress_sgf(game['sgf'])
+    sgf_content = decompress_sgf(game['sgf'])
+    game['sgf'] = sgf_content
+
+    # 如果指定了输出文件，将SGF写入文件
+    if hasattr(args, 'output') and args.output:
+        try:
+            output_path = Path(args.output)
+            output_path.write_text(sgf_content, encoding='utf-8')
+            return {
+                "success": True,
+                "exported": True,
+                "output_path": str(output_path.absolute()),
+                "game_id": game['id'],
+                "message": f"SGF内容已导出到: {output_path.absolute()}"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"文件写入失败: {str(e)}"
+            }
 
     return {
         "success": True,
@@ -729,6 +748,7 @@ def main():
     # get
     get_parser = subparsers.add_parser('get', help='通过ID获取棋谱完整内容')
     get_parser.add_argument('--id', required=True, help='棋谱ID')
+    get_parser.add_argument('--output', '-o', help='导出SGF到指定文件路径')
 
     # stats
     subparsers.add_parser('stats', help='统计信息')
