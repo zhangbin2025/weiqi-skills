@@ -504,11 +504,94 @@ class TestTagManagement:
         assert '标签B' in result['tags']
 
 
+class TestSGFCompression:
+    """测试SGF压缩功能"""
+    
+    def test_sgf_compression(self, temp_db, sample1_path):
+        """测试SGF压缩功能：验证存储的是压缩格式"""
+        # 添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        result = db.cmd_add(args)
+        
+        assert result['success'] is True
+        game_id = result['results'][0]['id']
+        
+        # 直接查询数据库，验证存储的是压缩格式
+        database = db.ensure_db()
+        table = database.table('games')
+        raw_game = table.get(db.Query().id == game_id)
+        
+        # 验证SGF以压缩标记开头
+        assert raw_game['sgf'].startswith('__gz__'), "SGF应该被压缩并带有__gz__前缀"
+    
+    def test_sgf_decompression(self, temp_db, sample1_path):
+        """测试SGF解压功能：验证读取时正确解压"""
+        # 添加棋谱
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        # 读取原始SGF内容
+        with open(sample1_path, 'r', encoding='utf-8') as f:
+            original_sgf = f.read()
+        
+        # 通过get命令获取，应该自动解压
+        get_args = type('Args', (), {'id': game_id})()
+        result = db.cmd_get(get_args)
+        
+        assert result['success'] is True
+        # 验证返回的是解压后的原始内容
+        assert result['game']['sgf'] == original_sgf, "返回的SGF应该是解压后的原始内容"
+    
+    def test_backward_compatible(self, temp_db, sample1_path):
+        """测试向后兼容：能读取未压缩的旧数据"""
+        # 先添加棋谱（压缩存储）
+        args = type('Args', (), {
+            'file': str(sample1_path), 'dir': None,
+            'black': None, 'white': None, 'black_rank': None, 'white_rank': None,
+            'date': None, 'event': None, 'result': None, 'komi': None,
+            'tag': None, 'conflict': 'skip'
+        })()
+        add_result = db.cmd_add(args)
+        game_id = add_result['results'][0]['id']
+        
+        # 读取原始SGF内容
+        with open(sample1_path, 'r', encoding='utf-8') as f:
+            original_sgf = f.read()
+        
+        # 直接修改数据库，模拟旧数据（未压缩）
+        database = db.ensure_db()
+        table = database.table('games')
+        table.update({'sgf': original_sgf}, db.Query().id == game_id)
+        
+        # 通过get命令获取，应该能正确处理未压缩数据
+        get_args = type('Args', (), {'id': game_id})()
+        result = db.cmd_get(get_args)
+        
+        assert result['success'] is True
+        # 验证能正确返回未压缩的旧数据
+        assert result['game']['sgf'] == original_sgf, "应该能正确处理未压缩的旧数据"
+
+
 class TestGetCommand:
     """测试获取单个棋谱功能 (get 命令)"""
     
     def test_get_game_success(self, temp_db, sample1_path):
         """测试成功获取单个棋谱（含SGF）"""
+        # 读取原始SGF内容
+        with open(sample1_path, 'r', encoding='utf-8') as f:
+            original_sgf = f.read()
+        
         # 先添加棋谱
         args = type('Args', (), {
             'file': str(sample1_path), 'dir': None,
@@ -527,9 +610,9 @@ class TestGetCommand:
         assert result['game']['id'] == game_id
         assert result['game']['black'] == '柯洁'
         assert result['game']['white'] == '申真谞'
-        # 验证包含SGF字段
+        # 验证包含SGF字段且内容已解压
         assert 'sgf' in result['game']
-        assert 'sgf_content' in result['game'] or len(result['game']['sgf']) > 0
+        assert result['game']['sgf'] == original_sgf, "返回的SGF应该是解压后的原始内容"
     
     def test_get_game_not_found(self, temp_db):
         """测试获取不存在的棋谱ID"""
@@ -550,7 +633,11 @@ class TestGetCommand:
         assert '需要指定 --id' in result['error']
     
     def test_get_returns_full_game_data(self, temp_db, sample1_path):
-        """测试获取的棋谱包含完整数据（包括SGF）"""
+        """测试获取的棋谱包含完整数据（包括解压后的SGF）"""
+        # 读取原始SGF内容
+        with open(sample1_path, 'r', encoding='utf-8') as f:
+            original_sgf = f.read()
+        
         # 添加棋谱
         args = type('Args', (), {
             'file': str(sample1_path), 'dir': None,
@@ -588,8 +675,8 @@ class TestGetCommand:
         # 验证标签正确
         assert '测试标签' in game['tags']
         
-        # 验证SGF内容不为空
-        assert len(game['sgf']) > 0
+        # 验证SGF内容是解压后的原始内容
+        assert game['sgf'] == original_sgf, "返回的SGF应该是解压后的原始内容"
         assert game['sgf'].startswith('(;')
 
 

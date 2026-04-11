@@ -13,6 +13,8 @@ import re
 import json
 import hashlib
 import argparse
+import gzip
+import base64
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -64,6 +66,20 @@ def calc_hash(sgf_content: str) -> str:
     # 移除空白字符后计算哈希
     normalized = re.sub(r'\s+', '', sgf_content.strip())
     return hashlib.md5(normalized.encode('utf-8')).hexdigest()[:16]
+
+
+def compress_sgf(sgf_content: str) -> str:
+    """压缩SGF内容（gzip + base64）"""
+    compressed = gzip.compress(sgf_content.encode('utf-8'))
+    return "__gz__" + base64.b64encode(compressed).decode('ascii')
+
+
+def decompress_sgf(data: str) -> str:
+    """解压SGF内容（自动检测是否压缩）"""
+    if data.startswith("__gz__"):
+        compressed = base64.b64decode(data[6:])
+        return gzip.decompress(compressed).decode('utf-8')
+    return data  # 未压缩的旧数据
 
 
 def calc_diff(new_meta: Dict[str, Any], existing: Dict[str, Any]) -> Dict[str, Any]:
@@ -254,11 +270,14 @@ def cmd_add(args):
             if args.komi:
                 meta['komi'] = args.komi
             
+            # 压缩SGF内容
+            compressed_sgf = compress_sgf(sgf_content)
+            
             # 构建记录
             game_id = generate_id()
             record = {
                 "id": game_id,
-                "sgf": sgf_content,
+                "sgf": compressed_sgf,
                 "hash": content_hash,
                 "black": meta['black'],
                 "white": meta['white'],
@@ -551,9 +570,13 @@ def cmd_get(args):
     if not games:
         return {"success": False, "error": f"未找到ID: {args.id}"}
 
+    # 解压SGF内容
+    game = games[0].copy()
+    game['sgf'] = decompress_sgf(game['sgf'])
+
     return {
         "success": True,
-        "game": games[0]
+        "game": game
     }
 
 
