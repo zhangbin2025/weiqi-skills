@@ -30,6 +30,7 @@ class OgsFetcher(BaseSourceFetcher):
                 url=url,
                 sgf_content=None,
                 output_path=None,
+                metadata={},
                 error="无法从URL提取游戏ID",
                 timing=timing
             )
@@ -49,6 +50,7 @@ class OgsFetcher(BaseSourceFetcher):
                 url=url,
                 sgf_content=None,
                 output_path=None,
+                metadata={},
                 error=f"API请求失败: {e}",
                 timing=timing
             )
