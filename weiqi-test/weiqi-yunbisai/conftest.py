@@ -146,6 +146,43 @@ def complex_ranking_data():
     ]
 
 
+
+
+
+@pytest.fixture
+def opponent_minus_4players():
+    """4人循环赛 - 用于测试对手分逆减
+    
+    比赛结果：
+    第1轮: X胜A(2分), Y胜B(2分)
+    第2轮: X胜B(4分), Y胜A(4分)
+    
+    最终积分：
+    - X: 4分(2胜)，对手分=6(2+4)，累进分=6(2+4)
+    - Y: 4分(2胜)，对手分=6(2+4)，累进分=6(2+4)
+    - A: 0分(0胜)，对手分=6，累进分=0
+    - B: 0分(0胜)，对手分=6，累进分=0
+    
+    对手分逆减：
+    - X: 总6 - 末轮4 = 2 (末轮对手B=4分)
+    - Y: 总6 - 末轮2 = 4 (末轮对手A=2分)
+    
+    X和Y同分，但Y的逆减值更高，排名靠前
+    """
+    return [
+        # 第1轮
+        {"p1id": "x", "p1": "选手X", "p1_score": 2.0,
+         "p2id": "a", "p2": "选手A", "p2_score": 0.0, "bout": 1},
+        {"p1id": "y", "p1": "选手Y", "p1_score": 2.0,
+         "p2id": "b", "p2": "选手B", "p2_score": 0.0, "bout": 1},
+        # 第2轮
+        {"p1id": "x", "p1": "选手X", "p1_score": 2.0,
+         "p2id": "b", "p2": "选手B", "p2_score": 0.0, "bout": 2},
+        {"p1id": "y", "p1": "选手Y", "p1_score": 2.0,
+         "p2id": "a", "p2": "选手A", "p2_score": 0.0, "bout": 2},
+    ]
+
+
 @pytest.fixture
 def client_class():
     """导入并返回 YunbisaiClient 类"""

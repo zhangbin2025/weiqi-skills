@@ -384,6 +384,159 @@ class TestGamesRecording:
         assert game1["score"] == 2.0
 
 
+class TestOpponentScoreReverseMinus:
+    """对手分逆减破同分测试"""
+    
+    def test_opponent_score_reverse_minus_calculation(self, client_class):
+        """测试对手分逆减计算
+        
+        使用辅助对局让对手有不同的积分
+        """
+        client = client_class(verbose=False)
+        
+        matches = [
+            # 让A和D各赢1场得2分，B和C各赢2场得4分
+            {"p1id": "a", "p1": "选手A", "p1_score": 2.0,
+             "p2id": "z1", "p2": "辅助1", "p2_score": 0.0, "bout": 1},
+            {"p1id": "d", "p1": "选手D", "p1_score": 2.0,
+             "p2id": "z2", "p2": "辅助2", "p2_score": 0.0, "bout": 1},
+            {"p1id": "b", "p1": "选手B", "p1_score": 2.0,
+             "p2id": "z3", "p2": "辅助3", "p2_score": 0.0, "bout": 1},
+            {"p1id": "b", "p1": "选手B", "p1_score": 2.0,
+             "p2id": "z4", "p2": "辅助4", "p2_score": 0.0, "bout": 2},
+            {"p1id": "c", "p1": "选手C", "p1_score": 2.0,
+             "p2id": "z5", "p2": "辅助5", "p2_score": 0.0, "bout": 1},
+            {"p1id": "c", "p1": "选手C", "p1_score": 2.0,
+             "p2id": "z6", "p2": "辅助6", "p2_score": 0.0, "bout": 2},
+            # X和Y的对局
+            {"p1id": "x", "p1": "选手X", "p1_score": 2.0,
+             "p2id": "a", "p2": "选手A", "p2_score": 0.0, "bout": 3},
+            {"p1id": "y", "p1": "选手Y", "p1_score": 2.0,
+             "p2id": "b", "p2": "选手B", "p2_score": 0.0, "bout": 3},
+            {"p1id": "x", "p1": "选手X", "p1_score": 2.0,
+             "p2id": "b", "p2": "选手B", "p2_score": 0.0, "bout": 4},
+            {"p1id": "y", "p1": "选手Y", "p1_score": 2.0,
+             "p2id": "a", "p2": "选手A", "p2_score": 0.0, "bout": 4},
+        ]
+        
+        rankings, _ = client.calculate_ranking(matches)
+        
+        # 找到X和Y
+        player_x = next(r for r in rankings if r["name"] == "选手X")
+        player_y = next(r for r in rankings if r["name"] == "选手Y")
+        
+        # 验证基础分相同
+        assert player_x["score"] == 4.0
+        assert player_y["score"] == 4.0
+        assert player_x["opponent_score"] == 6.0  # A(2) + B(4)
+        assert player_y["opponent_score"] == 6.0  # B(4) + A(2)
+        assert player_x["progressive_score"] == 6.0  # 2 + 4
+        assert player_y["progressive_score"] == 6.0  # 2 + 4
+        
+        # 验证逆减序列存在
+        assert "opponent_score_reverse_minus" in player_x
+        assert "opponent_score_reverse_minus" in player_y
+        
+        # X的对手：第1轮A(2分)，第2轮B(4分) - 按轮次排序后
+        # 从末轮递减：先减4分(剩2)，再减2分(剩0)
+        assert player_x["opponent_score_reverse_minus"] == [2.0, 0.0]
+        
+        # Y的对手：第1轮B(4分)，第2轮A(2分) - 按轮次排序后
+        # 从末轮递减：先减2分(剩4)，再减4分(剩0)
+        assert player_y["opponent_score_reverse_minus"] == [4.0, 0.0]
+    
+    def test_tiebreak_with_opponent_minus(self, client_class):
+        """测试使用对手分逆减破同分
+        
+        设计数据让两名选手积分、对手分、累进分都相同
+        但对手分逆减不同
+        """
+        client = client_class(verbose=False)
+        
+        # 设计：
+        # 选手X和Y都是4分(2胜)
+        # X的对手：A(2分), B(4分) -> 对手分=6
+        # Y的对手：C(4分), D(2分) -> 对手分=6
+        # 为了让A=2分, B=4分, C=4分, D=2分，需要额外设置对局
+        
+        matches = [
+            # 让A和D各赢1场得2分，B和C各赢2场得4分
+            # 额外对局（不影响X和Y）
+            {"p1id": "a", "p1": "选手A", "p1_score": 2.0,
+             "p2id": "z1", "p2": "辅助1", "p2_score": 0.0, "bout": 1},
+            {"p1id": "d", "p1": "选手D", "p1_score": 2.0,
+             "p2id": "z2", "p2": "辅助2", "p2_score": 0.0, "bout": 1},
+            {"p1id": "b", "p1": "选手B", "p1_score": 2.0,
+             "p2id": "z3", "p2": "辅助3", "p2_score": 0.0, "bout": 1},
+            {"p1id": "b", "p1": "选手B", "p1_score": 2.0,
+             "p2id": "z4", "p2": "辅助4", "p2_score": 0.0, "bout": 2},
+            {"p1id": "c", "p1": "选手C", "p1_score": 2.0,
+             "p2id": "z5", "p2": "辅助5", "p2_score": 0.0, "bout": 1},
+            {"p1id": "c", "p1": "选手C", "p1_score": 2.0,
+             "p2id": "z6", "p2": "辅助6", "p2_score": 0.0, "bout": 2},
+            # X和Y的对局
+            {"p1id": "x", "p1": "选手X", "p1_score": 2.0,
+             "p2id": "a", "p2": "选手A", "p2_score": 0.0, "bout": 3},
+            {"p1id": "y", "p1": "选手Y", "p1_score": 2.0,
+             "p2id": "b", "p2": "选手B", "p2_score": 0.0, "bout": 3},
+            {"p1id": "x", "p1": "选手X", "p1_score": 2.0,
+             "p2id": "b", "p2": "选手B", "p2_score": 0.0, "bout": 4},
+            {"p1id": "y", "p1": "选手Y", "p1_score": 2.0,
+             "p2id": "a", "p2": "选手A", "p2_score": 0.0, "bout": 4},
+        ]
+        
+        rankings, _ = client.calculate_ranking(matches)
+        
+        # 找到X和Y
+        player_x = next(r for r in rankings if r["name"] == "选手X")
+        player_y = next(r for r in rankings if r["name"] == "选手Y")
+        
+        # 基础分应该相同
+        assert player_x["score"] == player_y["score"]
+        assert player_x["opponent_score"] == player_y["opponent_score"]
+        # 累进分也相同（都是先胜2分，再胜4分）
+        assert player_x["progressive_score"] == player_y["progressive_score"]
+        
+        # X的对手分逆减：总6 - 末轮4(B) = 2
+        # Y的对手分逆减：总6 - 末轮2(A) = 4
+        # Y应该排名靠前（逆减值更高）
+        x_rank = next(i for i, r in enumerate(rankings) if r["name"] == "选手X")
+        y_rank = next(i for i, r in enumerate(rankings) if r["name"] == "选手Y")
+        assert y_rank < x_rank, "Y应该排名在X之前（对手分逆减更高）"
+    
+    def test_opponent_minus_display_format(self, client_class, sample_match_data):
+        """测试对手分逆减显示格式 - 官方格式: n-剩余值 或 空（无需破同分）"""
+        client = client_class(verbose=False)
+        rankings, _ = client.calculate_ranking(sample_match_data)
+        
+        for p in rankings:
+            # 验证显示字段存在
+            assert "opponent_score_reverse_minus_display" in p
+            display = p["opponent_score_reverse_minus_display"]
+            # 格式可能为:
+            # - 空字符串 ""：无需破同分
+            # - "n-值"：需要破同分，n为轮次
+            # - "-"：无对局数据
+            if display not in ["", "-"]:
+                # 验证格式符合 "轮次-剩余值" 模式
+                parts = display.split("-")
+                assert len(parts) == 2
+                assert parts[0].isdigit()  # 轮次
+                assert parts[1].isdigit() or parts[1] == ""  # 剩余值
+    
+    def test_opponent_minus_sequence_type(self, client_class, sample_match_data):
+        """测试对手分逆减序列类型"""
+        client = client_class(verbose=False)
+        rankings, _ = client.calculate_ranking(sample_match_data)
+        
+        for p in rankings:
+            # 验证逆减序列是列表
+            assert isinstance(p["opponent_score_reverse_minus"], list)
+            # 验证每个元素是数字
+            for val in p["opponent_score_reverse_minus"]:
+                assert isinstance(val, (int, float))
+
+
 class TestHTMLGeneration:
     """HTML 生成测试"""
     

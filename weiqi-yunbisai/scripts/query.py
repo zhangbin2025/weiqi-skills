@@ -399,15 +399,34 @@ class YunbisaiClient:
         
         return all_matches, completed_rounds, {"count": len(all_matches), "rounds": completed_rounds, "total_rounds": total_bouts, "seconds": round(elapsed, 3)}
     
-    def calculate_ranking(self, matches: List[Dict]) -> Tuple[List[Dict], Dict]:
+    def calculate_ranking(self, matches: List[Dict], 
+                          tiebreak_mode: str = "default") -> Tuple[List[Dict], Dict]:
         """
         根据对阵数据计算排名
+        
+        Args:
+            matches: 对阵数据列表
+            tiebreak_mode: 破同分模式
+                - "default": 积分 → 对手分 → 累进分 → 对手分逆减（默认）
+                - "simple": 积分 → 对手分 → 对手分逆减（跳过累进分）
+        
+        排名规则（按优先级）：
+        默认模式 (default):
+            1. 个人积分（胜2分，和1分，负0分）
+            2. 对手分（所有对手积分的总和）
+            3. 累进分（每轮结束后积分的累加和）
+            4. 对手分逆减（从末轮开始递减对手分）
+        
+        简化模式 (simple):
+            1. 个人积分
+            2. 对手分
+            3. 对手分逆减（跳过累进分）
         
         Returns:
             (rankings, perf_info)
         """
         timer = self.perf.start("计算排名")
-        self._log("正在计算排名...")
+        self._log(f"正在计算排名 (模式: {tiebreak_mode})...")
         
         players = {}
         
@@ -431,10 +450,12 @@ class YunbisaiClient:
                         'score': 0,
                         'opponents': [],
                         'progressive': [],
-                        'games': []  # 存储每轮对局详情
+                        'games': [],  # 存储每轮对局详情
+                        'round_opponents': []  # 按轮次记录对手信息 [(round, opponent_id, opponent_score), ...]
                     }
         
-        # 逐轮解析
+        # 第一轮：收集每轮的对手信息（用于后续计算对手分逆减）
+        # 需要先知道所有选手的最终积分，所以分两轮处理
         for match in matches:
             p1_id = match.get('p1id')
             p2_id = match.get('p2id')
@@ -448,6 +469,8 @@ class YunbisaiClient:
             if p1_id and p1_id in players:
                 if p2_id and p2_name and p2_id in players:
                     players[p1_id]['opponents'].append(p2_id)
+                    # 记录本轮对手信息（对手ID，后续会填充对手积分）
+                    players[p1_id]['round_opponents'].append((bout, p2_id, p2_name))
                 if p1_score == 2.0:
                     players[p1_id]['wins'] += 1
                     result = '胜'
@@ -471,6 +494,8 @@ class YunbisaiClient:
             if p2_id and p2_id in players:
                 if p1_id and p1_name and p1_id in players:
                     players[p2_id]['opponents'].append(p1_id)
+                    # 记录本轮对手信息
+                    players[p2_id]['round_opponents'].append((bout, p1_id, p1_name))
                 if p2_score == 2.0:
                     players[p2_id]['wins'] += 1
                     result = '胜'
@@ -490,19 +515,137 @@ class YunbisaiClient:
                     'score': p2_score
                 })
         
-        # 计算对手分和累进分
+        # 第二轮：计算对手分、累进分、对手分逆减
         for pid, p in players.items():
+            # 对手分 = 所有对手最终积分的总和
             p['opponent_score'] = sum(
                 players[oid]['score'] for oid in p['opponents'] if oid in players
             )
+            # 累进分
             p['progressive_score'] = sum(p['progressive'])
+            
+            # 计算对手分逆减（从末轮开始递减）
+            # 格式: [(round_num, opponent_final_score), ...] 按轮次排序
+            round_opponent_scores = []
+            for bout, opp_id, opp_name in p['round_opponents']:
+                if opp_id in players:
+                    round_opponent_scores.append((bout, players[opp_id]['score']))
+            
+            # 按轮次排序，然后计算逆减序列（从末轮开始）
+            round_opponent_scores.sort(key=lambda x: x[0])  # 按轮次升序排列
+            
+            # 计算对手分逆减序列：从末轮开始逐轮减去对手分
+            # 例如：总对手分=100，末轮对手分=40，倒数第二轮=30
+            # 逆减序列 = [100-40=60, 100-40-30=30, ...]
+            opponent_score_reverse_minus = []
+            # 如果对手分是0，不需要计算逆减（所有对手都是0分）
+            if p['opponent_score'] > 0:
+                cumulative = 0.0
+                # 倒序遍历（从末轮开始）
+                for bout, opp_score in reversed(round_opponent_scores):
+                    cumulative += opp_score
+                    remaining = p['opponent_score'] - cumulative
+                    opponent_score_reverse_minus.append(remaining)
+            
+            p['opponent_score_reverse_minus'] = opponent_score_reverse_minus
         
-        # 排序：个人积分 > 对手分 > 累进分
-        sorted_players = sorted(
-            players.values(),
-            key=lambda x: (x['score'], x['opponent_score'], x['progressive_score']),
-            reverse=True
-        )
+        # 根据模式确定排序键和破同分逻辑
+        use_progressive = (tiebreak_mode != "simple")
+        
+        # 第一步：按基础分排序
+        if use_progressive:
+            # 默认模式：积分 → 对手分 → 累进分
+            sorted_players = sorted(
+                players.values(),
+                key=lambda x: (x['score'], x['opponent_score'], x['progressive_score']),
+                reverse=True
+            )
+        else:
+            # 简化模式：积分 → 对手分（跳过累进分）
+            sorted_players = sorted(
+                players.values(),
+                key=lambda x: (x['score'], x['opponent_score']),
+                reverse=True
+            )
+        
+        # 对手分逆减破同分 - 计算显示值
+        # 对于基础分相同的选手，找到能区分排名的递减轮次
+        i = 0
+        while i < len(sorted_players):
+            # 找到所有基础分相同的选手组
+            j = i + 1
+            while j < len(sorted_players):
+                if use_progressive:
+                    # 默认模式：比较积分、对手分、累进分
+                    if (sorted_players[i]['score'] == sorted_players[j]['score'] and
+                        sorted_players[i]['opponent_score'] == sorted_players[j]['opponent_score'] and
+                        sorted_players[i]['progressive_score'] == sorted_players[j]['progressive_score']):
+                        j += 1
+                    else:
+                        break
+                else:
+                    # 简化模式：只比较积分、对手分
+                    if (sorted_players[i]['score'] == sorted_players[j]['score'] and
+                        sorted_players[i]['opponent_score'] == sorted_players[j]['opponent_score']):
+                        j += 1
+                    else:
+                        break
+            
+            # 处理这个同分组的选手 [i:j)
+            group = sorted_players[i:j]
+            if len(group) > 1:
+                # 有多个选手同分，需要进行逆减破同分
+                max_rounds = max(len(p['opponent_score_reverse_minus']) for p in group)
+                
+                # 从第1轮开始逐轮检查
+                for round_idx in range(max_rounds):
+                    # 获取该轮递减后的剩余值
+                    for p in group:
+                        if round_idx < len(p['opponent_score_reverse_minus']):
+                            p['_temp_remaining'] = p['opponent_score_reverse_minus'][round_idx]
+                        else:
+                            p['_temp_remaining'] = 0
+                    
+                    # 按该轮剩余值排序（降序）
+                    group.sort(key=lambda x: x['_temp_remaining'], reverse=True)
+                    
+                    # 检查是否能区分所有选手
+                    remaining_values = [p['_temp_remaining'] for p in group]
+                    if len(set(remaining_values)) == len(group):
+                        # 可以区分，记录该轮的显示值
+                        for p in group:
+                            remaining = int(p['_temp_remaining'])
+                            p['opponent_score_reverse_minus_display'] = f"{round_idx + 1}-{remaining}"
+                        break
+                else:
+                    # 无法区分，使用最后一轮的结果
+                    for p in group:
+                        if p['opponent_score_reverse_minus']:
+                            remaining = int(p['opponent_score_reverse_minus'][-1])
+                            p['opponent_score_reverse_minus_display'] = f"{len(p['opponent_score_reverse_minus'])}-{remaining}"
+                        else:
+                            p['opponent_score_reverse_minus_display'] = "-"
+            else:
+                # 只有一个人，不需要破同分
+                group[0]['opponent_score_reverse_minus_display'] = ""
+            
+            i = j
+        
+        # 重新按完整key排序（包括逆减序列）
+        if use_progressive:
+            sorted_players = sorted(
+                sorted_players,
+                key=lambda x: (x['score'], x['opponent_score'], x['progressive_score'], 
+                              tuple(x.get('opponent_score_reverse_minus', []))),
+                reverse=True
+            )
+        else:
+            sorted_players = sorted(
+                sorted_players,
+                key=lambda x: (x['score'], x['opponent_score'], 
+                              tuple(x.get('opponent_score_reverse_minus', []))),
+                reverse=True
+            )
         
         elapsed = timer.stop()
         self._log(f"✓ 排名计算完成（{len(sorted_players)}名选手），耗时 {elapsed:.3f}s")
@@ -521,7 +664,8 @@ class YunbisaiClient:
                 record = f"{p['wins']}胜{p['losses']}负"
                 if p['draws'] > 0:
                     record += f"{p['draws']}和"
-                print(f"{i}. **{p['name']}** | 积分: {int(p['score'])} | 对手分: {int(p['opponent_score'])} | 累进分: {int(p['progressive_score'])} | {record}")
+                reverse_minus = p.get('opponent_score_reverse_minus_display', '-')
+                print(f"{i}. **{p['name']}** | 积分: {int(p['score'])} | 对手分: {int(p['opponent_score'])} | 累进分: {int(p['progressive_score'])} | 逆减: {reverse_minus} | {record}")
             print()
         else:
             # HTML 格式输出到文件（手机端优化）
@@ -612,6 +756,7 @@ class YunbisaiClient:
                     games_html += f"<tr><td>第{game.get('round', '-')}轮</td><td>{html.escape(str(game.get('opponent', '-')))}</td><td>{game.get('result', '-')}</td></tr>"
                 games_html += '</table></div>'
                 
+                reverse_minus = p.get('opponent_score_reverse_minus_display', '-')
                 html_content += f'''            <div class="item" onclick="toggleGames({i})">
                 <div class="{rank_class}">{rank_text}</div>
                 <div class="info">
@@ -620,6 +765,7 @@ class YunbisaiClient:
                         <span class="score">积分 {int(p['score'])}</span>
                         <span>对手分 {int(p['opponent_score'])}</span>
                         <span>累进分 {int(p['progressive_score'])}</span>
+                        <span>逆减 {reverse_minus}</span>
                         <span>{html.escape(record)}</span>
                     </div>
                 </div>
@@ -656,7 +802,8 @@ class YunbisaiClient:
                 record = f"{p['wins']}胜{p['losses']}负"
                 if p['draws'] > 0:
                     record += f"{p['draws']}和"
-                print(f"{i}. **{p['name']}** | 积分: {int(p['score'])} | 对手分: {int(p['opponent_score'])} | 累进分: {int(p['progressive_score'])} | {record}")
+                reverse_minus = p.get('opponent_score_reverse_minus_display', '-')
+                print(f"{i}. **{p['name']}** | 积分: {int(p['score'])} | 对手分: {int(p['opponent_score'])} | 累进分: {int(p['progressive_score'])} | 逆减: {reverse_minus} | {record}")
             print(f"\n... 还有 {total - 10} 名选手\n")
     
     def print_perf_report(self):
@@ -681,6 +828,8 @@ def main():
     parser.add_argument('--page-size', '-p', type=int, default=100, help='每页数量（默认：100，最大200）')
     parser.add_argument('--limit', '-l', type=int, help='限制显示条数（≤15时用单行格式）')
     parser.add_argument('--ranking', '-r', action='store_true', help='计算排名')
+    parser.add_argument('--ranking-mode', choices=['default', 'simple'], default='default',
+                        help='排名破同分模式：default=积分→对手分→累进分→逆减(默认), simple=积分→对手分→逆减(跳过累进分)')
     parser.add_argument('--matchups', '-u', type=int, help='查询第N轮对阵表')
     parser.add_argument('--json', '-j', action='store_true', help='输出JSON格式')
     parser.add_argument('--quiet', '-q', action='store_true', help='静默模式（减少输出）')
@@ -1042,7 +1191,7 @@ def main():
             
             elif args.ranking:
                 matches, total_bouts, perf_matches = client.get_all_rounds(args.group_id)
-                rankings, perf_ranking = client.calculate_ranking(matches)
+                rankings, perf_ranking = client.calculate_ranking(matches, tiebreak_mode=args.ranking_mode)
                 
                 result["data"]["rankings"] = rankings
                 result["data"]["total_bouts"] = total_bouts
