@@ -113,10 +113,8 @@ class XinboduiyiFetcher(BaseSourceFetcher):
         try:
             from playwright.sync_api import sync_playwright
             
-            game_data = None
-            
-            # 使用容器来在嵌套函数中共享数据
-            data_container = {'game_data': None}
+            # 使用列表来在嵌套函数中共享数据（避免闭包作用域问题）
+            data_list = []
             
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
@@ -136,8 +134,8 @@ class XinboduiyiFetcher(BaseSourceFetcher):
                             print(f"WS msg: cmd={cmd}")
                             
                             # 检查是否是游戏数据 (cmd:2 或 cmd:6)
-                            if cmd in ('2', '6') and data.get('data'):
-                                data_container['game_data'] = data['data']
+                            if str(cmd) in ('2', '6') and data.get('data'):
+                                data_list.append(data['data'])
                         except:
                             pass
                     
@@ -151,15 +149,15 @@ class XinboduiyiFetcher(BaseSourceFetcher):
                 page.goto(url, wait_until="networkidle")
                 
                 # 等待 WebSocket 数据
-                for i in range(10):  # 最多等待10秒
-                    if data_container['game_data']:
+                for i in range(15):  # 最多等待15秒
+                    if data_list:
+                        print(f"Got data after {i+1} seconds")
                         break
                     time.sleep(1)
                 
-                game_data = data_container['game_data']
                 browser.close()
             
-            return game_data
+            return data_list[0] if data_list else None
             
         except Exception as e:
             print(f"Playwright error: {e}")
@@ -215,8 +213,12 @@ class XinboduiyiFetcher(BaseSourceFetcher):
                 print(f"No StepStr or part_qipu found. Available keys: {list(data.keys())}")
                 return None, metadata
             
+            # 判断棋谱来源：part_qipu 需要旋转，StepStr 不需要旋转
+            need_rotation = part_qipu and any(p.get('part_id') == 0 and p.get('latest_full_qipu') for p in part_qipu)
+            print(f"Need rotation: {need_rotation}")
+            
             # 解析 SGF 格式的着法
-            moves = self._parse_sgf_moves(sgf_moves)
+            moves = self._parse_sgf_moves(sgf_moves, need_rotation)
             print(f"Parsed {len(moves)} moves")
             
             if not moves:
@@ -251,11 +253,15 @@ class XinboduiyiFetcher(BaseSourceFetcher):
         
         return f"{winner}{result_map.get(result_type, '+')}"
     
-    def _parse_sgf_moves(self, sgf_str: str) -> List[Tuple[str, str]]:
+    def _parse_sgf_moves(self, sgf_str: str, rotate: bool = False) -> List[Tuple[str, str]]:
         """
         解析标准 SGF 格式的着法字符串
         
         格式: B[DC];W[QQ];B[QD];W[DQ];...
+        
+        Args:
+            sgf_str: SGF格式的着法字符串
+            rotate: 是否需要逆时针旋转90度（part_qipu获取的需要旋转，StepStr不需要）
         """
         moves = []
         
@@ -264,13 +270,13 @@ class XinboduiyiFetcher(BaseSourceFetcher):
         matches = re.findall(pattern, sgf_str)
         
         for color, coord in matches:
-            sgf_coord = self._convert_coord(coord)
+            sgf_coord = self._convert_coord(coord, rotate)
             if sgf_coord:
                 moves.append((color, sgf_coord))
         
         return moves
     
-    def _convert_coord(self, coord: str) -> Optional[str]:
+    def _convert_coord(self, coord: str, rotate: bool = False) -> Optional[str]:
         """
         将新博对弈坐标转换为 SGF 坐标
         
@@ -282,6 +288,9 @@ class XinboduiyiFetcher(BaseSourceFetcher):
                                    L=k, M=l, N=m, O=n, P=o, Q=p, R=q, S=r, T=s
         第二个字母(横坐标 -> SGF x): T=a, S=b, R=c, Q=d, P=e, O=f, N=g, M=h, L=i, K=j, 
                                    J=k, H=l, G=m, F=n, E=o, D=p, C=q, B=r, A=s
+        
+        旋转: part_qipu 获取的棋谱需要逆时针旋转90度，StepStr 获取的不需要
+        旋转公式: (x, y) -> (y, 18-x) 对于19路盘
         """
         if len(coord) != 2:
             return None
@@ -311,7 +320,24 @@ class XinboduiyiFetcher(BaseSourceFetcher):
             if not sgf_x or not sgf_y:
                 return None
             
-            return sgf_x + sgf_y
+            # 原始转换结果
+            orig_x = ord(sgf_x) - ord('a')  # 0-18
+            orig_y = ord(sgf_y) - ord('a')  # 0-18
+            
+            if rotate:
+                # 逆时针旋转90度: (x, y) -> (y, 18-x)
+                new_x = orig_y
+                new_y = 18 - orig_x
+            else:
+                # 不旋转，使用原始坐标
+                new_x = orig_x
+                new_y = orig_y
+            
+            # 转回字母
+            new_sgf_x = chr(ord('a') + new_x)
+            new_sgf_y = chr(ord('a') + new_y)
+            
+            return new_sgf_x + new_sgf_y
             
         except Exception as e:
             print(f"Coord conversion error: {coord} - {e}")
