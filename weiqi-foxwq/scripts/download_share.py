@@ -25,6 +25,8 @@ from datetime import datetime
 from contextlib import contextmanager
 from collections import OrderedDict
 
+from sgf_parser import parse_sgf as sgf_parse
+
 # 性能计时工具
 class PerformanceTimer:
     """性能计时器"""
@@ -438,26 +440,20 @@ def create_sgf(moves, pb="黑棋", pw="白棋", handicap=0):
     return sgf
 
 def parse_sgf_info(sgf):
-    """从SGF中提取信息"""
-    info = {}
+    """从SGF中提取信息（使用sgf_parser解析）"""
+    result = sgf_parse(sgf)
+    game_info = result.get('game_info', {})
+    stats = result.get('stats', {})
     
-    pb_match = re.search(r'PB\[([^\]]*)\]', sgf)
-    pw_match = re.search(r'PW\[([^\]]*)\]', sgf)
-    br_match = re.search(r'BR\[([^\]]*)\]', sgf)
-    wr_match = re.search(r'WR\[([^\]]*)\]', sgf)
-    re_match = re.search(r'RE\[([^\]]*)\]', sgf)
-    dt_match = re.search(r'DT\[([^\]]*)\]', sgf)
-    
-    info['pb'] = pb_match.group(1) if pb_match else '黑棋'
-    info['pw'] = pw_match.group(1) if pw_match else '白棋'
-    info['br'] = br_match.group(1) if br_match else ''
-    info['wr'] = wr_match.group(1) if wr_match else ''
-    info['result'] = re_match.group(1) if re_match else ''
-    info['date'] = dt_match.group(1) if dt_match else ''
-    
-    # 计算手数
-    moves = re.findall(r';[BW]\[[a-z]{2}\]', sgf)
-    info['movenum'] = len(moves)
+    info = {
+        'pb': game_info.get('black', '黑棋'),
+        'pw': game_info.get('white', '白棋'),
+        'br': game_info.get('black_rank', ''),
+        'wr': game_info.get('white_rank', ''),
+        'result': game_info.get('result', ''),
+        'date': game_info.get('date', ''),
+        'movenum': stats.get('move_nodes', 0)
+    }
     
     return info
 
