@@ -35,15 +35,7 @@ class FoxwqFetcher(BaseSourceFetcher):
         "https://h5.foxwq.com/yehunewshare/?chessid={CHESS_ID}",
     ]
     
-    def __init__(self, mode='auto'):
-        """
-        Args:
-            mode: 'auto' | 'api' | 'websocket'
-                auto - 自动选择（优先API，失败尝试WebSocket）
-                api - 仅使用API模式（历史棋谱，最快）
-                websocket - 仅使用WebSocket（进行中对局）
-        """
-        self.mode = mode
+    def __init__(self):
         self._timing = {}
     
     def fetch(self, url: str, output_path: str = None) -> FetchResult:
@@ -80,35 +72,32 @@ class FoxwqFetcher(BaseSourceFetcher):
         metadata = {}
         error_msg = None
         
-        # 步骤1：尝试API模式（如果模式允许）
-        if self.mode in ('auto', 'api'):
-            t0 = time.time()
-            sgf_content = extract_via_api(chess_id)
-            self._timing['api_fetch'] = time.time() - t0
-            
-            if sgf_content:
-                # API成功，获取元数据
-                t0 = time.time()
-                game_info = extract_game_info(chess_id, params.get('uid'))
-                self._timing['fetch_metadata'] = time.time() - t0
-                
-                if game_info:
-                    metadata = {
-                        'game_id': chess_id,
-                        'black_name': game_info.get('black_nick', '黑棋'),
-                        'white_name': game_info.get('white_nick', '白棋'),
-                        'black_rank': self._format_dan(game_info.get('black_dan')),
-                        'white_rank': self._format_dan(game_info.get('white_dan')),
-                        'result': game_info.get('result', ''),
-                        'date': game_info.get('start_time', ''),
-                        'moves_count': game_info.get('movenum', 0),
-                        'extract_mode': 'api',
-                    }
-            elif self.mode == 'api':
-                error_msg = "API获取失败，棋谱可能不存在或需要WebSocket模式"
+        # 步骤1：尝试API模式
+        t0 = time.time()
+        sgf_content = extract_via_api(chess_id)
+        self._timing['api_fetch'] = time.time() - t0
         
-        # 步骤2：API失败，尝试WebSocket（如果模式允许且需要）
-        if not sgf_content and self.mode in ('auto', 'websocket'):
+        if sgf_content:
+            # API成功，获取元数据
+            t0 = time.time()
+            game_info = extract_game_info(chess_id, params.get('uid'))
+            self._timing['fetch_metadata'] = time.time() - t0
+            
+            if game_info:
+                metadata = {
+                    'game_id': chess_id,
+                    'black_name': game_info.get('black_nick', '黑棋'),
+                    'white_name': game_info.get('white_nick', '白棋'),
+                    'black_rank': self._format_dan(game_info.get('black_dan')),
+                    'white_rank': self._format_dan(game_info.get('white_dan')),
+                    'result': game_info.get('result', ''),
+                    'date': game_info.get('start_time', ''),
+                    'moves_count': game_info.get('movenum', 0),
+                    'extract_mode': 'api',
+                }
+        
+        # 步骤2：API失败，尝试WebSocket
+        if not sgf_content:
             t0 = time.time()
             try:
                 # WebSocket提取返回: (moves, player_names, handicap, is_jueyi)
