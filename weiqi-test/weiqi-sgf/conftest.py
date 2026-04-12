@@ -133,9 +133,8 @@ def page_factory():
 
 
 # 全局配置 - 只在 Playwright 可用时加载
+# 注意：pytest_plugins 已移至顶层 conftest.py
 if PLAYWRIGHT_AVAILABLE:
-    pytest_plugins = ['pytest_playwright']
-    
     def pytest_configure(config):
         """配置 pytest-playwright"""
         config.option.browser = ["chromium"]
