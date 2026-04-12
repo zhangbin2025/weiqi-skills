@@ -17,6 +17,13 @@ help:
 	@echo "  make test SKILL=weiqi-joseki FILE=test_joseki_db    # 运行指定测试文件"
 	@echo "  make test SKILL=weiqi-joseki FILE=test_joseki_db FUNC=test_add_joseki  # 运行指定测试函数（支持模糊匹配）"
 	@echo ""
+	@echo "快捷方式:"
+	@echo "  make joseki                        # 运行 weiqi-joseki 测试"
+	@echo "  make sgf                           # 运行 weiqi-sgf 测试"
+	@echo "  make db                            # 运行 weiqi-db 测试"
+	@echo "  make foxwq                         # 运行 weiqi-foxwq 测试"
+	@echo "  make fetcher                       # 运行 weiqi-fetcher 测试"
+	@echo ""
 	@echo "其他命令:"
 	@echo "  make list                          # 列出所有可用的测试"
 	@echo "  make clean                         # 清理测试缓存和临时文件"
@@ -68,3 +75,6 @@ db:
 
 foxwq:
 	$(PYTEST) $(TEST_DIR)/weiqi-foxwq/ -v
+
+fetcher:
+	$(PYTEST) $(TEST_DIR)/weiqi-fetcher/ -v
