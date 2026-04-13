@@ -110,8 +110,14 @@
         
         function coordToDisplay(coord) {
             if (!coord || coord.length < 2) return coord;
+            // 处理停一手 (pass)：tt 或空坐标
+            if (coord === 'tt' || coord === 'TT') return '停一手';
             const x = coord.charCodeAt(0) - 97;
             const y = coord.charCodeAt(1) - 97;
+            // 检查坐标是否在有效范围内
+            if (x < 0 || x >= BOARD_SIZE || y < 0 || y >= BOARD_SIZE) {
+                return coord; // 返回原坐标（可能是特殊标记）
+            }
             const col = String.fromCharCode(65 + x + (x >= 8 ? 1 : 0));
             const row = BOARD_SIZE - y;
             return col + row;
@@ -158,6 +164,17 @@
             return depth;
         }
         
+        function isPassMove(coord) {
+            // 判断是否为停一手：空坐标、tt、或超出棋盘范围的坐标
+            if (!coord || coord === '' || coord === 'tt' || coord === 'TT') return true;
+            if (coord.length >= 2) {
+                const x = coord.charCodeAt(0) - 97;
+                const y = coord.charCodeAt(1) - 97;
+                if (x < 0 || x >= BOARD_SIZE || y < 0 || y >= BOARD_SIZE) return true;
+            }
+            return false;
+        }
+
         function getMovesToCurrent() {
             const moves = [];
             let currentPathNode = tree;
@@ -165,12 +182,14 @@
                 const index = state.currentPath[i];
                 if (!currentPathNode.children || currentPathNode.children.length <= index) break;
                 currentPathNode = currentPathNode.children[index];
-                if (currentPathNode.color && currentPathNode.coord) {
+                if (currentPathNode.color) {
+                    const isPass = isPassMove(currentPathNode.coord);
                     moves.push({
                         color: currentPathNode.color === 'B' ? 'black' : 'white',
-                        x: currentPathNode.coord.charCodeAt(0) - 97,
-                        y: currentPathNode.coord.charCodeAt(1) - 97,
+                        x: isPass ? -1 : currentPathNode.coord.charCodeAt(0) - 97,
+                        y: isPass ? -1 : currentPathNode.coord.charCodeAt(1) - 97,
                         coord: currentPathNode.coord,
+                        isPass: isPass,
                         name: currentPathNode.name,
                         properties: currentPathNode.properties
                     });
@@ -179,12 +198,14 @@
             let current = currentPathNode;
             for (let i = 0; i < state.displayIndex && current.children && current.children.length > 0; i++) {
                 current = current.children[0];
-                if (current.color && current.coord) {
+                if (current.color) {
+                    const isPass = isPassMove(current.coord);
                     moves.push({
                         color: current.color === 'B' ? 'black' : 'white',
-                        x: current.coord.charCodeAt(0) - 97,
-                        y: current.coord.charCodeAt(1) - 97,
+                        x: isPass ? -1 : current.coord.charCodeAt(0) - 97,
+                        y: isPass ? -1 : current.coord.charCodeAt(1) - 97,
                         coord: current.coord,
+                        isPass: isPass,
                         name: current.name,
                         properties: current.properties
                     });
@@ -476,7 +497,7 @@
             const moves = getMovesToCurrent();
             for (let i = 0; i < moves.length; i++) {
                 const move = moves[i];
-                if (!move) continue;
+                if (!move || move.isPass) continue;  // 跳过停一手
                 const opponent = move.color === 'black' ? 'white' : 'black';
                 board[move.y][move.x] = move.color;
                 for (const [nx, ny] of getNeighbors(move.x, move.y)) {
@@ -538,14 +559,16 @@
                 }
             } else {
                 const inMainBranch = isInMainBranch();
+                // 找到最后一个非停一手的着法，用于标记最后一手
+                const lastNonPassMove = moves.length > 0 && !moves[moves.length - 1].isPass ? moves[moves.length - 1] : null;
                 if (inMainBranch) {
                     // 主分支：根据手数开关决定是否显示
                     for (let y = 0; y < BOARD_SIZE; y++) {
                         for (let x = 0; x < BOARD_SIZE; x++) {
                             if (board[y][x]) {
-                                const isLast = moves.length > 0 &&
-                                    moves[moves.length - 1].x === x &&
-                                    moves[moves.length - 1].y === y;
+                                const isLast = lastNonPassMove &&
+                                    lastNonPassMove.x === x &&
+                                    lastNonPassMove.y === y;
                                 const moveNum = showMoveNumbers ? (moves.findIndex(m => m.x === x && m.y === y) + 1) : null;
                                 drawStone(x, y, board[y][x], isLast, moveNum);
                             }
@@ -556,9 +579,9 @@
                     for (let y = 0; y < BOARD_SIZE; y++) {
                         for (let x = 0; x < BOARD_SIZE; x++) {
                             if (board[y][x]) {
-                                const isLast = moves.length > 0 &&
-                                    moves[moves.length - 1].x === x &&
-                                    moves[moves.length - 1].y === y;
+                                const isLast = lastNonPassMove &&
+                                    lastNonPassMove.x === x &&
+                                    lastNonPassMove.y === y;
                                 let moveNum = null;
                                 const idx = moves.findIndex(m => m.x === x && m.y === y);
                                 if (idx >= state.variationBaseMove) {
@@ -585,10 +608,20 @@
 
             // 试下模式时不修改状态栏，保持原有内容
             if (state.trialMode) return;
+
+            // 获取当前着法信息，检查是否是停一手
+            const moves = getMovesToCurrent();
+            const lastMove = moves.length > 0 ? moves[moves.length - 1] : null;
+            const isLastPass = lastMove && lastMove.isPass;
+
             if (state.currentPath.length === 0 && state.displayIndex === 0 && state.trialMoves.length === 0) {
                 moveInfo.textContent = '第 0 手';
             } else {
-                moveInfo.textContent = '第 ' + moveCount + ' 手';
+                let statusText = '第 ' + moveCount + ' 手';
+                if (isLastPass) {
+                    statusText += ' (' + (lastMove.color === 'black' ? '黑' : '白') + '停一手)';
+                }
+                moveInfo.textContent = statusText;
             }
             if (blackCaptured > 0 || whiteCaptured > 0) {
                 capturedInfo.textContent = '提子: 黑 ' + blackCaptured + ' 子, 白 ' + whiteCaptured + ' 子';
