@@ -36,7 +36,7 @@ class TestDiscover(unittest.TestCase):
             "(;GM[1];B[pd];W[qf];B[nc];W[rd])",  # 4手定式
         ]
         
-        results = self.db.discover(
+        result = self.db.discover(
             sgf_sources=sgf_list,
             first_n=50,
             min_moves=4,
@@ -45,6 +45,7 @@ class TestDiscover(unittest.TestCase):
         )
         
         # 应该发现一个新定式
+        results = result['joseki_list']
         self.assertEqual(len(results), 1)
         self.assertTrue(results[0]['is_new'])
         self.assertEqual(results[0]['joseki_id'], '')
@@ -60,7 +61,7 @@ class TestDiscover(unittest.TestCase):
             "(;GM[1];B[pd];W[qf];B[nc];W[rd])",  # 与库中相同的定式
         ]
         
-        results = self.db.discover(
+        result = self.db.discover(
             sgf_sources=sgf_list,
             first_n=50,
             min_moves=4,
@@ -69,6 +70,7 @@ class TestDiscover(unittest.TestCase):
         )
         
         # 应该发现为已存在的定式
+        results = result['joseki_list']
         self.assertEqual(len(results), 1)
         self.assertFalse(results[0]['is_new'])
         self.assertNotEqual(results[0]['joseki_id'], '')
@@ -90,7 +92,7 @@ class TestDiscover(unittest.TestCase):
             "(;GM[1];B[dd];W[cc];B[fc])",   # 罕见定式
         ]
         
-        results = self.db.discover(
+        result = self.db.discover(
             sgf_sources=sgf_list,
             first_n=50,
             min_moves=3,
@@ -99,6 +101,7 @@ class TestDiscover(unittest.TestCase):
         )
         
         # 罕见定式应该排在常见定式前面
+        results = result['joseki_list']
         self.assertEqual(len(results), 2)
         # 罕见定式（frequency=2）应该排在常见定式（frequency=100）前面
         rare_idx = 0 if results[0]['frequency'] == 2 else 1
@@ -118,7 +121,7 @@ class TestDiscover(unittest.TestCase):
             "(;GM[1];B[qq];W[rr];B[qp];W[rq];B[qo];W[ro])",  # 新定式（6手）
         ]
         
-        results = self.db.discover(
+        result = self.db.discover(
             sgf_sources=sgf_list,
             first_n=50,
             min_moves=2,
@@ -127,6 +130,7 @@ class TestDiscover(unittest.TestCase):
         )
         
         # 验证排序：新定式在前，然后按手数降序
+        results = result['joseki_list']
         self.assertEqual(len(results), 3)
         self.assertTrue(results[0]['is_new'])  # 第一个是新定式
         self.assertTrue(results[1]['is_new'])  # 第二个也是新定式
@@ -141,7 +145,7 @@ class TestDiscover(unittest.TestCase):
             "(;GM[1];B[qq];W[rr];B[qp];W[rq])", # 4手
         ]
         
-        results = self.db.discover(
+        result = self.db.discover(
             sgf_sources=sgf_list,
             first_n=50,
             min_moves=3,  # 最少3手
@@ -150,6 +154,7 @@ class TestDiscover(unittest.TestCase):
         )
         
         # 应该只有2个定式（过滤了2手的）
+        results = result['joseki_list']
         self.assertEqual(len(results), 2)
         for r in results:
             self.assertGreaterEqual(r['move_count'], 3)
@@ -161,7 +166,7 @@ class TestDiscover(unittest.TestCase):
         for i in range(10):
             sgf_list.append(f"(;GM[1];B[{'abcdefghij'[i]}d];W[{'abcdefghij'[i]}f])")
         
-        results = self.db.discover(
+        result = self.db.discover(
             sgf_sources=sgf_list,
             first_n=50,
             min_moves=2,
@@ -169,6 +174,7 @@ class TestDiscover(unittest.TestCase):
             verbose=False
         )
         
+        results = result['joseki_list']
         self.assertEqual(len(results), 5)
         # 验证排名连续
         for i, r in enumerate(results):
@@ -182,7 +188,7 @@ class TestDiscover(unittest.TestCase):
         (sgf_dir / "game1.sgf").write_text("(;GM[1];B[pd];W[qf])")
         (sgf_dir / "game2.sgf").write_text("(;GM[1];B[dd];W[cc])")
         
-        results = self.db.discover(
+        result = self.db.discover(
             sgf_sources=[sgf_dir],
             first_n=50,
             min_moves=2,
@@ -191,6 +197,7 @@ class TestDiscover(unittest.TestCase):
         )
         
         # 应该从目录中找到2个定式
+        results = result['joseki_list']
         self.assertEqual(len(results), 2)
     
     def test_discover_deduplication(self):
@@ -202,7 +209,7 @@ class TestDiscover(unittest.TestCase):
             "(;GM[1];B[pd];W[qf];B[nc])",  # 完全相同的定式
         ]
         
-        results = self.db.discover(
+        result = self.db.discover(
             sgf_sources=sgf_list,
             first_n=50,
             min_moves=3,
@@ -211,6 +218,7 @@ class TestDiscover(unittest.TestCase):
         )
         
         # 应该只有1个唯一定式
+        results = result['joseki_list']
         self.assertEqual(len(results), 1)
         # 但来源应该有3个
         self.assertEqual(len(results[0]['sources']), 3)
@@ -232,7 +240,7 @@ class TestDiscover(unittest.TestCase):
         """测试来源信息包含在结果中"""
         sgf = "(;GM[1]PB[柯洁]PW[申真谞];B[pd];W[qf])"
         
-        results = self.db.discover(
+        result = self.db.discover(
             sgf_sources=[sgf],
             first_n=50,
             min_moves=2,
@@ -240,6 +248,7 @@ class TestDiscover(unittest.TestCase):
             verbose=False
         )
         
+        results = result['joseki_list']
         self.assertEqual(len(results), 1)
         self.assertEqual(len(results[0]['sources']), 1)
         source = results[0]['sources'][0]
@@ -253,7 +262,7 @@ class TestDiscover(unittest.TestCase):
             "(;GM[1];B[pd];W[qf])",
         ]
         
-        results = self.db.discover(
+        result = self.db.discover(
             sgf_sources=sgf_list,
             first_n=50,
             min_moves=2,
@@ -261,6 +270,11 @@ class TestDiscover(unittest.TestCase):
             verbose=False
         )
         
+        # 验证返回格式是字典
+        self.assertIn('stats', result)
+        self.assertIn('joseki_list', result)
+        
+        results = result['joseki_list']
         item = results[0]
         # 验证所有必需字段
         self.assertIn('rank', item)
