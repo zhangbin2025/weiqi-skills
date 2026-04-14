@@ -573,19 +573,21 @@ def cmd_discover(args):
         joseki_list = result.get('joseki_list', [])
         
         print("\n" + "=" * 100)
-        print("「定式发现结果」按研究价值排序（新定式优先 → 罕见定式 → 复杂定式）")
+        print("「定式发现结果」按研究价值排序（罕见定式优先 → 常见定式）")
         print("=" * 100)
-        print(f"统计: {stats.get('total_files', 0)}文件 → {stats.get('total_joseki', 0)}定式 → {stats.get('unique_joseki', 0)}唯一 | 新:{stats.get('new_joseki', 0)} 罕见:{stats.get('rare_joseki', 0)} 已有:{stats.get('existing_joseki', 0)}")
+        print(f"统计: {stats.get('total_files', 0)}文件 → {stats.get('total_joseki', 0)}定式 → {stats.get('unique_joseki', 0)}唯一 | 罕见:{stats.get('rare_joseki', 0)} 常见:{stats.get('common_joseki', 0)}")
         print("-" * 100)
-        print(f"{'排名':<6} {'ID':<12} {'新?':<5} {'手数':<6} {'次数':<8} {'相似度':<10} {'着法序列':<30} {'来源'}")
+        print(f"{'排名':<6} {'ID':<12} {'罕见?':<6} {'手数':<6} {'次数':<8} {'前缀':<8} {'着法序列':<30} {'来源'}")
         print("-" * 100)
         
         for item in joseki_list:
-            joseki_id = item['joseki_id'] if item['joseki_id'] else "(新定式)"
-            is_new = "✓" if item['is_new'] else ""
+            joseki_id = item['joseki_id'] if item['joseki_id'] else "(未匹配)"
+            is_rare = "罕见" if item['is_rare'] else ""
             moves_str = " ".join(item['moves'][:8])
             if len(item['moves']) > 8:
                 moves_str += "..."
+            
+            prefix_len = item.get('matched_prefix_len', 0)
             
             # 来源信息摘要
             sources_summary = ""
@@ -603,8 +605,8 @@ def cmd_discover(args):
                 else:
                     sources_summary = Path(first_source.get('file', 'unknown')).name[:20]
             
-            print(f"{item['rank']:<6} {joseki_id:<12} {is_new:<5} {item['move_count']:<6} "
-                  f"{item['frequency']:<8} {item['similarity']:<10.2f} {moves_str:<30} {sources_summary}")
+            print(f"{item['rank']:<6} {joseki_id:<12} {is_rare:<6} {item['move_count']:<6} "
+                  f"{item['frequency']:<8} {prefix_len:<8} {moves_str:<30} {sources_summary}")
         
         print("=" * 100)
         print(f"总计: {len(joseki_list)} 个定式")
