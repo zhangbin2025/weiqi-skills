@@ -533,43 +533,54 @@ def cmd_discover(args):
     """发现值得研究的定式"""
     from pathlib import Path
     
+    # 安静模式自动设置output=json
+    if args.quiet:
+        args.output = "json"
+    
     # 收集SGF源
     sgf_sources = []
     for path_str in args.paths:
         path = Path(path_str)
         if path.exists():
             sgf_sources.append(path)
-        else:
+        elif not args.quiet:
             print(f"⚠️  路径不存在: {path_str}")
     
     if not sgf_sources:
-        print("❌ 错误: 没有有效的SGF源")
+        if not args.quiet:
+            print("❌ 错误: 没有有效的SGF源")
         sys.exit(1)
     
     db = JosekiDB(args.db)
     
-    results = db.discover(
+    result = db.discover(
         sgf_sources=sgf_sources,
         first_n=args.first_n,
         min_moves=args.min_moves,
         limit=args.limit,
         min_similarity=args.min_similarity,
-        verbose=True
+        verbose=not args.quiet,
+        quiet=args.quiet
     )
     
     # 输出结果
     if args.output == "json":
         import json
-        print(json.dumps(results, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         # 表格格式输出
+        stats = result.get('stats', {})
+        joseki_list = result.get('joseki_list', [])
+        
         print("\n" + "=" * 100)
         print("「定式发现结果」按研究价值排序（新定式优先 → 罕见定式 → 复杂定式）")
         print("=" * 100)
+        print(f"统计: {stats.get('total_files', 0)}文件 → {stats.get('total_joseki', 0)}定式 → {stats.get('unique_joseki', 0)}唯一 | 新:{stats.get('new_joseki', 0)} 罕见:{stats.get('rare_joseki', 0)} 已有:{stats.get('existing_joseki', 0)}")
+        print("-" * 100)
         print(f"{'排名':<6} {'ID':<12} {'新?':<5} {'手数':<6} {'次数':<8} {'相似度':<10} {'着法序列':<30} {'来源'}")
         print("-" * 100)
         
-        for item in results:
+        for item in joseki_list:
             joseki_id = item['joseki_id'] if item['joseki_id'] else "(新定式)"
             is_new = "✓" if item['is_new'] else ""
             moves_str = " ".join(item['moves'][:8])
@@ -596,7 +607,7 @@ def cmd_discover(args):
                   f"{item['frequency']:<8} {item['similarity']:<10.2f} {moves_str:<30} {sources_summary}")
         
         print("=" * 100)
-        print(f"总计: {len(results)} 个定式")
+        print(f"总计: {len(joseki_list)} 个定式")
 
 
 def main():
@@ -692,6 +703,7 @@ def main():
     p_discover.add_argument("--limit", type=int, default=50, help="最多返回多少个定式（默认50）")
     p_discover.add_argument("--min-similarity", type=float, default=0.9, help="判断是否为新定式的相似度阈值（默认0.9）")
     p_discover.add_argument("--output", choices=["table", "json"], default="table", help="输出格式（默认table）")
+    p_discover.add_argument("--quiet", action="store_true", help="安静模式，只输出JSON结果（自动设置--output=json）")
     
     args = parser.parse_args()
     

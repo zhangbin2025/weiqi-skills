@@ -964,8 +964,9 @@ class JosekiDB:
         min_moves: int = 4,
         limit: int = 50,
         min_similarity: float = 0.9,
-        verbose: bool = True
-    ) -> List[Dict]:
+        verbose: bool = True,
+        quiet: bool = False
+    ) -> Dict:
         """
         发现值得研究的定式（新定式 + 罕见定式）
         
@@ -980,20 +981,25 @@ class JosekiDB:
             min_moves: 定式最少手数（默认4）
             limit: 最多返回多少个定式（默认50）
             min_similarity: 判断是否为新定式的相似度阈值（默认0.9）
-            verbose: 详细输出开关
+            verbose: 详细输出开关（与quiet互斥）
+            quiet: 安静模式，只返回结果不输出日志
         
         Returns:
-            按研究价值排序的定式列表，每个元素包含：
-            - rank: 排名
-            - joseki_id: 定式ID（新定式为空字符串）
-            - is_new: 是否为新定式
-            - moves: 着法序列
-            - move_count: 手数
-            - frequency: 库中出现次数（新定式为0）
-            - similarity: 与库中最相似定式的相似度
-            - sources: 来源信息列表
+            包含统计信息和定式列表的字典：
+            - stats: 统计信息
+              - total_files: 扫描的文件数
+              - total_joseki: 提取的定式总数
+              - unique_joseki: 去重后的定式数
+              - new_joseki: 新定式数量
+              - rare_joseki: 罕见定式数量(次数<=5)
+              - existing_joseki: 库中已有定式数量
+            - joseki_list: 按研究价值排序的定式列表
         """
         from pathlib import Path
+        
+        # quiet模式覆盖verbose
+        if quiet:
+            verbose = False
         
         # 步骤1: 收集所有定式
         joseki_records = []  # [(moves_tuple, sgf_info, corner)]
@@ -1047,8 +1053,9 @@ class JosekiDB:
                     print(f"  ⚠️ 处理源 {source} 时出错: {e}")
                 continue
         
+        total_joseki = len(joseki_records)
         if verbose:
-            print(f"✅ 扫描完成: {total_files} 个文件，提取 {len(joseki_records)} 个定式")
+            print(f"✅ 扫描完成: {total_files} 个文件，提取 {total_joseki} 个定式")
         
         # 步骤2: 去重并聚合来源
         unique_joseki = {}  # {moves_tuple: {'sources': [], 'count': 0}}
@@ -1083,8 +1090,9 @@ class JosekiDB:
                 source_copy['corner'] = corner
                 unique_joseki[moves_tuple]['sources'].append(source_copy)
         
+        unique_count = len(unique_joseki)
         if verbose:
-            print(f"📊 去重后: {len(unique_joseki)} 个唯一定式")
+            print(f"📊 去重后: {unique_count} 个唯一定式")
         
         # 步骤3: 查询每个定式在库中的情况
         results = []
@@ -1148,9 +1156,10 @@ class JosekiDB:
             item['rank'] = rank
             final_results.append(item)
         
-        # 统计信息
-        new_count = sum(1 for r in results if r['is_new'])
-        rare_count = sum(1 for r in results if not r['is_new'] and r['frequency'] <= 5)
+        # 统计信息（基于限制后的结果）
+        new_count = sum(1 for r in final_results if r['is_new'])
+        rare_count = sum(1 for r in final_results if not r['is_new'] and r['frequency'] <= 5)
+        existing_count = sum(1 for r in final_results if not r['is_new'])
         
         if verbose:
             print(f"\n📈 发现结果:")
@@ -1158,7 +1167,20 @@ class JosekiDB:
             print(f"   罕见定式(次数≤5): {rare_count} 个")
             print(f"   总计: {len(final_results)} 个")
         
-        return final_results
+        # 构建返回结果（包含stats）
+        result = {
+            "stats": {
+                "total_files": total_files,
+                "total_joseki": total_joseki,
+                "unique_joseki": unique_count,
+                "new_joseki": new_count,
+                "rare_joseki": rare_count,
+                "existing_joseki": existing_count
+            },
+            "joseki_list": final_results
+        }
+        
+        return result
     
     def _parse_sgf_info(self, sgf_data: str, sgf_path: Optional[Path] = None) -> Dict:
         """解析SGF元信息"""
@@ -1176,7 +1198,6 @@ class JosekiDB:
             patterns = {
                 'black_player': r'PB\[([^\]]+)\]',
                 'white_player': r'PW\[([^\]]+)\]',
-                'event': r'EV\[([^\]]+)\]',
                 'date': r'DT\[([^\]]+)\]',
                 'result': r'RE\[([^\]]+)\]'
             }
@@ -1185,6 +1206,16 @@ class JosekiDB:
                 match = re.search(pattern, sgf_data)
                 if match:
                     info[key] = match.group(1)
+            
+            # 赛事信息：优先用EV，没有则用GN（野狐用GN）
+            event_match = re.search(r'EV\[([^\]]+)\]', sgf_data)
+            if event_match:
+                info['event'] = event_match.group(1)
+            else:
+                # 尝试GN（Game Name）
+                gn_match = re.search(r'GN\[([^\]]+)\]', sgf_data)
+                if gn_match:
+                    info['event'] = gn_match.group(1)
         except Exception:
             pass
         
