@@ -300,13 +300,13 @@ class TestDiscover(unittest.TestCase):
         # 验证所有必需字段
         self.assertIn('rank', item)
         self.assertIn('joseki_id', item)
-        self.assertIn('is_rare', item)  # 新的字段
+        self.assertIn('is_rare', item)
         self.assertIn('moves', item)
         self.assertIn('move_count', item)
-        self.assertIn('matched_prefix', item)  # 新的字段
-        self.assertIn('matched_prefix_len', item)  # 新的字段
+        self.assertIn('matched_prefix', item)
+        self.assertIn('matched_prefix_len', item)
         self.assertIn('frequency', item)
-        self.assertIn('similarity', item)
+        # similarity字段已移除（不再使用LCS相似度）
         self.assertIn('sources', item)
         
         # 验证字段类型
@@ -316,7 +316,6 @@ class TestDiscover(unittest.TestCase):
         self.assertIsInstance(item['moves'], list)
         self.assertIsInstance(item['matched_prefix_len'], int)
         self.assertIsInstance(item['frequency'], int)
-        self.assertIsInstance(item['similarity'], float)
         self.assertIsInstance(item['sources'], list)
 
 

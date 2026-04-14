@@ -155,11 +155,13 @@ def _print_match_results(results):
     if not results:
         print("  无匹配")
         return
-    print(f"  {'排名':<6} {'ID':<12} {'名称':<25} {'相似度':<10} {'方向':<8}")
+    # 新格式：显示前缀长度和总手数
+    print(f"  {'排名':<6} {'ID':<12} {'名称':<25} {'前缀/总手':<12} {'方向':<8}")
     print("  " + "-" * 70)
     for i, r in enumerate(results, 1):
-        marker = " ✓" if r.similarity > 0.9 else ""
-        print(f"  {i:<6} {r.id:<12} {r.name:<25} {r.similarity:<10.2f} {r.matched_direction:<8}{marker}")
+        prefix_str = f"{r.prefix_len}/{r.total_moves}"
+        marker = " ✓" if r.prefix_len == r.total_moves else ""  # 完全匹配标记
+        print(f"  {i:<6} {r.id:<12} {r.name:<25} {prefix_str:<12} {r.matched_direction:<8}{marker}")
 
 
 def cmd_match(args):
@@ -226,7 +228,13 @@ def cmd_identify(args):
         import json
         output = {}
         for corner, matches in results.items():
-            output[corner] = [{"id": m.id, "name": m.name, "similarity": m.similarity} for m in matches]
+            # 新的输出字段
+            output[corner] = [{
+                "id": m.id,
+                "name": m.name,
+                "prefix_len": m.prefix_len,
+                "total_moves": m.total_moves
+            } for m in matches]
         print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
         print("\n" + "=" * 70)
@@ -238,8 +246,11 @@ def cmd_identify(args):
             cn = corner_names.get(corner, corner)
             if matches:
                 best = matches[0]
-                match_str = f"{best.name} (相似度: {best.similarity:.2f})"
-                if best.similarity > 0.9:
+                # 新格式：显示前缀/总手数
+                match_str = f"{best.name} ({best.prefix_len}/{best.total_moves}手)"
+                if best.prefix_len == best.total_moves:
+                    match_str += " ✓ 完全匹配"
+                elif best.prefix_len >= 4:
                     match_str += " ✓ 高置信度"
             else:
                 match_str = "(无匹配)"
@@ -577,6 +588,7 @@ def cmd_discover(args):
         print("=" * 100)
         print(f"统计: {stats.get('total_files', 0)}文件 → {stats.get('total_joseki', 0)}定式 → {stats.get('unique_joseki', 0)}唯一 | 罕见:{stats.get('rare_joseki', 0)} 常见:{stats.get('common_joseki', 0)}")
         print("-" * 100)
+        # 去掉相似度列
         print(f"{'排名':<6} {'ID':<12} {'罕见?':<6} {'手数':<6} {'次数':<8} {'前缀':<8} {'着法序列':<30} {'来源'}")
         print("-" * 100)
         

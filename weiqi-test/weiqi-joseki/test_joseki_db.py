@@ -132,24 +132,30 @@ class TestJosekiDB(unittest.TestCase):
         
         results = self.db.match(moves)
         self.assertEqual(len(results), 1)
-        self.assertEqual(results[0].similarity, 1.0)
+        self.assertEqual(results[0].prefix_len, 3)  # 完全匹配，前缀长度=3
+        self.assertEqual(results[0].total_moves, 3)  # 总手数=3
     
     def test_match_partial(self):
-        """部分匹配"""
+        """部分匹配 - 前缀匹配"""
         # 添加完整定式
         self.db.add(name="完整定式", moves=["B[pd]", "W[qf]", "B[nc]", "W[pb]"])
         
-        # 匹配部分序列
-        results = self.db.match(["pd", "qf", "nc"], min_similarity=0.5)
+        # 匹配部分序列（3手，定式4手）
+        results = self.db.match(["pd", "qf", "nc"])
         self.assertTrue(len(results) > 0)
-        self.assertTrue(results[0].similarity > 0.5)
+        # 前缀匹配：前3手匹配
+        self.assertEqual(results[0].prefix_len, 3)  # 匹配3手前缀
+        self.assertEqual(results[0].total_moves, 4)  # 定式共4手
     
     def test_match_with_pass(self):
-        """匹配包含pass的序列"""
-        self.db.add(name="含脱先定式", moves=["B[pd]", "W[]", "B[qf]"])
+        """匹配包含脱先(tt)的序列"""
+        self.db.add(name="含脱先定式", moves=["B[pd]", "W[tt]", "B[qf]", "W[nc]"])
         
-        results = self.db.match(["pd", "qf"])
-        self.assertTrue(len(results) >= 0)  # pass被忽略
+        # 包含tt的输入应该能匹配
+        results = self.db.match(["pd", "tt", "qf"])
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].prefix_len, 3)  # 包括tt在内，匹配3手
+        self.assertEqual(results[0].total_moves, 4)  # 定式共4手
     
     def test_match_top_right(self):
         """匹配右上角定式"""
@@ -157,6 +163,8 @@ class TestJosekiDB(unittest.TestCase):
         
         results = self.db.match_top_right(["pd", "qf", "nc"])
         self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].prefix_len, 3)  # 完全匹配
+        self.assertEqual(results[0].total_moves, 3)
     
     # ========== 8向生成测试 ==========
     
@@ -454,26 +462,6 @@ class TestJosekiDB(unittest.TestCase):
         result = JosekiDB.normalize_moves(moves, ignore_pass=False)
         self.assertEqual(result, ["pd", "", "qf"])
     
-    def test_lcs_similarity(self):
-        """最长公共子序列相似度"""
-        seq1 = ["a", "b", "c", "d"]
-        seq2 = ["a", "b", "d", "e"]
-        
-        sim = JosekiDB.lcs_similarity(seq1, seq2)
-        self.assertGreater(sim, 0.5)
-        self.assertLess(sim, 1.0)
-    
-    def test_lcs_similarity_identical(self):
-        """完全相同的序列"""
-        seq = ["a", "b", "c"]
-        sim = JosekiDB.lcs_similarity(seq, seq)
-        self.assertEqual(sim, 1.0)
-    
-    def test_lcs_similarity_empty(self):
-        """空序列"""
-        sim = JosekiDB.lcs_similarity([], ["a", "b"])
-        self.assertEqual(sim, 0.0)
-
     # ========== list_all 返回新字段测试 ==========
     
     def test_list_all_returns_frequency_and_probability(self):
