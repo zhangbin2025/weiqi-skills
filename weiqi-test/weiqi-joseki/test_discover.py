@@ -29,9 +29,8 @@ class TestDiscover(unittest.TestCase):
         """清理临时数据库"""
         shutil.rmtree(self.temp_dir)
     
-    def test_discover_new_joseki(self):
-        """发现新定式"""
-        # 空库中，任何定式都是新定式
+    def test_discover_empty_db(self):
+        """空库中发现定式"""
         sgf_list = [
             "(;GM[1];B[pd];W[qf];B[nc];W[rd])",  # 4手定式
         ]
@@ -44,21 +43,21 @@ class TestDiscover(unittest.TestCase):
             verbose=False
         )
         
-        # 应该发现一个新定式
+        # 应该发现一个定式（空库中匹配0手）
         results = result['joseki_list']
         self.assertEqual(len(results), 1)
-        self.assertTrue(results[0]['is_new'])
-        self.assertEqual(results[0]['joseki_id'], '')
+        self.assertEqual(results[0]['matched_prefix_len'], 0)  # 空库无匹配
+        self.assertEqual(results[0]['joseki_id'], '')  # 无匹配ID
         self.assertEqual(results[0]['move_count'], 4)
-        self.assertEqual(results[0]['frequency'], 0)
+        self.assertTrue(results[0]['is_rare'])  # 匹配0手 < min_moves，标记为罕见
     
-    def test_discover_existing_joseki(self):
-        """发现已存在的定式"""
+    def test_discover_common_joseki(self):
+        """发现常见定式（匹配前缀 >= min_moves）"""
         # 先添加一个定式到库中
         self.db.add(name="已有定式", moves=["B[pd]", "W[qf]", "B[nc]", "W[rd]"])
         
         sgf_list = [
-            "(;GM[1];B[pd];W[qf];B[nc];W[rd])",  # 与库中相同的定式
+            "(;GM[1];B[pd];W[qf];B[nc];W[rd])",  # 与库中完全相同的定式
         ]
         
         result = self.db.discover(
@@ -69,78 +68,98 @@ class TestDiscover(unittest.TestCase):
             verbose=False
         )
         
-        # 应该发现为已存在的定式
+        # 应该发现为常见定式
         results = result['joseki_list']
         self.assertEqual(len(results), 1)
-        self.assertFalse(results[0]['is_new'])
+        self.assertFalse(results[0]['is_rare'])  # 匹配4手 >= min_moves(4)，不罕见
+        self.assertEqual(results[0]['matched_prefix_len'], 4)  # 完全匹配
         self.assertNotEqual(results[0]['joseki_id'], '')
-        self.assertEqual(results[0]['move_count'], 4)
     
     def test_discover_rare_joseki(self):
-        """发现罕见定式（频率低）"""
-        # 添加两个不同的定式，一个频率高，一个频率低
-        # 使用 force=True 确保都能添加
-        self.db.add(name="常见定式", moves=["B[pd]", "W[qf]", "B[nc]"])
-        self.db.joseki_list[0]['frequency'] = 100
-        # 完全不同的定式（dd, cc 在左上区域）
-        self.db.add(name="罕见定式", moves=["B[dd]", "W[cc]", "B[fc]"], force=True)
-        self.db.joseki_list[1]['frequency'] = 2
-        self.db._save()
+        """发现罕见定式（匹配前缀 < min_moves）"""
+        # 添加一个6手定式到库中
+        self.db.add(name="常见定式", moves=["B[pd]", "W[qc]", "B[qd]", "W[pc]", "B[od]", "W[nc]"])
         
+        # 使用7手棋谱
         sgf_list = [
-            "(;GM[1];B[pd];W[qf];B[nc])",   # 常见定式
-            "(;GM[1];B[dd];W[cc];B[fc])",   # 罕见定式
+            "(;GM[1];B[pd];W[qc];B[qd];W[pc];B[od];W[nb])",  # 前6手匹配（第6手nc!=nb）
         ]
         
         result = self.db.discover(
             sgf_sources=sgf_list,
             first_n=50,
-            min_moves=3,
+            min_moves=6,  # 要求6手才算常见，但只匹配6手中的5手前缀
             limit=50,
             verbose=False
         )
         
-        # 罕见定式应该排在常见定式前面
         results = result['joseki_list']
-        self.assertEqual(len(results), 2)
-        # 罕见定式（frequency=2）应该排在常见定式（frequency=100）前面
-        rare_idx = 0 if results[0]['frequency'] == 2 else 1
-        common_idx = 1 if results[0]['frequency'] == 2 else 0
-        self.assertLess(rare_idx, common_idx)  # 罕见定式排名更靠前
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0]['is_rare'])  # 匹配前缀 < min_moves，罕见
+        self.assertLess(results[0]['matched_prefix_len'], 6)  # 前缀匹配小于6手
+        self.assertNotEqual(results[0]['joseki_id'], '')  # 有匹配的定式ID
     
     def test_discover_sorting_priority(self):
-        """测试排序优先级：新定式 > 罕见定式 > 复杂定式"""
-        # 添加一个已有定式（频率中等）
-        self.db.add(name="已有定式", moves=["B[pd]", "W[qf]"])
-        self.db.joseki_list[0]['frequency'] = 10
+        """测试排序优先级：罕见优先，前缀短的优先，频率低的优先"""
+        # 添加两个不同频率的定式（6手，确保min_moves过滤时能通过）
+        self.db.add(name="高频定式", moves=["B[pd]", "W[qc]", "B[qd]", "W[pc]", "B[od]", "W[nc]"])
+        self.db.joseki_list[0]['frequency'] = 100
+        self.db.add(name="低频定式", moves=["B[pd]", "W[qc]", "B[pe]", "W[pf]", "B[pg]", "W[ph]"], force=True)
+        self.db.joseki_list[1]['frequency'] = 10
         self.db._save()
         
+        # 使用min_moves=6，确保定式至少有6手
         sgf_list = [
-            "(;GM[1];B[pd];W[qf])",                          # 已有定式
-            "(;GM[1];B[dd];W[cc];B[bd];W[cd])",              # 新定式（4手）
-            "(;GM[1];B[qq];W[rr];B[qp];W[rq];B[qo];W[ro])",  # 新定式（6手）
+            "(;GM[1];B[pd];W[qc];B[qd];W[pc];B[od];W[nc])",  # 匹配高频定式6手
+            "(;GM[1];B[pd];W[qc];B[pe];W[pf];B[pg];W[ph])",  # 匹配低频定式6手
         ]
         
         result = self.db.discover(
             sgf_sources=sgf_list,
             first_n=50,
-            min_moves=2,
+            min_moves=6,  # 要求6手才算常见
             limit=50,
             verbose=False
         )
         
-        # 验证排序：新定式在前，然后按手数降序
         results = result['joseki_list']
-        self.assertEqual(len(results), 3)
-        self.assertTrue(results[0]['is_new'])  # 第一个是新定式
-        self.assertTrue(results[1]['is_new'])  # 第二个也是新定式
-        # 新定式中，手数多的排前面
-        self.assertGreaterEqual(results[0]['move_count'], results[1]['move_count'])
+        self.assertEqual(len(results), 2)
+        
+        # 低频定式应该排在高频定式前面（频率低优先）
+        low_freq_idx = 0 if results[0]['frequency'] == 10 else 1
+        high_freq_idx = 1 if results[0]['frequency'] == 10 else 0
+        self.assertLess(low_freq_idx, high_freq_idx)
+    
+    def test_discover_prefix_matching(self):
+        """测试前缀匹配逻辑"""
+        # 添加一个定式
+        self.db.add(name="标准定式", moves=["B[pd]", "W[qc]", "B[qd]", "W[pc]", "B[od]"])
+        
+        # 添加一个变体（前3手相同）
+        self.db.add(name="变体定式", moves=["B[pd]", "W[qc]", "B[qd]", "W[oc]"], force=True)
+        
+        sgf_list = [
+            "(;GM[1];B[pd];W[qc];B[qd];W[pc];B[od])",  # 与标准定式完全匹配
+        ]
+        
+        result = self.db.discover(
+            sgf_sources=sgf_list,
+            first_n=50,
+            min_moves=4,
+            limit=50,
+            verbose=False
+        )
+        
+        results = result['joseki_list']
+        self.assertEqual(len(results), 1)
+        # 应该匹配到完全相同的那个（5手匹配）
+        self.assertEqual(results[0]['matched_prefix_len'], 5)
+        self.assertFalse(results[0]['is_rare'])
     
     def test_discover_min_moves_filter(self):
-        """测试最少手数过滤"""
+        """测试最少手数过滤（有效手数）"""
         sgf_list = [
-            "(;GM[1];B[pd];W[qf])",             # 2手，应该被过滤
+            "(;GM[1];B[pd];W[qf])",             # 2手有效（tt不算）
             "(;GM[1];B[dd];W[cc];B[bd])",       # 3手
             "(;GM[1];B[qq];W[rr];B[qp];W[rq])", # 4手
         ]
@@ -148,16 +167,17 @@ class TestDiscover(unittest.TestCase):
         result = self.db.discover(
             sgf_sources=sgf_list,
             first_n=50,
-            min_moves=3,  # 最少3手
+            min_moves=3,  # 最少3手有效
             limit=50,
             verbose=False
         )
         
-        # 应该只有2个定式（过滤了2手的）
         results = result['joseki_list']
+        # 应该只有2个定式（过滤了2手的）
         self.assertEqual(len(results), 2)
         for r in results:
-            self.assertGreaterEqual(r['move_count'], 3)
+            effective_moves = len([c for c in r['moves'] if c != 'tt'])
+            self.assertGreaterEqual(effective_moves, 3)
     
     def test_discover_limit(self):
         """测试返回数量限制"""
@@ -276,12 +296,15 @@ class TestDiscover(unittest.TestCase):
         
         results = result['joseki_list']
         item = results[0]
+        
         # 验证所有必需字段
         self.assertIn('rank', item)
         self.assertIn('joseki_id', item)
-        self.assertIn('is_new', item)
+        self.assertIn('is_rare', item)  # 新的字段
         self.assertIn('moves', item)
         self.assertIn('move_count', item)
+        self.assertIn('matched_prefix', item)  # 新的字段
+        self.assertIn('matched_prefix_len', item)  # 新的字段
         self.assertIn('frequency', item)
         self.assertIn('similarity', item)
         self.assertIn('sources', item)
@@ -289,9 +312,9 @@ class TestDiscover(unittest.TestCase):
         # 验证字段类型
         self.assertIsInstance(item['rank'], int)
         self.assertIsInstance(item['joseki_id'], str)
-        self.assertIsInstance(item['is_new'], bool)
+        self.assertIsInstance(item['is_rare'], bool)
         self.assertIsInstance(item['moves'], list)
-        self.assertIsInstance(item['move_count'], int)
+        self.assertIsInstance(item['matched_prefix_len'], int)
         self.assertIsInstance(item['frequency'], int)
         self.assertIsInstance(item['similarity'], float)
         self.assertIsInstance(item['sources'], list)
