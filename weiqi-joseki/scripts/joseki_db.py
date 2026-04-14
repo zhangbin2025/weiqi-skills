@@ -534,7 +534,7 @@ class JosekiDB:
         for corner_key, (comment, moves) in corner_sequences.items():
             if len(moves) >= 2:  # 至少2手才算定式
                 # 提取纯坐标序列（忽略颜色）
-                coord_seq = [coord for _, coord in moves if coord and coord != 'tt']
+                coord_seq = [coord for _, coord in moves if coord]
                 if coord_seq:
                     results[corner_key] = self.match_top_right(coord_seq, top_k)
         
@@ -1130,24 +1130,15 @@ class JosekiDB:
                 best_match = matches[0]
                 best_id = best_match.id
                 matched_prefix_len = best_match.prefix_len
+                matched_prefix_moves = coords[:matched_prefix_len]
                 
                 # 获取匹配的定式序列
                 matched_joseki = self.get(best_id)
                 if matched_joseki:
-                    matched_moves = matched_joseki.get('moves', [])
                     frequency = matched_joseki.get('frequency', 1)
-                    
-                    # 计算公共前缀（按顺序匹配的前缀）
-                    for i in range(min(len(coords), len(matched_moves))):
-                        if coords[i] == matched_moves[i]:
-                            matched_prefix_len = i + 1
-                        else:
-                            break
-                    
-                    matched_prefix_moves = coords[:matched_prefix_len]
-                    
-                    # 判断是否罕见：前缀长度是否达到 min_moves
-                    is_rare = matched_prefix_len < min_moves
+                
+                # 判断是否罕见：前缀长度是否达到 min_moves
+                is_rare = matched_prefix_len < min_moves
             
             results.append({
                 'joseki_id': best_id,
