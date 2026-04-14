@@ -505,7 +505,7 @@ class JosekiDB:
         2. 对候选集计算精确的LCS相似度
         3. 返回最匹配的top_k个结果
         """
-        # 过滤掉pass，只保留有效坐标
+        # 过滤掉pass，保留有效坐标和脱先标记tt
         coord_seq = [m for m in self.normalize_moves(moves, ignore_pass=True) if m and m != 'pass']
         if not coord_seq:
             return []
@@ -601,8 +601,8 @@ class JosekiDB:
         if not moves:
             return []
         
-        # 过滤pass
-        coord_seq = [m for m in moves if m and m != 'pass' and m != 'tt']
+        # 过滤pass，但保留脱先标记tt
+        coord_seq = [m for m in moves if m and m != 'pass']
         if not coord_seq:
             return []
         
@@ -633,8 +633,8 @@ class JosekiDB:
                 else:
                     continue
             
-            # 过滤库存储的pass
-            stored_filtered = [m for m in stored_moves if m and m != 'pass' and m != 'tt']
+            # 过滤库存储的pass，但保留脱先标记tt
+            stored_filtered = [m for m in stored_moves if m and m != 'pass']
             if not stored_filtered:
                 continue
             
@@ -1222,9 +1222,11 @@ class JosekiDB:
                     sgf_info = self._parse_sgf_info(sgf_data, sgf_path)
                     
                     for corner, moves in corner_dict.items():
-                        # 提取纯坐标序列
-                        coords = [coord for color, coord in moves if coord and coord != 'tt']
-                        if len(coords) >= min_moves:
+                        # 提取坐标序列（保留脱先标记tt，过滤空字符串）
+                        coords = [coord for color, coord in moves if coord]
+                        # 计算有效手数（非tt的坐标）
+                        effective_moves = len([c for c in coords if c != 'tt'])
+                        if effective_moves >= min_moves:
                             joseki_records.append((tuple(coords), sgf_info, corner))
                 
             except Exception as e:
