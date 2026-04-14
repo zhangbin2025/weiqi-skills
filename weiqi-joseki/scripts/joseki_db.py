@@ -1284,35 +1284,50 @@ class JosekiDB:
         for idx, (moves_tuple, data) in enumerate(unique_joseki.items()):
             coords = data['moves']
             
-            # 查询最相似的定式
-            matches = self.match_top_right(coords, top_k=1, min_similarity=min_similarity)
+            # 查询最佳匹配的定式（用最低阈值0.3确保能找到潜在匹配）
+            matches = self.match_top_right(coords, top_k=1, min_similarity=0.3)
+            
+            best_id = ''
+            best_sim = 0.0
+            matched_prefix_len = 0
+            matched_prefix_moves = []
+            frequency = 0
+            is_rare = True  # 默认为罕见
             
             if matches:
-                # 在库中存在
                 best_match = matches[0]
-                joseki = self.get(best_match.id)
-                frequency = joseki.get('frequency', 1) if joseki else 1
+                best_id = best_match.id
+                best_sim = best_match.similarity
                 
-                results.append({
-                    'joseki_id': best_match.id,
-                    'is_new': False,
-                    'moves': coords,
-                    'move_count': len(coords),
-                    'frequency': frequency,
-                    'similarity': best_match.similarity,
-                    'sources': data['sources']
-                })
-            else:
-                # 新定式
-                results.append({
-                    'joseki_id': '',
-                    'is_new': True,
-                    'moves': coords,
-                    'move_count': len(coords),
-                    'frequency': 0,
-                    'similarity': 0.0,
-                    'sources': data['sources']
-                })
+                # 获取匹配的定式序列
+                matched_joseki = self.get(best_id)
+                if matched_joseki:
+                    matched_moves = matched_joseki.get('moves', [])
+                    frequency = matched_joseki.get('frequency', 1)
+                    
+                    # 计算公共前缀（按顺序匹配的前缀）
+                    for i in range(min(len(coords), len(matched_moves))):
+                        if coords[i] == matched_moves[i]:
+                            matched_prefix_len += 1
+                        else:
+                            break
+                    
+                    matched_prefix_moves = coords[:matched_prefix_len]
+                    
+                    # 判断是否罕见：前缀长度是否达到 min_moves
+                    is_rare = matched_prefix_len < min_moves
+            
+            results.append({
+                'joseki_id': best_id,
+                'is_rare': is_rare,
+                'moves': coords,
+                'move_count': len(coords),
+                'matched_prefix': matched_prefix_moves,
+                'matched_prefix_len': matched_prefix_len,
+                'frequency': frequency,
+                'similarity': best_sim,
+                'sources': data['sources']
+            })
             
             if verbose and (idx + 1) % 100 == 0:
                 print(f"  进度: {idx + 1}/{len(unique_joseki)}", end='', flush=True)
@@ -1322,13 +1337,15 @@ class JosekiDB:
         
         # 步骤4: 按研究价值排序
         # 排序规则：
-        # 1. 新定式优先（is_new）
-        # 2. 出现次数少优先（frequency）
-        # 3. 手数多优先（move_count）
+        # 1. 罕见的优先（is_rare=True）
+        # 2. 罕见内部：匹配前缀短的优先（前缀短的更罕见）
+        # 3. 相同前缀长度：匹配定式频率少的优先
+        # 4. 最后排不罕见的（is_rare=False）
         results.sort(key=lambda x: (
-            not x['is_new'],      # 新定式在前
-            x['frequency'],       # 次数少的在前
-            -x['move_count']      # 手数多的在前（取负）
+            not x['is_rare'],           # 罕见的在前
+            x['matched_prefix_len'],    # 匹配前缀短的优先
+            x['frequency'],             # 频率少的优先
+            -x['move_count']            # 手数多的优先
         ))
         
         # 步骤5: 添加排名并限制数量
@@ -1338,14 +1355,13 @@ class JosekiDB:
             final_results.append(item)
         
         # 统计信息（基于限制后的结果）
-        new_count = sum(1 for r in final_results if r['is_new'])
-        rare_count = sum(1 for r in final_results if not r['is_new'] and r['frequency'] <= 5)
-        existing_count = sum(1 for r in final_results if not r['is_new'])
+        rare_count = sum(1 for r in final_results if r['is_rare'])
+        common_count = sum(1 for r in final_results if not r['is_rare'])
         
         if verbose:
             print(f"\n📈 发现结果:")
-            print(f"   新定式: {new_count} 个")
-            print(f"   罕见定式(次数≤5): {rare_count} 个")
+            print(f"   罕见定式(前缀<{min_moves}): {rare_count} 个")
+            print(f"   常见定式(前缀>={min_moves}): {common_count} 个")
             print(f"   总计: {len(final_results)} 个")
         
         # 构建返回结果（包含stats）
@@ -1354,9 +1370,8 @@ class JosekiDB:
                 "total_files": total_files,
                 "total_joseki": total_joseki,
                 "unique_joseki": unique_count,
-                "new_joseki": new_count,
                 "rare_joseki": rare_count,
-                "existing_joseki": existing_count
+                "common_joseki": common_count
             },
             "joseki_list": final_results
         }
