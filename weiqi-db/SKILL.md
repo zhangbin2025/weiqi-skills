@@ -132,14 +132,26 @@ python3 db.py list
 python3 db.py list --limit 10
 ```
 
-### 获取单个棋谱（含SGF）
+### 获取棋谱（含SGF）
 
 ```bash
+# 获取单个棋谱
 python3 db.py get --id "2026032383118500"
 
 # 导出到文件（推荐，最高效）
 python3 db.py get --id "2026032383118500" -o /tmp/game.sgf
+
+# 批量获取多个棋谱（逗号分隔）
+python3 db.py get --ids "id1,id2,id3" -d /output/games/
+
+# 批量获取（多次指定--id）
+python3 db.py get --id id1 --id id2 --id id3 -d /output/games/
+
+# 从文件读取ID列表批量导出
+python3 db.py get --id-file /tmp/ids.txt -d /output/games/
 ```
+
+**批量导出文件名格式**：`[日期]_[赛事]_黑方_vs_白方_[ID后缀].sgf`
 
 返回完整的棋谱数据，包括 `sgf` 字段（SGF文件内容）。
 
@@ -318,6 +330,15 @@ python3 db.py tag --id "xxx" --add "名局"
 - [weiqi-yunbisai](../weiqi-yunbisai) - 云比赛网查询（比赛信息查询，不提供棋谱下载）
 
 ## 版本更新
+
+### v1.0.6 (2026-04-14)
+- ✅ `get` 命令支持批量获取多个棋谱
+  - 新增 `--ids` 参数：逗号分隔的多个ID
+  - 新增 `--id-file` 参数：从文件读取ID列表
+  - 新增 `--output-dir` / `-d` 参数：批量导出到指定目录
+  - `--id` 参数支持多次指定（`action='append'`）
+  - 自动根据棋谱元数据生成SGF文件名
+  - 向后兼容：单ID获取保持原有行为
 
 ### v1.0.5 (2026-04-11)
 - ✅ 优化 AI 执行规范

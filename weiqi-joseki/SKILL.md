@@ -135,6 +135,21 @@ python3 scripts/cli.py match --sgf "(;B[pd];W[qf]...)" --corner tl
 python3 scripts/cli.py match < game.sgf
 ```
 
+### 发现值得研究的定式
+```bash
+# 从SGF目录发现新定式和罕见定式
+python3 scripts/cli.py discover /path/to/sgf/dir
+
+# 分析前80手，最少5手，返回前30个
+python3 scripts/cli.py discover /path/to/sgf/dir --first-n 80 --min-moves 5 --limit 30
+
+# JSON格式输出
+python3 scripts/cli.py discover /path/to/sgf/dir --output json
+
+# 多个源
+python3 scripts/cli.py discover /path/to/dir1 /path/to/dir2/*.sgf
+```
+
 ### 识别整盘棋
 ```bash
 # 表格格式输出
@@ -242,6 +257,53 @@ python3 scripts/cli.py import /path/to/sgf/dir \
 
 🎉 完成！新增 13 个定式，跳过 11 个（已存在）
 ```
+
+### 发现值得研究的定式 ⭐⭐
+```bash
+# 基本用法 - 从SGF目录发现有研究价值的定式
+python3 scripts/cli.py discover /path/to/sgf/dir
+
+# 指定分析前80手
+python3 scripts/cli.py discover /path/to/sgf/dir --first-n 80
+
+# 定式最少4手，最多返回30个
+python3 scripts/cli.py discover /path/to/sgf/dir --min-moves 4 --limit 30
+
+# JSON格式输出
+python3 scripts/cli.py discover /path/to/sgf/dir --output json
+
+# 多个SGF文件或目录
+python3 scripts/cli.py discover /path/to/games/*.sgf /another/dir
+```
+
+**排序规则（按研究价值）：**
+1. **新定式**（不在库中）→ 最高优先级
+2. **罕见定式**（库中出现次数最少）
+3. **复杂定式**（手数多的优先）
+
+**输出示例：**
+```
+====================================================================================================
+「定式发现结果」按研究价值排序（新定式优先 → 罕见定式 → 复杂定式）
+====================================================================================================
+排名   ID            新?   手数    次数     相似度      着法序列                       来源
+----------------------------------------------------------------------------------------------------
+1      (新定式)      ✓     6       0        0.00        pd qf nc rd qf qg              柯洁 vs 申真谞
+2      joseki_042         5       3        0.95        pd qc pc qd pe                 古力 vs 李世石
+3      joseki_018         4       12       0.92        dd cc fc df                    AlphaGo vs Lee Sedol
+====================================================================================================
+总计: 3 个定式
+```
+
+**输出字段说明：**
+- `rank`: 研究价值排名
+- `joseki_id`: 定式ID（新定式为空）
+- `is_new`: 是否为新定式
+- `moves`: 着法序列（右上角视角）
+- `move_count`: 手数
+- `frequency`: 库中出现次数
+- `similarity`: 与库中最相似定式的相似度
+- `sources`: 来源列表（包含黑白双方、比赛、日期、角位）
 
 ### 导出定式库 ⭐
 ```bash
@@ -536,6 +598,13 @@ B[pd](右上) W[dp](右下) B[pp](右下) W[dd](左上) B[qf](右上) ...
 - 无第三方依赖（纯标准库）
 
 ## 版本更新
+
+### v1.2.1 (2026-04-14)
+- ✅ **新增命令**: `discover` - 发现值得研究的定式
+  - 自动识别新定式（不在库中）和罕见定式（出现次数少）
+  - 智能排序：新定式优先 → 罕见定式 → 复杂定式
+  - 支持多个SGF文件和目录输入
+  - 输出包含来源信息（黑白双方、比赛、日期）
 
 ### v1.2.0 (2026-04-10)
 - ✅ **代码重构**: 从单文件结构重构为模块化设计，代码更清晰、易于维护

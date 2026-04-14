@@ -955,6 +955,241 @@ class JosekiDB:
         
         return sgf
     
+    # ========== 发现功能 ==========
+    
+    def discover(
+        self,
+        sgf_sources: List,
+        first_n: int = 50,
+        min_moves: int = 4,
+        limit: int = 50,
+        min_similarity: float = 0.9,
+        verbose: bool = True
+    ) -> List[Dict]:
+        """
+        发现值得研究的定式（新定式 + 罕见定式）
+        
+        排序规则（优先级从高到低）：
+        1. 新定式（不在库中）→ 最高优先级
+        2. 罕见定式（库中出现次数最少）
+        3. 复杂定式（手数多的优先）
+        
+        Args:
+            sgf_sources: SGF文件路径列表，或包含SGF内容的字符串列表
+            first_n: 分析前N手的定式（默认50）
+            min_moves: 定式最少手数（默认4）
+            limit: 最多返回多少个定式（默认50）
+            min_similarity: 判断是否为新定式的相似度阈值（默认0.9）
+            verbose: 详细输出开关
+        
+        Returns:
+            按研究价值排序的定式列表，每个元素包含：
+            - rank: 排名
+            - joseki_id: 定式ID（新定式为空字符串）
+            - is_new: 是否为新定式
+            - moves: 着法序列
+            - move_count: 手数
+            - frequency: 库中出现次数（新定式为0）
+            - similarity: 与库中最相似定式的相似度
+            - sources: 来源信息列表
+        """
+        from pathlib import Path
+        
+        # 步骤1: 收集所有定式
+        joseki_records = []  # [(moves_tuple, sgf_info, corner)]
+        total_files = 0
+        
+        if verbose:
+            print(f"🔍 开始扫描 {len(sgf_sources)} 个源...")
+        
+        for source in sgf_sources:
+            try:
+                sgf_contents = []
+                source_path = None
+                
+                if isinstance(source, Path):
+                    if source.is_dir():
+                        # 目录：递归收集所有SGF文件
+                        for sgf_file in source.rglob("*.sgf"):
+                            sgf_contents.append((sgf_file.read_text(encoding='utf-8', errors='ignore'), sgf_file))
+                    elif source.suffix == '.sgf':
+                        sgf_contents.append((source.read_text(encoding='utf-8', errors='ignore'), source))
+                        source_path = source
+                elif isinstance(source, str) and source.strip().startswith('('):
+                    # SGF内容字符串
+                    sgf_contents.append((source, None))
+                elif isinstance(source, str):
+                    # 可能是文件路径字符串
+                    p = Path(source)
+                    if p.exists():
+                        if p.is_dir():
+                            for sgf_file in p.rglob("*.sgf"):
+                                sgf_contents.append((sgf_file.read_text(encoding='utf-8', errors='ignore'), sgf_file))
+                        else:
+                            sgf_contents.append((p.read_text(encoding='utf-8', errors='ignore'), p))
+                
+                for sgf_data, sgf_path in sgf_contents:
+                    total_files += 1
+                    # 提取四角定式
+                    corner_dict = extract_joseki_from_sgf_raw(sgf_data, first_n=first_n)
+                    
+                    # 解析SGF元信息
+                    sgf_info = self._parse_sgf_info(sgf_data, sgf_path)
+                    
+                    for corner, moves in corner_dict.items():
+                        # 提取纯坐标序列
+                        coords = [coord for color, coord in moves if coord and coord != 'tt']
+                        if len(coords) >= min_moves:
+                            joseki_records.append((tuple(coords), sgf_info, corner))
+                
+            except Exception as e:
+                if verbose:
+                    print(f"  ⚠️ 处理源 {source} 时出错: {e}")
+                continue
+        
+        if verbose:
+            print(f"✅ 扫描完成: {total_files} 个文件，提取 {len(joseki_records)} 个定式")
+        
+        # 步骤2: 去重并聚合来源
+        unique_joseki = {}  # {moves_tuple: {'sources': [], 'count': 0}}
+        seen_sources = {}  # {moves_tuple: set(source_keys)}
+        source_counter = 0  # 用于区分内联SGF
+        
+        for moves_tuple, sgf_info, corner in joseki_records:
+            if moves_tuple not in unique_joseki:
+                unique_joseki[moves_tuple] = {
+                    'sources': [],
+                    'count': 0,
+                    'moves': list(moves_tuple),
+                    'move_count': len(moves_tuple)
+                }
+                seen_sources[moves_tuple] = set()
+            
+            unique_joseki[moves_tuple]['count'] += 1
+            
+            # 生成唯一来源键
+            file_path = sgf_info.get('file', 'unknown')
+            if file_path == 'inline':
+                # 内联SGF使用计数器区分
+                source_counter += 1
+                source_key = f"inline_{source_counter}_{corner}"
+            else:
+                source_key = f"{file_path}_{corner}"
+            
+            # 避免重复添加相同来源
+            if source_key not in seen_sources[moves_tuple]:
+                seen_sources[moves_tuple].add(source_key)
+                source_copy = sgf_info.copy()
+                source_copy['corner'] = corner
+                unique_joseki[moves_tuple]['sources'].append(source_copy)
+        
+        if verbose:
+            print(f"📊 去重后: {len(unique_joseki)} 个唯一定式")
+        
+        # 步骤3: 查询每个定式在库中的情况
+        results = []
+        
+        if verbose:
+            print("🔎 正在比对定式库...")
+        
+        for idx, (moves_tuple, data) in enumerate(unique_joseki.items()):
+            coords = data['moves']
+            
+            # 查询最相似的定式
+            matches = self.match_top_right(coords, top_k=1, min_similarity=min_similarity)
+            
+            if matches:
+                # 在库中存在
+                best_match = matches[0]
+                joseki = self.get(best_match.id)
+                frequency = joseki.get('frequency', 1) if joseki else 1
+                
+                results.append({
+                    'joseki_id': best_match.id,
+                    'is_new': False,
+                    'moves': coords,
+                    'move_count': len(coords),
+                    'frequency': frequency,
+                    'similarity': best_match.similarity,
+                    'sources': data['sources']
+                })
+            else:
+                # 新定式
+                results.append({
+                    'joseki_id': '',
+                    'is_new': True,
+                    'moves': coords,
+                    'move_count': len(coords),
+                    'frequency': 0,
+                    'similarity': 0.0,
+                    'sources': data['sources']
+                })
+            
+            if verbose and (idx + 1) % 100 == 0:
+                print(f"  进度: {idx + 1}/{len(unique_joseki)}", end='', flush=True)
+        
+        if verbose:
+            print(f"\n✅ 比对完成")
+        
+        # 步骤4: 按研究价值排序
+        # 排序规则：
+        # 1. 新定式优先（is_new）
+        # 2. 出现次数少优先（frequency）
+        # 3. 手数多优先（move_count）
+        results.sort(key=lambda x: (
+            not x['is_new'],      # 新定式在前
+            x['frequency'],       # 次数少的在前
+            -x['move_count']      # 手数多的在前（取负）
+        ))
+        
+        # 步骤5: 添加排名并限制数量
+        final_results = []
+        for rank, item in enumerate(results[:limit], 1):
+            item['rank'] = rank
+            final_results.append(item)
+        
+        # 统计信息
+        new_count = sum(1 for r in results if r['is_new'])
+        rare_count = sum(1 for r in results if not r['is_new'] and r['frequency'] <= 5)
+        
+        if verbose:
+            print(f"\n📈 发现结果:")
+            print(f"   新定式: {new_count} 个")
+            print(f"   罕见定式(次数≤5): {rare_count} 个")
+            print(f"   总计: {len(final_results)} 个")
+        
+        return final_results
+    
+    def _parse_sgf_info(self, sgf_data: str, sgf_path: Optional[Path] = None) -> Dict:
+        """解析SGF元信息"""
+        info = {
+            'file': str(sgf_path) if sgf_path else 'inline',
+            'black_player': '',
+            'white_player': '',
+            'event': '',
+            'date': '',
+            'result': ''
+        }
+        
+        try:
+            # 使用正则提取元信息
+            patterns = {
+                'black_player': r'PB\[([^\]]+)\]',
+                'white_player': r'PW\[([^\]]+)\]',
+                'event': r'EV\[([^\]]+)\]',
+                'date': r'DT\[([^\]]+)\]',
+                'result': r'RE\[([^\]]+)\]'
+            }
+            
+            for key, pattern in patterns.items():
+                match = re.search(pattern, sgf_data)
+                if match:
+                    info[key] = match.group(1)
+        except Exception:
+            pass
+        
+        return info
+    
     # ========== 统计 ==========
     
     def stats(self) -> dict:

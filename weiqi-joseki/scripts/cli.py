@@ -529,6 +529,76 @@ def cmd_katago(args):
             print("🧹 已清理进度文件")
 
 
+def cmd_discover(args):
+    """发现值得研究的定式"""
+    from pathlib import Path
+    
+    # 收集SGF源
+    sgf_sources = []
+    for path_str in args.paths:
+        path = Path(path_str)
+        if path.exists():
+            sgf_sources.append(path)
+        else:
+            print(f"⚠️  路径不存在: {path_str}")
+    
+    if not sgf_sources:
+        print("❌ 错误: 没有有效的SGF源")
+        sys.exit(1)
+    
+    db = JosekiDB(args.db)
+    
+    results = db.discover(
+        sgf_sources=sgf_sources,
+        first_n=args.first_n,
+        min_moves=args.min_moves,
+        limit=args.limit,
+        min_similarity=args.min_similarity,
+        verbose=True
+    )
+    
+    # 输出结果
+    if args.output == "json":
+        import json
+        print(json.dumps(results, ensure_ascii=False, indent=2))
+    else:
+        # 表格格式输出
+        print("\n" + "=" * 100)
+        print("「定式发现结果」按研究价值排序（新定式优先 → 罕见定式 → 复杂定式）")
+        print("=" * 100)
+        print(f"{'排名':<6} {'ID':<12} {'新?':<5} {'手数':<6} {'次数':<8} {'相似度':<10} {'着法序列':<30} {'来源'}")
+        print("-" * 100)
+        
+        for item in results:
+            joseki_id = item['joseki_id'] if item['joseki_id'] else "(新定式)"
+            is_new = "✓" if item['is_new'] else ""
+            moves_str = " ".join(item['moves'][:8])
+            if len(item['moves']) > 8:
+                moves_str += "..."
+            
+            # 来源信息摘要
+            sources_summary = ""
+            if item['sources']:
+                first_source = item['sources'][0]
+                players = []
+                if first_source.get('black_player'):
+                    players.append(first_source['black_player'])
+                if first_source.get('white_player'):
+                    players.append(first_source['white_player'])
+                if players:
+                    sources_summary = " vs ".join(players)
+                elif first_source.get('event'):
+                    sources_summary = first_source['event'][:20]
+                else:
+                    sources_summary = Path(first_source.get('file', 'unknown')).name[:20]
+            
+            print(f"{item['rank']:<6} {joseki_id:<12} {is_new:<5} {item['move_count']:<6} "
+                  f"{item['frequency']:<8} {item['similarity']:<10.2f} {moves_str:<30} {sources_summary}")
+        
+        print("=" * 100)
+        print(f"总计: {len(results)} 个定式")
+
+
 def main():
     parser = argparse.ArgumentParser(description="围棋定式数据库管理工具")
     parser.add_argument("--db", default=None, help="数据库路径 (默认: ~/.weiqi-joseki/database.json)")
@@ -614,6 +684,15 @@ def main():
     p_katago.add_argument("--dry-run", action="store_true", help="试运行，只统计不真入库")
     p_katago.add_argument("--progress-file", help="进度文件路径（默认 ~/.weiqi-joseki/katago-progress.json）")
     
+    # Discover 命令 - 发现有研究价值的定式
+    p_discover = subparsers.add_parser("discover", help="发现值得研究的定式（新定式 + 罕见定式）")
+    p_discover.add_argument("paths", nargs="+", help="SGF文件或目录路径（可多个）")
+    p_discover.add_argument("--first-n", type=int, default=50, help="分析前N手的定式（默认50）")
+    p_discover.add_argument("--min-moves", type=int, default=4, help="定式最少手数（默认4）")
+    p_discover.add_argument("--limit", type=int, default=50, help="最多返回多少个定式（默认50）")
+    p_discover.add_argument("--min-similarity", type=float, default=0.9, help="判断是否为新定式的相似度阈值（默认0.9）")
+    p_discover.add_argument("--output", choices=["table", "json"], default="table", help="输出格式（默认table）")
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -625,7 +704,7 @@ def main():
         "clear": cmd_clear, "list": cmd_list, "8way": cmd_8way,
         "match": cmd_match, "identify": cmd_identify, "stats": cmd_stats,
         "extract": cmd_extract, "import": cmd_import, "export": cmd_export,
-        "katago": cmd_katago,
+        "katago": cmd_katago, "discover": cmd_discover,
     }
     
     commands[args.command](args)

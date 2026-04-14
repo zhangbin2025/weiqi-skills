@@ -661,47 +661,198 @@ def cmd_tag(args):
         return {"success": True, "id": args.id, "tags": game.get('tags', [])}
 
 
+def sanitize_filename(name: str) -> str:
+    """清理文件名中的非法字符"""
+    # 替换Windows和Unix中的非法字符
+    illegal_chars = '<>:"/\\|?*'
+    for char in illegal_chars:
+        name = name.replace(char, '_')
+    # 去除首尾空格和点
+    name = name.strip(' .')
+    # 限制长度
+    if len(name) > 50:
+        name = name[:50]
+    return name
+
+
+def generate_sgf_filename(game: Dict) -> str:
+    """根据棋谱元数据生成SGF文件名"""
+    date = game.get('date', '')
+    black = game.get('black', '黑棋')
+    white = game.get('white', '白棋')
+    event = game.get('event', '')
+    game_id = game.get('id', '')
+    
+    # 清理特殊字符
+    black_safe = sanitize_filename(black)
+    white_safe = sanitize_filename(white)
+    event_safe = sanitize_filename(event) if event else ''
+    
+    # 构建文件名: [日期]_[赛事]_黑方_vs_白方_[ID].sgf
+    parts = []
+    if date:
+        parts.append(date.replace('-', ''))
+    if event_safe:
+        parts.append(event_safe)
+    parts.append(f"{black_safe}_vs_{white_safe}")
+    if game_id:
+        parts.append(game_id[-6:])  # 取ID后6位避免过长
+    
+    filename = '_'.join(parts) + '.sgf'
+    return filename
+
+
 def cmd_get(args):
-    """通过ID获取单个棋谱的完整内容"""
+    """通过ID获取棋谱的完整内容（支持批量）"""
     db = ensure_db()
     table = db.table('games')
 
-    if not args.id:
-        return {"success": False, "error": "需要指定 --id"}
+    # 收集所有要获取的ID
+    ids = []
+    
+    # 从 --id 参数获取（支持多次指定）
+    if hasattr(args, 'id') and args.id:
+        if isinstance(args.id, list):
+            ids.extend(args.id)
+        else:
+            ids.append(args.id)
+    
+    # 从 --ids 参数获取（逗号分隔）
+    if hasattr(args, 'ids') and args.ids:
+        ids.extend([id.strip() for id in args.ids.split(',') if id.strip()])
+    
+    # 从文件读取ID列表
+    if hasattr(args, 'id_file') and args.id_file:
+        try:
+            id_file_path = Path(args.id_file)
+            if not id_file_path.exists():
+                return {"success": False, "error": f"ID文件不存在: {args.id_file}"}
+            id_content = id_file_path.read_text(encoding='utf-8').strip()
+            # 支持每行一个ID，或逗号/空格分隔
+            file_ids = []
+            for line in id_content.split('\n'):
+                line = line.strip()
+                if line:
+                    # 尝试逗号分隔
+                    if ',' in line:
+                        file_ids.extend([id.strip() for id in line.split(',') if id.strip()])
+                    else:
+                        file_ids.append(line)
+            ids.extend(file_ids)
+        except Exception as e:
+            return {"success": False, "error": f"读取ID文件失败: {str(e)}"}
+    
+    if not ids:
+        return {"success": False, "error": "需要指定 --id、--ids 或 --id-file"}
+    
+    # 去重保持顺序
+    seen = set()
+    unique_ids = []
+    for id in ids:
+        if id not in seen:
+            seen.add(id)
+            unique_ids.append(id)
+    ids = unique_ids
 
     Game = Query()
-    games = table.search(Game.id == args.id)
+    results = []
+    exported_files = []
+    not_found_ids = []
+    
+    # 确定输出目录
+    output_dir = None
+    if hasattr(args, 'output_dir') and args.output_dir:
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-    if not games:
-        return {"success": False, "error": f"未找到ID: {args.id}"}
-
-    # 解压SGF内容
-    game = games[0].copy()
-    sgf_content = decompress_sgf(game['sgf'])
-    game['sgf'] = sgf_content
-
-    # 如果指定了输出文件，将SGF写入文件
-    if hasattr(args, 'output') and args.output:
-        try:
-            output_path = Path(args.output)
-            output_path.write_text(sgf_content, encoding='utf-8')
-            return {
-                "success": True,
-                "exported": True,
-                "output_path": str(output_path.absolute()),
-                "game_id": game['id'],
-                "message": f"SGF内容已导出到: {output_path.absolute()}"
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"文件写入失败: {str(e)}"
-            }
-
-    return {
-        "success": True,
-        "game": game
+    for game_id in ids:
+        games = table.search(Game.id == game_id)
+        
+        if not games:
+            not_found_ids.append(game_id)
+            results.append({"id": game_id, "success": False, "error": "未找到"})
+            continue
+        
+        # 解压SGF内容
+        game = games[0].copy()
+        sgf_content = decompress_sgf(game['sgf'])
+        game['sgf'] = sgf_content
+        
+        result = {
+            "id": game_id,
+            "success": True,
+            "black": game.get('black', ''),
+            "white": game.get('white', ''),
+            "date": game.get('date', ''),
+            "event": game.get('event', '')
+        }
+        
+        # 如果指定了输出目录，导出到目录
+        if output_dir:
+            try:
+                filename = generate_sgf_filename(game)
+                output_path = output_dir / filename
+                
+                # 如果文件已存在，添加序号
+                counter = 1
+                original_path = output_path
+                while output_path.exists():
+                    stem = original_path.stem
+                    suffix = original_path.suffix
+                    output_path = output_dir / f"{stem}_{counter}{suffix}"
+                    counter += 1
+                
+                output_path.write_text(sgf_content, encoding='utf-8')
+                result["exported"] = True
+                result["output_path"] = str(output_path.absolute())
+                exported_files.append(str(output_path.absolute()))
+            except Exception as e:
+                result["exported"] = False
+                result["export_error"] = str(e)
+        
+        # 如果指定了单个输出文件（仅单ID时有效）
+        elif hasattr(args, 'output') and args.output and len(ids) == 1:
+            try:
+                output_path = Path(args.output)
+                output_path.write_text(sgf_content, encoding='utf-8')
+                result["exported"] = True
+                result["output_path"] = str(output_path.absolute())
+                exported_files.append(str(output_path.absolute()))
+            except Exception as e:
+                result["exported"] = False
+                result["export_error"] = str(e)
+        
+        results.append(result)
+    
+    # 构建返回结果
+    success_count = sum(1 for r in results if r.get('success'))
+    
+    response = {
+        "success": success_count > 0,
+        "total_requested": len(ids),
+        "found": success_count,
+        "not_found": not_found_ids,
+        "results": results
     }
+    
+    if exported_files:
+        response["exported_files"] = exported_files
+        response["export_count"] = len(exported_files)
+    
+    if output_dir:
+        response["output_dir"] = str(output_dir.absolute())
+    
+    # 如果只查询单个ID且没有指定输出，返回完整game数据（向后兼容）
+    if len(ids) == 1 and success_count == 1 and not output_dir and not (hasattr(args, 'output') and args.output):
+        game = next(r for r in results if r.get('success'))
+        # 获取完整游戏数据
+        games = table.search(Game.id == ids[0])
+        if games:
+            full_game = games[0].copy()
+            full_game['sgf'] = decompress_sgf(full_game['sgf'])
+            response["game"] = full_game
+    
+    return response
 
 
 def cmd_delete(args):
@@ -860,8 +1011,11 @@ def main():
 
     # get
     get_parser = subparsers.add_parser('get', help='通过ID获取棋谱完整内容')
-    get_parser.add_argument('--id', required=True, help='棋谱ID')
-    get_parser.add_argument('--output', '-o', help='导出SGF到指定文件路径')
+    get_parser.add_argument('--id', action='append', help='棋谱ID（可多次指定多个ID）')
+    get_parser.add_argument('--ids', help='多个棋谱ID，逗号分隔')
+    get_parser.add_argument('--id-file', help='从文件读取ID列表（每行一个ID或逗号分隔）')
+    get_parser.add_argument('--output', '-o', help='导出SGF到指定文件路径（仅单ID时有效）')
+    get_parser.add_argument('--output-dir', '-d', help='导出到指定目录（批量导出时使用）')
 
     # stats
     subparsers.add_parser('stats', help='统计信息')
