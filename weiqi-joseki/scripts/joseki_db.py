@@ -57,6 +57,8 @@ class JosekiDB:
         self._ensure_dir()
         self.data = self._load()
         self.joseki_list = self.data.get("joseki_list", [])
+        # 构建快速索引以加速匹配
+        self._build_fast_index()
     
     def _ensure_dir(self):
         """确保目录存在"""
@@ -78,6 +80,109 @@ class JosekiDB:
     
     def _now(self) -> str:
         return datetime.now().isoformat()
+    
+    def _build_fast_index(self):
+        """
+        构建分层索引（内存友好版）- 索引前3手，同时考虑ruld和rudl两个方向
+        1万定式约占用 4-5MB 内存（两个方向）
+        """
+        self._index_l1 = {}  # 第1手: {coord: [定式索引位置]}
+        self._index_l2 = {}  # 前2手: {(c1,c2): [定式索引位置]}
+        self._index_l3 = {}  # 前3手: {(c1,c2,c3): [定式索引位置]}
+        
+        # 获取坐标系用于rudl转换
+        ruld = COORDINATE_SYSTEMS['ruld']
+        rudl = COORDINATE_SYSTEMS['rudl']
+        
+        for idx, j in enumerate(self.joseki_list):
+            moves = j.get("moves", [])
+            if not moves:
+                continue
+            
+            # 索引ruld方向
+            self._add_to_index_single(idx, moves)
+            
+            # 索引rudl方向（转换后的坐标）
+            rudl_moves = []
+            for m in moves:
+                if not m or m == 'pass':
+                    rudl_moves.append(m)
+                else:
+                    local = ruld._to_local_cache.get(m)
+                    new_sgf = rudl._to_sgf_cache.get(local, m)
+                    rudl_moves.append(new_sgf)
+            self._add_to_index_single(idx, rudl_moves, is_rudl=True)
+    
+    def _add_to_index_single(self, idx: int, moves: List[str], is_rudl: bool = False):
+        """将单个定式添加到索引（辅助函数）"""
+        if not moves:
+            return
+        
+        # L1索引（第1手）
+        c1 = moves[0]
+        self._index_l1.setdefault(c1, set()).add(idx)
+        
+        if len(moves) >= 2:
+            # L2索引（前2手）
+            key = (c1, moves[1])
+            self._index_l2.setdefault(key, set()).add(idx)
+            
+            if len(moves) >= 3:
+                # L3索引（前3手）
+                key = (c1, moves[1], moves[2])
+                self._index_l3.setdefault(key, set()).add(idx)
+    
+    def _get_candidates_by_prefix(self, moves: List[str]) -> List[int]:
+        """
+        根据前缀快速获取候选定式索引列表
+        同时查找ruld和rudl两个方向的索引
+        """
+        if not moves:
+            return []
+        
+        candidates = set()
+        
+        # 尝试L3索引（最精确）
+        if len(moves) >= 3:
+            key = (moves[0], moves[1], moves[2])
+            if key in self._index_l3:
+                candidates.update(self._index_l3[key])
+        
+        # 尝试L2索引
+        if len(moves) >= 2:
+            key = (moves[0], moves[1])
+            if key in self._index_l2:
+                candidates.update(self._index_l2[key])
+        
+        # 尝试L1索引
+        if moves[0] in self._index_l1:
+            candidates.update(self._index_l1[moves[0]])
+        
+        # 同时尝试rudl方向（转换查询坐标）
+        ruld = COORDINATE_SYSTEMS['ruld']
+        rudl = COORDINATE_SYSTEMS['rudl']
+        rudl_moves = []
+        for m in moves:
+            if not m or m == 'pass':
+                rudl_moves.append(m)
+            else:
+                local = rudl._to_local_cache.get(m)
+                new_sgf = ruld._to_sgf_cache.get(local, m)
+                rudl_moves.append(new_sgf)
+        
+        # 查找rudl方向的索引
+        if len(rudl_moves) >= 3:
+            key = (rudl_moves[0], rudl_moves[1], rudl_moves[2])
+            if key in self._index_l3:
+                candidates.update(self._index_l3[key])
+        if len(rudl_moves) >= 2:
+            key = (rudl_moves[0], rudl_moves[1])
+            if key in self._index_l2:
+                candidates.update(self._index_l2[key])
+        if rudl_moves[0] in self._index_l1:
+            candidates.update(self._index_l1[rudl_moves[0]])
+        
+        return list(candidates)
     
     # ========== 坐标转换 ==========
     
@@ -312,6 +417,36 @@ class JosekiDB:
             joseki["category_path"] = category_path
         
         self.joseki_list.append(joseki)
+        
+        # 更新快速索引（ruld和rudl两个方向）
+        idx = len(self.joseki_list) - 1
+        if coord_moves:
+            # ruld方向
+            self._index_l1.setdefault(coord_moves[0], set()).add(idx)
+            if len(coord_moves) >= 2:
+                self._index_l2.setdefault((coord_moves[0], coord_moves[1]), set()).add(idx)
+                if len(coord_moves) >= 3:
+                    self._index_l3.setdefault((coord_moves[0], coord_moves[1], coord_moves[2]), set()).add(idx)
+            
+            # rudl方向
+            ruld = COORDINATE_SYSTEMS['ruld']
+            rudl = COORDINATE_SYSTEMS['rudl']
+            rudl_moves = []
+            for m in coord_moves:
+                if not m or m == 'pass':
+                    rudl_moves.append(m)
+                else:
+                    local = ruld._to_local_cache.get(m)
+                    new_sgf = rudl._to_sgf_cache.get(local, m)
+                    rudl_moves.append(new_sgf)
+            
+            if rudl_moves:
+                self._index_l1.setdefault(rudl_moves[0], set()).add(idx)
+                if len(rudl_moves) >= 2:
+                    self._index_l2.setdefault((rudl_moves[0], rudl_moves[1]), set()).add(idx)
+                    if len(rudl_moves) >= 3:
+                        self._index_l3.setdefault((rudl_moves[0], rudl_moves[1], rudl_moves[2]), set()).add(idx)
+        
         self._save()
         return joseki_id, None
     
@@ -320,6 +455,8 @@ class JosekiDB:
         for i, j in enumerate(self.joseki_list):
             if j["id"] == joseki_id:
                 self.joseki_list.pop(i)
+                # 重建索引（因为索引位置变了）
+                self._build_fast_index()
                 self._save()
                 return True
         return False
@@ -328,6 +465,9 @@ class JosekiDB:
         """清空定式库"""
         count = len(self.joseki_list)
         self.joseki_list = []
+        self._index_l1 = {}
+        self._index_l2 = {}
+        self._index_l3 = {}
         self._save()
         return count
     
@@ -357,12 +497,30 @@ class JosekiDB:
     # ========== 匹配 ==========
     
     def match(self, moves: List[str], top_k: int = 5, min_similarity: float = 0.5) -> List[MatchResult]:
-        """匹配定式（忽略pass和颜色，只看坐标顺序，库存储为ruld，只需比较ruld和rudl两个方向）"""
+        """
+        匹配定式（优化版：使用分层索引快速筛选候选集）
+        
+        优化策略：
+        1. 先用L3/L2/L1索引快速定位候选定式（从1万缩小到几十）
+        2. 对候选集计算精确的LCS相似度
+        3. 返回最匹配的top_k个结果
+        """
         # 过滤掉pass，只保留有效坐标
         coord_seq = [m for m in self.normalize_moves(moves, ignore_pass=True) if m and m != 'pass']
         if not coord_seq:
             return []
         
+        # 阶段1: 使用分层索引快速获取候选集
+        candidate_indices = self._get_candidates_by_prefix(coord_seq)
+        
+        # 如果索引没有命中，或者候选太少，回退到部分扫描
+        if len(candidate_indices) < top_k * 2:
+            # 扫描前500个定式作为补充（避免全库遍历）
+            for i in range(min(500, len(self.joseki_list))):
+                if i not in candidate_indices:
+                    candidate_indices.append(i)
+        
+        # 阶段2: 对候选集计算精确相似度
         results = []
         seen_ids = set()
         
@@ -370,7 +528,8 @@ class JosekiDB:
         ruld = COORDINATE_SYSTEMS['ruld']
         rudl = COORDINATE_SYSTEMS['rudl']
         
-        for joseki in self.joseki_list:
+        for idx in candidate_indices:
+            joseki = self.joseki_list[idx]
             if joseki["id"] in seen_ids:
                 continue
             
@@ -387,6 +546,12 @@ class JosekiDB:
             # 过滤库存储的pass
             stored_filtered = [m for m in stored_moves if m and m != 'pass']
             if not stored_filtered:
+                continue
+            
+            # 快速过滤：长度差异太大直接跳过
+            min_len = min(len(coord_seq), len(stored_filtered))
+            max_len = max(len(coord_seq), len(stored_filtered))
+            if max_len > 0 and min_len / max_len < min_similarity * 0.8:
                 continue
             
             best_sim = 0.0
@@ -429,12 +594,9 @@ class JosekiDB:
     
     def match_top_right(self, moves: List[str], top_k: int = 5, min_similarity: float = 0.5) -> List[MatchResult]:
         """
-        匹配右上角的定式（只需匹配2个方向：ruld和rudl）
+        匹配右上角的定式（优化版：使用分层索引）
         
-        注意：库存储的定式默认是 ruld 方向（右上，左→下），提取的定式也统一到 ruld 方向
-        所以只需比较：
-        1. 直接比较（ruld vs ruld）
-        2. 把库存的转 rudl 再比较
+        只需匹配2个方向：ruld和rudl
         """
         if not moves:
             return []
@@ -444,10 +606,21 @@ class JosekiDB:
         if not coord_seq:
             return []
         
+        # 阶段1: 使用分层索引快速获取候选集
+        candidate_indices = self._get_candidates_by_prefix(coord_seq)
+        
+        # 如果候选太少，回退到部分扫描
+        if len(candidate_indices) < top_k * 2:
+            for i in range(min(500, len(self.joseki_list))):
+                if i not in candidate_indices:
+                    candidate_indices.append(i)
+        
+        # 阶段2: 对候选集计算精确相似度
         results = []
         seen_ids = set()
         
-        for joseki in self.joseki_list:
+        for idx in candidate_indices:
+            joseki = self.joseki_list[idx]
             if joseki["id"] in seen_ids:
                 continue
             
@@ -463,6 +636,12 @@ class JosekiDB:
             # 过滤库存储的pass
             stored_filtered = [m for m in stored_moves if m and m != 'pass' and m != 'tt']
             if not stored_filtered:
+                continue
+            
+            # 快速过滤：长度差异太大直接跳过
+            min_len = min(len(coord_seq), len(stored_filtered))
+            max_len = max(len(coord_seq), len(stored_filtered))
+            if max_len > 0 and min_len / max_len < min_similarity * 0.8:
                 continue
             
             best_sim = 0.0
