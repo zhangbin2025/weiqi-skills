@@ -28,7 +28,7 @@ warnings.warn(
 
 # 从新的模块化结构导入所有内容以保持兼容性
 from scripts.cli import main
-from scripts.joseki_db import JosekiDB, MatchResult, ConflictCheck
+from scripts.joseki_db import JosekiDB, PrefixMatchResult, ConflictCheck
 from scripts.joseki_extractor import (
     extract_joseki_from_sgf, parse_multigogm,
     process_corner_sequence, format_multigogm,
@@ -41,7 +41,7 @@ __all__ = [
     # CLI
     'main',
     # 数据库
-    'JosekiDB', 'MatchResult', 'ConflictCheck',
+    'JosekiDB', 'PrefixMatchResult', 'ConflictCheck',
     # 定式提取
     'extract_joseki_from_sgf', 'parse_multigogm',
     'process_corner_sequence', 'format_multigogm',

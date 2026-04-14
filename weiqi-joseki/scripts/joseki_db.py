@@ -44,16 +44,6 @@ class PrefixMatchResult:
     matched_direction: str  # "ruld" 或 "rudl"
 
 
-# 保留旧名用于向后兼容
-@dataclass
-class MatchResult:
-    id: str
-    name: str
-    similarity: float
-    matched_direction: str
-    common_moves: int
-
-
 @dataclass
 class ConflictCheck:
     has_conflict: bool
@@ -285,24 +275,6 @@ class JosekiDB:
         sgf_parts.append(")")
         return "".join(sgf_parts)
     
-    @staticmethod
-    def lcs_similarity(seq1: List[str], seq2: List[str]) -> float:
-        """最长公共子序列相似度"""
-        if not seq1 or not seq2:
-            return 0.0
-        
-        m, n = len(seq1), len(seq2)
-        dp = [[0] * (n + 1) for _ in range(m + 1)]
-        
-        for i in range(1, m + 1):
-            for j in range(1, n + 1):
-                if seq1[i - 1] == seq2[j - 1]:
-                    dp[i][j] = dp[i - 1][j - 1] + 1
-                else:
-                    dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
-        
-        return dp[m][n] / max(m, n)
-    
     # ========== CRUD ==========
     
     def check_conflict(self, moves: List[str]) -> ConflictCheck:
@@ -454,7 +426,7 @@ class JosekiDB:
     
     # ========== 匹配 ==========
     
-    def match(self, moves: List[str], top_k: int = 5, min_similarity: float = None) -> List[PrefixMatchResult]:
+    def match(self, moves: List[str], top_k: int = 5) -> List[PrefixMatchResult]:
         """
         匹配定式 - 前缀匹配算法
         
@@ -463,7 +435,6 @@ class JosekiDB:
         2. 统一转为右上角匹配
         3. 找最长公共前缀的定式
         4. 同前缀长度，选总手数最短的
-        5. min_similarity参数已废弃（保留向后兼容）
         """
         # 标准化（保留tt，只过滤空字符串）
         coord_seq = [m for m in self.normalize_moves(moves, ignore_pass=False) if m]
@@ -511,14 +482,13 @@ class JosekiDB:
         
         return results
     
-    def match_top_right(self, moves: List[str], top_k: int = 5, min_similarity: float = None) -> List[PrefixMatchResult]:
+    def match_top_right(self, moves: List[str], top_k: int = 5) -> List[PrefixMatchResult]:
         """
         匹配右上角的定式 - 直接调用match（已统一转为右上角）
-        min_similarity参数已废弃（保留向后兼容）
         """
         return self.match(moves, top_k=top_k)
     
-    def identify_corners(self, sgf_data: str, top_k: int = 3, first_n: int = 80) -> Dict[str, List[MatchResult]]:
+    def identify_corners(self, sgf_data: str, top_k: int = 3, first_n: int = 80) -> Dict[str, List[PrefixMatchResult]]:
         """
         从SGF识别四角定式
         
@@ -975,16 +945,14 @@ class JosekiDB:
         first_n: int = 50,
         min_moves: int = 4,
         limit: int = 50,
-        min_similarity: float = 0.9,
-        verbose: bool = True,
-        quiet: bool = False
+        verbose: bool = True
     ) -> Dict:
         """
-        发现值得研究的定式（新定式 + 罕见定式）
+        发现值得研究的定式（罕见定式优先）
         
         排序规则（优先级从高到低）：
-        1. 新定式（不在库中）→ 最高优先级
-        2. 罕见定式（库中出现次数最少）
+        1. 罕见定式（匹配前缀短）
+        2. 低频定式（库中出现次数少）
         3. 复杂定式（手数多的优先）
         
         Args:
@@ -992,9 +960,7 @@ class JosekiDB:
             first_n: 分析前N手的定式（默认50）
             min_moves: 定式最少手数（默认4）
             limit: 最多返回多少个定式（默认50）
-            min_similarity: 判断是否为新定式的相似度阈值（默认0.9）
-            verbose: 详细输出开关（与quiet互斥）
-            quiet: 安静模式，只返回结果不输出日志
+            verbose: 详细输出开关
         
         Returns:
             包含统计信息和定式列表的字典：
@@ -1002,16 +968,11 @@ class JosekiDB:
               - total_files: 扫描的文件数
               - total_joseki: 提取的定式总数
               - unique_joseki: 去重后的定式数
-              - new_joseki: 新定式数量
-              - rare_joseki: 罕见定式数量(次数<=5)
-              - existing_joseki: 库中已有定式数量
+              - rare_joseki: 罕见定式数量
+              - common_joseki: 常见定式数量
             - joseki_list: 按研究价值排序的定式列表
         """
         from pathlib import Path
-        
-        # quiet模式覆盖verbose
-        if quiet:
-            verbose = False
         
         # 步骤1: 收集所有定式
         joseki_records = []  # [(moves_tuple, sgf_info, corner)]
@@ -1201,7 +1162,7 @@ class JosekiDB:
         return result
     
     def _parse_sgf_info(self, sgf_data: str, sgf_path: Optional[Path] = None) -> Dict:
-        """解析SGF元信息"""
+        """解析SGF元信息，使用sgf_parser"""
         info = {
             'file': str(sgf_path) if sgf_path else 'inline',
             'black_player': '',
@@ -1212,28 +1173,34 @@ class JosekiDB:
         }
         
         try:
-            # 使用正则提取元信息
-            patterns = {
-                'black_player': r'PB\[([^\]]+)\]',
-                'white_player': r'PW\[([^\]]+)\]',
-                'date': r'DT\[([^\]]+)\]',
-                'result': r'RE\[([^\]]+)\]'
-            }
+            # 使用sgf_parser解析 - 尝试多种导入方式
+            try:
+                from .sgf_parser import parse_sgf
+            except ImportError:
+                from sgf_parser import parse_sgf
             
-            for key, pattern in patterns.items():
-                match = re.search(pattern, sgf_data)
-                if match:
-                    info[key] = match.group(1)
+            parsed = parse_sgf(sgf_data)
+            game_info = parsed.get('game_info', {})
+            tree = parsed.get('tree', {})
+            props = tree.get('properties', {})
+            
+            # 提取元信息 - 字段名映射 (sgf_parser使用短字段名)
+            info['black_player'] = game_info.get('black', '')
+            info['white_player'] = game_info.get('white', '')
+            info['date'] = game_info.get('date', '')
+            info['result'] = game_info.get('result', '')
             
             # 赛事信息：优先用EV，没有则用GN（野狐用GN）
-            event_match = re.search(r'EV\[([^\]]+)\]', sgf_data)
-            if event_match:
-                info['event'] = event_match.group(1)
+            ev = props.get('EV', '')
+            if isinstance(ev, list):
+                ev = ev[0] if ev else ''
+            if ev:
+                info['event'] = ev
             else:
-                # 尝试GN（Game Name）
-                gn_match = re.search(r'GN\[([^\]]+)\]', sgf_data)
-                if gn_match:
-                    info['event'] = gn_match.group(1)
+                gn = props.get('GN', '')
+                if isinstance(gn, list):
+                    gn = gn[0] if gn else ''
+                info['event'] = gn
         except Exception:
             pass
         

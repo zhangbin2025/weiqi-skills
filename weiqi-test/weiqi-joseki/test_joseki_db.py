@@ -13,7 +13,7 @@ from pathlib import Path
 # 添加 weiqi-joseki 项目路径
 sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki')
 
-from scripts.joseki_db import JosekiDB, MatchResult, ConflictCheck
+from scripts.joseki_db import JosekiDB, PrefixMatchResult, ConflictCheck
 
 
 class TestJosekiDB(unittest.TestCase):

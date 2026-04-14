@@ -544,10 +544,6 @@ def cmd_discover(args):
     """发现值得研究的定式"""
     from pathlib import Path
     
-    # 安静模式自动设置output=json
-    if args.quiet:
-        args.output = "json"
-    
     # 收集SGF源
     sgf_sources = []
     for path_str in args.paths:
@@ -569,9 +565,7 @@ def cmd_discover(args):
         first_n=args.first_n,
         min_moves=args.min_moves,
         limit=args.limit,
-        min_similarity=args.min_similarity,
-        verbose=not args.quiet,
-        quiet=args.quiet
+        verbose=not args.quiet
     )
     
     # 输出结果
@@ -710,12 +704,11 @@ def main():
     p_katago.add_argument("--progress-file", help="进度文件路径（默认 ~/.weiqi-joseki/katago-progress.json）")
     
     # Discover 命令 - 发现有研究价值的定式
-    p_discover = subparsers.add_parser("discover", help="发现值得研究的定式（新定式 + 罕见定式）")
+    p_discover = subparsers.add_parser("discover", help="发现值得研究的定式（罕见定式优先）")
     p_discover.add_argument("paths", nargs="+", help="SGF文件或目录路径（可多个）")
     p_discover.add_argument("--first-n", type=int, default=50, help="分析前N手的定式（默认50）")
     p_discover.add_argument("--min-moves", type=int, default=4, help="定式最少手数（默认4）")
     p_discover.add_argument("--limit", type=int, default=50, help="最多返回多少个定式（默认50）")
-    p_discover.add_argument("--min-similarity", type=float, default=0.9, help="判断是否为新定式的相似度阈值（默认0.9）")
     p_discover.add_argument("--output", choices=["table", "json"], default="table", help="输出格式（默认table）")
     p_discover.add_argument("--quiet", action="store_true", help="安静模式，只输出JSON结果（自动设置--output=json）")
     

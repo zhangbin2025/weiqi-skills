@@ -5,7 +5,7 @@
 """
 
 # 从子模块导出主要类和函数
-from .joseki_db import JosekiDB, MatchResult, ConflictCheck
+from .joseki_db import JosekiDB, PrefixMatchResult, ConflictCheck
 from .joseki_extractor import (
     extract_joseki_from_sgf, parse_multigogm,
     detect_corner, convert_to_top_right,
@@ -18,7 +18,7 @@ from .katago_downloader import (
 
 __all__ = [
     # 数据库
-    'JosekiDB', 'MatchResult', 'ConflictCheck',
+    'JosekiDB', 'PrefixMatchResult', 'ConflictCheck',
     # 定式提取
     'extract_joseki_from_sgf', 'parse_multigogm',
     'detect_corner', 'convert_to_top_right',
