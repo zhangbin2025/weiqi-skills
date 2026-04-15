@@ -713,7 +713,7 @@
             const cx = margin + x * gridSize;
             const cy = margin + y * gridSize;
             
-            const fontSize = Math.floor(gridSize * 0.9);
+            const fontSize = Math.floor(gridSize * 0.8);
             ctx.font = `bold ${fontSize}px Arial`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -817,43 +817,15 @@
                 }
             }
             
-            // 绘制所有棋子（基于应用完所有着法后的 board 状态）
-            for (let y = 0; y < BOARD_SIZE; y++) {
-                for (let x = 0; x < BOARD_SIZE; x++) {
-                    if (board[y][x]) {
-                        const key = `${x},${y}`;
-                        
-                        if (currentState === STATE_VARIATION && varMoveMap) {
-                            // 变化图状态：检查是否是变化图着法
-                            const varMove = varMoveMap.get(key);
-                            if (varMove && varMove.color === board[y][x]) {
-                                drawStone(x, y, board[y][x], varMove.moveNum === varIndex, varMove.moveNum.toString());
-                            } else {
-                                // 题目棋子
-                                const isLast = lastStonePos && lastStonePos.x === x && lastStonePos.y === y;
-                                drawStone(x, y, board[y][x], isLast);
-                            }
-                        } else if (currentState === STATE_TRYPLAY && tryMoveMap) {
-                            // 试下状态：检查是否是试下着法
-                            const tryMove = tryMoveMap.get(key);
-                            if (tryMove && tryMove.color === board[y][x]) {
-                                drawStone(x, y, board[y][x], tryMove.moveNum === tryIndex, tryMove.moveNum.toString());
-                            } else {
-                                // 题目棋子
-                                const isLast = lastStonePos && lastStonePos.x === x && lastStonePos.y === y;
-                                drawStone(x, y, board[y][x], isLast);
-                            }
-                        } else {
-                            // 主面板状态
-                            const isLast = lastStonePos && lastStonePos.x === x && lastStonePos.y === y;
-                            drawStone(x, y, board[y][x], isLast);
-                        }
-                    }
-                }
-            }
+            // 绘制ABCD标记（在当前做题局面显示，浏览历史时不显示）
+            // 变化图选择界面也显示ABCD，进入具体变化图后隐藏
+            // 注意：ABCD在棋子之前绘制，让棋子覆盖在文字上
+            const isVariationSelection = currentState === STATE_VARIATION && 
+                document.getElementById('variationOptions').style.display !== 'none';
+            const shouldShowOptions = (currentState === STATE_MAIN || currentState === STATE_TRYPLAY || isVariationSelection) && currentMove === position.length;
             
-            // 绘制ABCD标记（仅在当前做题局面显示，浏览历史时不显示）
-            if ((currentState === STATE_MAIN || currentState === STATE_TRYPLAY) && currentMove === position.length) {
+            // 先绘制ABCD标记（在棋子下方）
+            if (shouldShowOptions) {
                 currentProblem.options.forEach((opt, idx) => {
                     const pos = coordToPos(opt.coord);
                     if (pos) {
@@ -868,6 +840,36 @@
                         drawOptionMarker(pos.x, pos.y, opt.letter, state);
                     }
                 });
+            }
+            
+            // 再绘制棋子（覆盖在ABCD上）
+            for (let y = 0; y < BOARD_SIZE; y++) {
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    if (board[y][x]) {
+                        const key = `${x},${y}`;
+                        
+                        if (currentState === STATE_VARIATION && varMoveMap) {
+                            const varMove = varMoveMap.get(key);
+                            if (varMove && varMove.color === board[y][x]) {
+                                drawStone(x, y, board[y][x], varMove.moveNum === varIndex, varMove.moveNum.toString());
+                            } else {
+                                const isLast = lastStonePos && lastStonePos.x === x && lastStonePos.y === y;
+                                drawStone(x, y, board[y][x], isLast);
+                            }
+                        } else if (currentState === STATE_TRYPLAY && tryMoveMap) {
+                            const tryMove = tryMoveMap.get(key);
+                            if (tryMove && tryMove.color === board[y][x]) {
+                                drawStone(x, y, board[y][x], tryMove.moveNum === tryIndex, tryMove.moveNum.toString());
+                            } else {
+                                const isLast = lastStonePos && lastStonePos.x === x && lastStonePos.y === y;
+                                drawStone(x, y, board[y][x], isLast);
+                            }
+                        } else {
+                            const isLast = lastStonePos && lastStonePos.x === x && lastStonePos.y === y;
+                            drawStone(x, y, board[y][x], isLast);
+                        }
+                    }
+                }
             }
         }
 
