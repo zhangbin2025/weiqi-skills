@@ -399,7 +399,10 @@ def generate_quiz_html(problems: List[Problem], game_info: Dict, sgf_content: st
             })
         
         # 随机打乱选项顺序，使正确答案位置不固定
-        random.shuffle(options)
+        # 使用基于题目内容的确定性种子，确保相同数据生成相同结果
+        shuffle_seed = p.move_num + sum(ord(c) for c in (options[0]['coord'] if options else 'A'))
+        rng = random.Random(shuffle_seed)
+        rng.shuffle(options)
         
         # 重新分配字母标签
         for j, opt in enumerate(options):
