@@ -58,6 +58,8 @@ class JosekiDB:
         self._ensure_dir()
         self.data = self._load()
         self.joseki_list = self.data.get("joseki_list", [])
+        # 构建 ID -> 定式 的快速索引 (O(1) 查找)
+        self._id_index = {j["id"]: j for j in self.joseki_list}
         # 构建快速索引以加速匹配
         self._build_fast_index()
     
@@ -368,6 +370,8 @@ class JosekiDB:
             joseki["category_path"] = category_path
         
         self.joseki_list.append(joseki)
+        # 更新ID索引
+        self._id_index[joseki_id] = joseki
         
         # 更新Trie索引（ruld和rudl两个方向）
         if coord_moves:
@@ -383,30 +387,30 @@ class JosekiDB:
     
     def remove(self, joseki_id: str) -> bool:
         """删除定式"""
-        for i, j in enumerate(self.joseki_list):
-            if j["id"] == joseki_id:
-                self.joseki_list.pop(i)
-                # 重建索引（因为索引位置变了）
-                self._build_fast_index()
-                self._save()
-                return True
+        if joseki_id in self._id_index:
+            joseki = self._id_index[joseki_id]
+            self.joseki_list.remove(joseki)
+            # 删除ID索引
+            del self._id_index[joseki_id]
+            # 重建Trie索引
+            self._build_fast_index()
+            self._save()
+            return True
         return False
     
     def clear(self) -> int:
         """清空定式库"""
         count = len(self.joseki_list)
         self.joseki_list = []
+        self._id_index = {}
         self._trie = {}
         self._trie_rudl = {}
         self._save()
         return count
     
     def get(self, joseki_id: str) -> Optional[dict]:
-        """获取定式详情"""
-        for j in self.joseki_list:
-            if j["id"] == joseki_id:
-                return j
-        return None
+        """获取定式详情 (O(1) 字典查找)"""
+        return self._id_index.get(joseki_id)
     
     def list_all(self, category: str = None) -> List[dict]:
         """列出现式（精简字段）"""
@@ -767,6 +771,9 @@ class JosekiDB:
         # 批量保存（只调用一次）
         if new_joseki_list:
             self.joseki_list.extend(new_joseki_list)
+            # 批量更新ID索引
+            for joseki in new_joseki_list:
+                self._id_index[joseki["id"]] = joseki
             self._save()
 
         if verbose:
