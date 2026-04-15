@@ -559,6 +559,7 @@ def main():
         print(f"解析警告: {parse_info['errors']}")
     
     print(f"棋局: {game_info.get('black', '黑棋')} vs {game_info.get('white', '白棋')}")
+    print(f"结果: {game_info.get('result', '')}")
     print(f"主分支手数: {len(moves)}")
     print(f"变化图数量: {sum(len(v) for v in variations.values())}")
     
