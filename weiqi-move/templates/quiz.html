@@ -18,19 +18,20 @@
             display: flex;
             justify-content: center;
             align-items: flex-start;
-            padding: 8px;
+            padding: 0;
         }
         .container {
             background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-            padding: 16px;
+            border-radius: 0;
+            box-shadow: none;
+            padding: 4px;
             max-width: 100%;
             width: 100%;
+            min-height: 100vh;
         }
         .header {
             text-align: center;
-            margin-bottom: 16px;
+            margin-bottom: 8px;
         }
         .header h1 {
             font-size: 18px;
@@ -99,7 +100,7 @@
         .board-container {
             display: flex;
             justify-content: center;
-            margin: 16px 0;
+            margin: 8px 0;
             position: relative;
             width: 100%;
             padding: 0;
@@ -183,8 +184,8 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 12px;
-            margin: 16px 0;
+            gap: 8px;
+            margin: 8px 0;
             flex-wrap: nowrap;
             overflow-x: auto;
         }
@@ -221,7 +222,7 @@
         /* 变化图面板 */
         .variation-panel {
             display: none;
-            margin: 12px 0;
+            margin: 8px 0;
         }
         .variation-panel.active {
             display: block;
@@ -249,7 +250,7 @@
         /* 试下模式面板 */
         .tryplay-panel {
             display: none;
-            margin: 12px 0;
+            margin: 8px 0;
         }
         .tryplay-panel.active {
             display: block;
@@ -272,8 +273,8 @@
             justify-content: flex-start;
             align-items: center;
             gap: 16px;
-            margin-top: 16px;
-            padding-top: 16px;
+            margin-top: 8px;
+            padding-top: 8px;
             border-top: 1px solid #eee;
         }
         .legend-item {
@@ -332,6 +333,7 @@
                 max-width: 500px;
                 padding: 20px;
                 border-radius: 12px;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.3);
             }
             .header {
                 margin-bottom: 20px;
@@ -782,8 +784,8 @@
             const availableWidth = Math.min(containerWidth, windowWidth) - sideMargin;
             
             // 计算高度空间：减去头部、控制面板、图例等预估高度
-            // 头部约 60px，主面板约 50px，图例约 40px，其他间距约 30px
-            const reservedHeight = isMobile ? 180 : 220;
+            // 小屏幕：头部约 50px，主面板约 40px，图例约 30px，其他间距约 20px
+            const reservedHeight = isMobile ? 140 : 220;
             const availableHeight = window.innerHeight - reservedHeight;
             
             // 取宽高中较小值，确保棋盘完整显示
