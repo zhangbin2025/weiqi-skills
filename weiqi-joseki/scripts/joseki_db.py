@@ -1094,6 +1094,9 @@ class JosekiDB:
             frequency = 0
             is_rare = True  # 默认为罕见
             
+            # 从定式库获取匹配定式的 probability
+            library_probability = 0.0
+            
             if matches:
                 best_match = matches[0]
                 best_id = best_match.id
@@ -1104,9 +1107,14 @@ class JosekiDB:
                 matched_joseki = self.get(best_id)
                 if matched_joseki:
                     frequency = matched_joseki.get('frequency', 1)
+                    # 获取库中定式的概率（入库时计算的）
+                    library_probability = matched_joseki.get('probability', 0.0)
                 
                 # 判断是否罕见：前缀长度是否达到 min_moves
                 is_rare = matched_prefix_len < min_moves
+            
+            # 计算发现概率（出现次数 / 总文件数）
+            discovery_probability = data['count'] / total_files if total_files > 0 else 0.0
             
             results.append({
                 'joseki_id': best_id,
@@ -1115,7 +1123,9 @@ class JosekiDB:
                 'move_count': len(coords),
                 'matched_prefix': matched_prefix_moves,
                 'matched_prefix_len': matched_prefix_len,
-                'frequency': frequency,
+                'frequency': frequency,  # 库中匹配定式的出现次数（用于排序）
+                'probability': round(library_probability, 4),  # 库中定式的概率
+                'discovery_probability': round(discovery_probability, 4),  # 当前发现的出现概率
                 'sources': data['sources']
             })
             

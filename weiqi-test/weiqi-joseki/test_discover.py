@@ -306,6 +306,7 @@ class TestDiscover(unittest.TestCase):
         self.assertIn('matched_prefix', item)
         self.assertIn('matched_prefix_len', item)
         self.assertIn('frequency', item)
+        self.assertIn('probability', item)  # 新增：概率字段
         # similarity字段已移除（不再使用LCS相似度）
         self.assertIn('sources', item)
         
@@ -316,6 +317,7 @@ class TestDiscover(unittest.TestCase):
         self.assertIsInstance(item['moves'], list)
         self.assertIsInstance(item['matched_prefix_len'], int)
         self.assertIsInstance(item['frequency'], int)
+        self.assertIsInstance(item['probability'], (int, float))  # 新增：概率是数字
         self.assertIsInstance(item['sources'], list)
 
 

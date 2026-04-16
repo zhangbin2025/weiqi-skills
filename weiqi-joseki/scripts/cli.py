@@ -582,9 +582,9 @@ def cmd_discover(args):
         print("=" * 100)
         print(f"统计: {stats.get('total_files', 0)}文件 → {stats.get('total_joseki', 0)}定式 → {stats.get('unique_joseki', 0)}唯一 | 罕见:{stats.get('rare_joseki', 0)} 常见:{stats.get('common_joseki', 0)}")
         print("-" * 100)
-        # 去掉相似度列
-        print(f"{'排名':<6} {'ID':<12} {'罕见?':<6} {'手数':<6} {'次数':<8} {'前缀':<8} {'着法序列':<30} {'来源'}")
-        print("-" * 100)
+        # 添加概率列
+        print(f"{'排名':<6} {'ID':<12} {'罕见?':<6} {'手数':<6} {'次数':<8} {'概率':<8} {'前缀':<8} {'着法序列':<30} {'来源'}")
+        print("-" * 110)
         
         for item in joseki_list:
             joseki_id = item['joseki_id'] if item['joseki_id'] else "(未匹配)"
@@ -594,6 +594,7 @@ def cmd_discover(args):
                 moves_str += "..."
             
             prefix_len = item.get('matched_prefix_len', 0)
+            prob_str = f"{item.get('probability', 0):.1%}"
             
             # 来源信息摘要
             sources_summary = ""
@@ -612,7 +613,7 @@ def cmd_discover(args):
                     sources_summary = Path(first_source.get('file', 'unknown')).name[:20]
             
             print(f"{item['rank']:<6} {joseki_id:<12} {is_rare:<6} {item['move_count']:<6} "
-                  f"{item['frequency']:<8} {prefix_len:<8} {moves_str:<30} {sources_summary}")
+                  f"{item['frequency']:<8} {prob_str:<8} {prefix_len:<8} {moves_str:<30} {sources_summary}")
         
         print("=" * 100)
         print(f"总计: {len(joseki_list)} 个定式")
