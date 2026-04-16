@@ -465,10 +465,21 @@ def generate_quiz_html(problems: List[Problem], game_info: Dict, sgf_content: st
     board_size = int(game_info.get('board_size', 19))
     handicap_stones = game_info.get('handicap_stones', [])
     
+    # 标题优先使用比赛名称(GN)，如果没有则使用棋手对局
+    game_name = game_info.get('game_name', '').strip()
+    if not game_name or game_name == '围棋棋谱':
+        game_title = f"{game_info.get('black', '黑棋')} vs {game_info.get('white', '白棋')}"
+    else:
+        game_title = game_name
+    
+    # 副标题显示棋手和结果信息
+    players = f"{game_info.get('black', '黑棋')} vs {game_info.get('white', '白棋')}"
+    date_result = f"{game_info.get('date', '')} {game_info.get('result', '')}".strip()
+    
     template_vars = {
-        'GAME_NAME': game_info.get('game_name', '围棋实战选点'),
-        'GAME_TITLE': f"{game_info.get('black', '黑棋')} vs {game_info.get('white', '白棋')}",
-        'GAME_INFO': f"{game_info.get('date', '')} {game_info.get('result', '')}",
+        'GAME_NAME': game_title,
+        'GAME_TITLE': game_title,
+        'GAME_INFO': f"{players} {date_result}".strip(),
         'BLACK_NAME': game_info.get('black', '黑棋'),
         'WHITE_NAME': game_info.get('white', '白棋'),
         'BOARD_SIZE': board_size,
