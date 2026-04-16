@@ -48,6 +48,39 @@
             line-height: 1.4;
             margin-bottom: 8px;
         }
+        .player-info {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: #555;
+        }
+        .player-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .player-stone {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .player-stone.black {
+            background: radial-gradient(circle at 30% 30%, #666, #000);
+        }
+        .player-stone.white {
+            background: radial-gradient(circle at 30% 30%, #fff, #ccc);
+            border: 1px solid #ddd;
+        }
+        .player-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 120px;
+        }
         .problem-info {
             display: flex;
             justify-content: center;
@@ -270,9 +303,8 @@
         
         .legend {
             display: flex;
-            justify-content: flex-start;
+            justify-content: center;
             align-items: center;
-            gap: 16px;
             margin-top: 8px;
             padding-top: 8px;
             border-top: 1px solid #eee;
@@ -347,6 +379,18 @@
                 line-height: 1.5;
                 margin-bottom: 10px;
             }
+            .player-info {
+                gap: 24px;
+                margin-bottom: 10px;
+                font-size: 14px;
+            }
+            .player-stone {
+                width: 16px;
+                height: 16px;
+            }
+            .player-name {
+                max-width: 180px;
+            }
             .problem-info {
                 gap: 10px;
                 margin-top: 12px;
@@ -420,6 +464,16 @@
         <div class="header">
             <h1 id="gameTitle">{{GAME_TITLE}}</h1>
             <div class="info" id="gameInfo"> </div>
+            <div class="player-info" id="playerInfo">
+                <div class="player-item">
+                    <div class="player-stone black"></div>
+                    <span class="player-name" id="blackName">{{BLACK_NAME}}</span>
+                </div>
+                <div class="player-item">
+                    <div class="player-stone white"></div>
+                    <span class="player-name" id="whiteName">{{WHITE_NAME}}</span>
+                </div>
+            </div>
             <div class="problem-info" id="problemInfo">
                 <span class="tag tag-phase-middle" id="phaseTag">中盘</span>
                 <span class="tag tag-difficulty-medium" id="difficultyTag">中等</span>
@@ -477,14 +531,6 @@
         </div>
 
         <div class="legend">
-            <div class="legend-item">
-                <div class="stone-black"></div>
-                <span id="blackName">{{BLACK_NAME}}</span>
-            </div>
-            <div class="legend-item">
-                <div class="stone-white"></div>
-                <span id="whiteName">{{WHITE_NAME}}</span>
-            </div>
             <div class="problem-nav">
                 <span class="progress-text" id="progressText">1 / {{TOTAL_PROBLEMS}}</span>
                 <button class="btn-text" onclick="prevProblem()" id="prevProblemBtn">上一题</button>
