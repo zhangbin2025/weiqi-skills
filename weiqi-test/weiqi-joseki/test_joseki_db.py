@@ -510,7 +510,7 @@ class TestJosekiDB(unittest.TestCase):
         ]
         
         count_map, total_sources, total_sgf_files, total_extracted, unique_count = \
-            self.db._extract_joseki_from_sources(sgf_list, first_n=80, verbose=False)
+            self.db._extract_joseki_from_sources(sgf_list, first_n=80, corner_size=9, verbose=False)
         
         self.assertEqual(total_sources, 3)
         self.assertEqual(total_sgf_files, 3)  # 3个SGF字符串，每个作为一个SGF文件

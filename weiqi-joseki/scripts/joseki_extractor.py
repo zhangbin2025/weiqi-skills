@@ -109,7 +109,7 @@ def detect_corner(moves: List[str], corner_size: int = 9) -> Optional[str]:
     
     Args:
         moves: 坐标列表
-        corner_size: 角大小，9 或 13（默认9）
+        corner_size: 角大小，9、11 或 13（默认9）
     
     返回: 'tl', 'tr', 'bl', 'br' 或 None（无法判断）
     """
@@ -120,10 +120,12 @@ def detect_corner(moves: List[str], corner_size: int = 9) -> Optional[str]:
     # 根据 corner_size 确定边界
     if corner_size == 9:
         tl_bound, tr_bound, bl_bound, br_bound = 8, 10, 8, 10
+    elif corner_size == 11:
+        tl_bound, tr_bound, bl_bound, br_bound = 10, 8, 10, 8
     elif corner_size == 13:
         tl_bound, tr_bound, bl_bound, br_bound = 12, 6, 12, 6
     else:
-        raise ValueError(f"corner_size 必须是 9 或 13，得到 {corner_size}")
+        raise ValueError(f"corner_size 必须是 9、11 或 13，得到 {corner_size}")
     
     corner_counts = {'tl': 0, 'tr': 0, 'bl': 0, 'br': 0}
     
@@ -254,7 +256,7 @@ def _classify_to_corners(moves: List[Tuple[str, str]], corner_size: int = 9) -> 
     
     Args:
         moves: [(color, coord), ...]
-        corner_size: 角大小，9 或 13（默认9）
+        corner_size: 角大小，9、11 或 13（默认9）
     
     返回:
         {corner_key: [(color, coord), ...], ...}
@@ -263,10 +265,12 @@ def _classify_to_corners(moves: List[Tuple[str, str]], corner_size: int = 9) -> 
     # 根据 corner_size 确定边界
     if corner_size == 9:
         tl_bound, tr_bound, bl_bound, br_bound = 8, 10, 8, 10
+    elif corner_size == 11:
+        tl_bound, tr_bound, bl_bound, br_bound = 10, 8, 10, 8
     elif corner_size == 13:
         tl_bound, tr_bound, bl_bound, br_bound = 12, 6, 12, 6
     else:
-        raise ValueError(f"corner_size 必须是 9 或 13，得到 {corner_size}")
+        raise ValueError(f"corner_size 必须是 9、11 或 13，得到 {corner_size}")
     
     corners = {'tr': [], 'tl': [], 'bl': [], 'br': []}
     

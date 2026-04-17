@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki')
 
 from scripts.joseki_extractor import (
-    extract_joseki_from_sgf, process_corner_sequence,
+    extract_joseki_from_sgf, extract_joseki_from_sgf_raw, process_corner_sequence,
     format_multigogm, parse_multigogm,
     detect_corner, convert_to_top_right,
     CoordinateSystem, COORDINATE_SYSTEMS
@@ -217,6 +217,61 @@ class TestFormatAndParseMultigogm(unittest.TestCase):
         """解析空字符串"""
         result = parse_multigogm("")
         self.assertEqual(result, {})
+
+
+class TestCornerSize(unittest.TestCase):
+    """测试 corner_size 参数"""
+    
+    def test_corner_size_9_default(self):
+        """默认 corner_size=9"""
+        sgf = "(;GM[1];B[pd];W[pp];B[dd];W[dp])"
+        result = extract_joseki_from_sgf_raw(sgf, first_n=50)
+        # 默认应该能正常提取
+        self.assertIsInstance(result, dict)
+    
+    def test_corner_size_9_vs_13(self):
+        """9路和13路提取结果不同"""
+        # 使用延伸到中腹的定式测试
+        sgf = "(;GM[1];B[pd];W[qf];B[nc];W[pb];B[od];W[mb];B[nd])"
+        result_9 = extract_joseki_from_sgf_raw(sgf, first_n=50, corner_size=9)
+        result_13 = extract_joseki_from_sgf_raw(sgf, first_n=50, corner_size=13)
+        
+        # 13路应该提取到更多或相等的着法
+        for corner in ['tr', 'tl', 'bl', 'br']:
+            len_9 = len(result_9.get(corner, []))
+            len_13 = len(result_13.get(corner, []))
+            self.assertGreaterEqual(len_13, len_9, 
+                f"{corner}角13路({len_13})应该>=9路({len_9})")
+    
+    def test_corner_size_invalid(self):
+        """无效 corner_size 抛出异常"""
+        sgf = "(;GM[1];B[pd];W[pp])"
+        with self.assertRaises(ValueError):
+            extract_joseki_from_sgf_raw(sgf, corner_size=10)  # 无效值
+    
+    def test_detect_corner_with_size(self):
+        """detect_corner 支持 corner_size"""
+        # 9路检测
+        moves_9 = ['aa', 'bb']  # 左上
+        self.assertEqual(detect_corner(moves_9, corner_size=9), 'tl')
+        
+        # 13路检测（扩展区域）
+        moves_13 = ['ld', 'me']  # 13路中可能属于左上或右上
+        # 只需验证不抛出异常
+        result = detect_corner(moves_13, corner_size=13)
+        self.assertIn(result, ['tl', 'tr', 'bl', 'br', None])
+    
+    def test_extract_joseki_with_corner_size(self):
+        """extract_joseki_from_sgf 支持 corner_size"""
+        sgf = "(;GM[1];B[pd];W[qf];B[nc])"
+        
+        # 9路
+        result_9 = extract_joseki_from_sgf(sgf, corner_size=9)
+        self.assertIn("MULTIGOGM", result_9)
+        
+        # 13路
+        result_13 = extract_joseki_from_sgf(sgf, corner_size=13)
+        self.assertIn("MULTIGOGM", result_13)
 
 
 class TestIntegration(unittest.TestCase):
