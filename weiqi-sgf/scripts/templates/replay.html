@@ -37,8 +37,15 @@
         .controls-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin: 6px 0; flex-wrap: nowrap; padding: 0 2px; }
         .variation-comment { font-size: 12px; color: #666; margin-right: 8px; white-space: nowrap; flex-shrink: 0; }
         .controls-group { display: flex; align-items: center; gap: 8px; flex: 1; }
+        .slider-container { flex: 1; min-width: 60px; }
+        #moveSlider { width: 100%; height: 18px; }
+        .main-controls { gap: 24px; transition: gap 0.2s ease; }
+        .main-controls.expanded { gap: 8px; }
+        .extra-buttons { display: none; align-items: center; gap: 8px; }
+        .extra-buttons.visible { display: flex; }
+        #moreBtn { background: #f0f0f0; transition: all 0.2s ease; }
+        #moreBtn.active { background: #667eea; color: white; }
         .controls-divider { width: 1px; height: 20px; background: #ddd; margin: 0 3px; flex-shrink: 0; }
-        .slider-container { flex: 1; min-width: 80px; width: 100%; }
         #moveSlider { width: 100%; height: 18px; }
         .trial-panel { display: none; margin: 6px 0; padding: 8px 12px; background: #e8f5e9; border-radius: 8px; border: 1px solid #4caf50; justify-content: center; gap: 8px; }
         .trial-panel.visible { display: flex; }
@@ -62,14 +69,17 @@
                 <div class="slider-container"><input type="range" id="moveSlider" min="0" max="0" value="0" oninput="goToMove(this.value)"></div>
             </div>
             <div class="controls-divider"></div>
-            <div class="controls-group" style="flex: 0; margin-left: auto;">
+            <div class="controls-group main-controls" id="mainControlsGroup" style="flex: 0; margin-left: auto;">
                 <button class="btn" id="backToParentBtn" onclick="backToParent()" title="返回上级" style="width: 32px; height: 32px; font-size: 14px; display: none;">⬅</button>
-                <button class="btn" id="prevBtn" onclick="prevMove()" title="上一手" style="width: 32px; height: 32px; font-size: 14px; flex-shrink: 0;">◀</button>
-                <button class="btn" id="nextBtn" onclick="nextMove()" title="下一手" style="width: 32px; height: 32px; font-size: 14px; flex-shrink: 0;">▶</button>
-                <button class="btn" id="soundToggleBtn" onclick="toggleSound()" title="音效开关" style="width: 32px; height: 32px; font-size: 14px;">🔊</button>
-                <button class="btn" id="numToggleBtn" onclick="toggleNumbers()" title="显示/隐藏手数" style="width: 32px; height: 32px; font-size: 11px;">1️⃣</button>
-                <button class="btn" onclick="downloadSGF()" title="下载SGF" style="width: 32px; height: 32px; font-size: 14px;">💾</button>
+                <button class="btn" id="prevBtn" onclick="prevMove()" title="上一手" style="width: 32px; height: 32px; font-size: 14px;">◀</button>
+                <button class="btn" id="nextBtn" onclick="nextMove()" title="下一手" style="width: 32px; height: 32px; font-size: 14px;">▶</button>
                 <button class="btn" id="playBtn" onclick="togglePlay()" title="播放/暂停" style="width: 32px; height: 32px; font-size: 13px; font-weight: bold;">播</button>
+                <div class="extra-buttons" id="extraButtons">
+                    <button class="btn" id="soundToggleBtn" onclick="toggleSound()" title="音效开关" style="width: 32px; height: 32px; font-size: 14px;">🔊</button>
+                    <button class="btn" id="numToggleBtn" onclick="toggleNumbers()" title="显示/隐藏手数" style="width: 32px; height: 32px; font-size: 11px;">1️⃣</button>
+                    <button class="btn" onclick="downloadSGF()" title="下载SGF" style="width: 32px; height: 32px; font-size: 14px;">💾</button>
+                </div>
+                <button class="btn" id="moreBtn" onclick="toggleMorePanel()" title="更多" style="width: 32px; height: 32px; font-size: 14px;">⋮</button>
             </div>
         </div>
         <div class="trial-panel" id="trialPanel">
@@ -661,8 +671,6 @@
             const nextBtn = document.getElementById('nextBtn');
             const slider = document.getElementById('moveSlider');
             const sliderContainer = slider.parentElement;  // 获取 slider-container
-            const numBtn = document.getElementById('numToggleBtn');
-            const soundBtn = document.getElementById('soundToggleBtn');
             const backBtn = document.getElementById('backToParentBtn');
             const variationComment = document.getElementById('variationComment');
             prevBtn.disabled = state.displayIndex === 0 && state.currentPath.length === 0;
@@ -693,12 +701,20 @@
                     variationComment.textContent = '';
                 }
             }
-            // 手数按钮只在主分支显示
-            numBtn.style.display = inMainBranch ? 'flex' : 'none';
-            // 音效开关只在主分支显示
-            soundBtn.style.display = inMainBranch ? 'flex' : 'none';
             // 返回上级按钮仅在非主分支时显示
             backBtn.style.display = !inMainBranch ? 'flex' : 'none';
+            // 更多按钮及其面板只在主分支显示
+            const moreBtn = document.getElementById('moreBtn');
+            const extraButtons = document.getElementById('extraButtons');
+            const mainControls = document.getElementById('mainControlsGroup');
+            moreBtn.style.display = inMainBranch ? 'flex' : 'none';
+            if (!inMainBranch) {
+                if (extraButtons.classList.contains('visible')) {
+                    extraButtons.classList.remove('visible');
+                    moreBtn.classList.remove('active');
+                    mainControls.classList.remove('expanded');
+                }
+            }
         }
         
         function extractWinRate(comment) {
@@ -899,6 +915,15 @@
             const btn = document.getElementById('numToggleBtn');
             btn.style.background = showMoveNumbers ? '#667eea' : '#f0f0f0';
             btn.style.color = showMoveNumbers ? 'white' : '#333';
+        }
+        
+        function toggleMorePanel() {
+            const panel = document.getElementById('extraButtons');
+            const btn = document.getElementById('moreBtn');
+            const mainControls = document.getElementById('mainControlsGroup');
+            panel.classList.toggle('visible');
+            btn.classList.toggle('active');
+            mainControls.classList.toggle('expanded');
         }
         
         // ==================== 试下功能相关函数 ====================
