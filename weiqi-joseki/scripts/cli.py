@@ -181,7 +181,7 @@ def cmd_match(args):
     
     if args.corner:
         # 使用提取+匹配流程（统一到右上角）
-        multigogm = extract_joseki_from_sgf(sgf_data, first_n=50)
+        multigogm = extract_joseki_from_sgf(sgf_data, first_n=50, corner_size=args.corner_size)
         parsed = parse_multigogm(multigogm)
         
         if args.corner not in parsed:
@@ -199,7 +199,7 @@ def cmd_match(args):
         print(f"\n『{args.corner.upper()}』角 ({comment}):")
         _print_match_results(results)
     else:
-        results = db.identify_corners(sgf_data, top_k=args.top_k)
+        results = db.identify_corners(sgf_data, top_k=args.top_k, corner_size=args.corner_size)
         for corner in ['tl', 'tr', 'bl', 'br']:
             matches = results.get(corner, [])
             if matches:
@@ -222,7 +222,7 @@ def cmd_identify(args):
         print("❌ 错误: 未提供SGF数据", file=sys.stderr)
         sys.exit(1)
     
-    results = db.identify_corners(sgf_data, top_k=args.top_k)
+    results = db.identify_corners(sgf_data, top_k=args.top_k, corner_size=args.corner_size)
     
     if args.output == "json":
         import json
@@ -283,7 +283,7 @@ def cmd_extract(args):
         print("❌ 错误: 未提供SGF数据", file=sys.stderr)
         sys.exit(1)
     
-    result = extract_joseki_from_sgf(sgf_data, first_n=args.first_n, corner=args.corner)
+    result = extract_joseki_from_sgf(sgf_data, first_n=args.first_n, corner=args.corner, corner_size=args.corner_size)
     
     if args.output:
         with open(args.output, 'w', encoding='utf-8') as f:
@@ -325,6 +325,7 @@ def cmd_import(args):
         min_moves=args.min_moves,
         min_rate=args.min_rate,
         first_n=args.first_n,
+        corner_size=args.corner_size,
         dry_run=args.dry_run,
         progress_callback=progress_callback
     )
@@ -508,6 +509,7 @@ def cmd_katago(args):
         min_moves=args.min_moves,
         min_rate=args.min_rate,
         first_n=args.first_n,
+        corner_size=args.corner_size,
         dry_run=args.dry_run,
         progress_callback=progress_callback,
         category="/katago",
@@ -564,6 +566,7 @@ def cmd_discover(args):
         sgf_sources=sgf_sources,
         first_n=args.first_n,
         min_moves=args.min_moves,
+        corner_size=args.corner_size,
         limit=args.limit,
         verbose=not args.quiet
     )
@@ -655,11 +658,13 @@ def main():
     p_match.add_argument("--sgf")
     p_match.add_argument("--sgf-file")
     p_match.add_argument("--corner", choices=["tl", "tr", "bl", "br"])
+    p_match.add_argument("--corner-size", type=int, default=9, choices=[9, 13], help="角大小，9或13路（默认9）")
     p_match.add_argument("--top-k", type=int, default=5)
     
     p_identify = subparsers.add_parser("identify", help="识别整盘棋")
     p_identify.add_argument("--sgf")
     p_identify.add_argument("--sgf-file")
+    p_identify.add_argument("--corner-size", type=int, default=9, choices=[9, 13], help="角大小，9或13路（默认9）")
     p_identify.add_argument("--top-k", type=int, default=1)
     p_identify.add_argument("--output", choices=["table", "json"], default="table")
     
@@ -668,6 +673,7 @@ def main():
     p_extract = subparsers.add_parser("extract", help="从SGF提取四角定式")
     p_extract.add_argument("--sgf-file", help="SGF文件路径")
     p_extract.add_argument("--first-n", type=int, default=50, help="只取前N手（默认50）")
+    p_extract.add_argument("--corner-size", type=int, default=9, choices=[9, 13], help="角大小，9或13路（默认9）")
     p_extract.add_argument("--output", "-o", help="输出文件路径")
     p_extract.add_argument("--corner", choices=["tl", "tr", "bl", "br"], help="只提取指定角 (tl=左上, tr=右上, bl=左下, br=右下)")
     
@@ -677,6 +683,7 @@ def main():
     p_import.add_argument("--min-moves", type=int, default=4, help="定式至少多少手才入库（默认4）")
     p_import.add_argument("--min-rate", type=float, default=0.0, help="最小出现概率%%才入库（默认0，例如：1表示1%%，0.5表示0.5%%）")
     p_import.add_argument("--first-n", type=int, default=80, help="每谱提取前N手内的定式（默认80）")
+    p_import.add_argument("--corner-size", type=int, default=9, choices=[9, 13], help="角大小，9或13路（默认9）")
     p_import.add_argument("--dry-run", action="store_true", help="试运行，只统计不真入库")
     
     # 新增 export 命令
@@ -701,6 +708,7 @@ def main():
     p_katago.add_argument("--min-moves", type=int, default=4, help="定式至少多少手才入库（默认4）")
     p_katago.add_argument("--min-rate", type=float, default=0.5, help="最小出现概率%%才入库（默认0.5）")
     p_katago.add_argument("--first-n", type=int, default=80, help="每谱提取前N手内的定式（默认80）")
+    p_katago.add_argument("--corner-size", type=int, default=9, choices=[9, 13], help="角大小，9或13路（默认9）")
     p_katago.add_argument("--dry-run", action="store_true", help="试运行，只统计不真入库")
     p_katago.add_argument("--progress-file", help="进度文件路径（默认 ~/.weiqi-joseki/katago-progress.json）")
     
@@ -709,6 +717,7 @@ def main():
     p_discover.add_argument("paths", nargs="+", help="SGF文件或目录路径（可多个）")
     p_discover.add_argument("--first-n", type=int, default=50, help="分析前N手的定式（默认50）")
     p_discover.add_argument("--min-moves", type=int, default=4, help="定式最少手数（默认4）")
+    p_discover.add_argument("--corner-size", type=int, default=9, choices=[9, 13], help="角大小，9或13路（默认9）")
     p_discover.add_argument("--limit", type=int, default=50, help="最多返回多少个定式（默认50）")
     p_discover.add_argument("--output", choices=["table", "json"], default="table", help="输出格式（默认table）")
     p_discover.add_argument("--quiet", action="store_true", help="安静模式，只输出JSON结果（自动设置--output=json）")

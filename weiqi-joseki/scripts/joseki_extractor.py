@@ -103,18 +103,59 @@ COORDINATE_SYSTEMS = {
 }
 
 
-def detect_corner(moves: List[str]) -> Optional[str]:
+def detect_corner(moves: List[str], corner_size: int = 9) -> Optional[str]:
     """
     检测定式属于哪个角
     
-    根据坐标分布判断：
-    - 如果所有坐标都在 col<=8 && row<=8 区域 → 左上 (tl)
-    - 如果所有坐标都在 col>=10 && row<=8 区域 → 右上 (tr)
-    - 如果所有坐标都在 col<=8 && row>=10 区域 → 左下 (bl)
-    - 如果所有坐标都在 col>=10 && row>=10 区域 → 右下 (br)
+    Args:
+        moves: 坐标列表
+        corner_size: 角大小，9 或 13（默认9）
     
     返回: 'tl', 'tr', 'bl', 'br' 或 None（无法判断）
     """
+    valid_coords = [m for m in moves if m and m != 'pass' and len(m) == 2]
+    if not valid_coords:
+        return None
+    
+    # 根据 corner_size 确定边界
+    if corner_size == 9:
+        tl_bound, tr_bound, bl_bound, br_bound = 8, 10, 8, 10
+    elif corner_size == 13:
+        tl_bound, tr_bound, bl_bound, br_bound = 12, 6, 12, 6
+    else:
+        raise ValueError(f"corner_size 必须是 9 或 13，得到 {corner_size}")
+    
+    corner_counts = {'tl': 0, 'tr': 0, 'bl': 0, 'br': 0}
+    
+    for coord in valid_coords:
+        try:
+            col, row = CoordinateSystem.sgf_to_nums(coord)
+            if corner_size == 9:
+                if col <= tl_bound and row <= tl_bound:
+                    corner_counts['tl'] += 1
+                elif col >= tr_bound and row <= tl_bound:
+                    corner_counts['tr'] += 1
+                elif col <= tl_bound and row >= bl_bound:
+                    corner_counts['bl'] += 1
+                elif col >= tr_bound and row >= bl_bound:
+                    corner_counts['br'] += 1
+            else:  # 13路
+                if col <= tl_bound and row <= tl_bound:
+                    corner_counts['tl'] += 1
+                if col >= tr_bound and row <= tl_bound:
+                    corner_counts['tr'] += 1
+                if col <= tl_bound and row >= br_bound:
+                    corner_counts['bl'] += 1
+                if col >= tr_bound and row >= br_bound:
+                    corner_counts['br'] += 1
+        except:
+            continue
+    
+    # 找出数量最多的角
+    max_corner = max(corner_counts, key=corner_counts.get)
+    if corner_counts[max_corner] > 0:
+        return max_corner
+    return None
     valid_coords = [m for m in moves if m and m != 'pass' and len(m) == 2]
     if not valid_coords:
         return None
@@ -124,13 +165,13 @@ def detect_corner(moves: List[str]) -> Optional[str]:
     for coord in valid_coords:
         try:
             col, row = CoordinateSystem.sgf_to_nums(coord)
-            if col <= 8 and row <= 8:
+            if col <= 12 and row <= 12:
                 corner_counts['tl'] += 1
-            elif col >= 10 and row <= 8:
+            elif col >= 6 and row <= 12:
                 corner_counts['tr'] += 1
-            elif col <= 8 and row >= 10:
+            elif col <= 12 and row >= 6:
                 corner_counts['bl'] += 1
-            elif col >= 10 and row >= 10:
+            elif col >= 6 and row >= 6:
                 corner_counts['br'] += 1
         except:
             continue
@@ -207,51 +248,65 @@ def _extract_moves_from_sgf(sgf_data: str, first_n: int = 50) -> List[Tuple[str,
     return moves
 
 
-def _classify_to_corners(moves: List[Tuple[str, str]]) -> Dict[str, List[Tuple[str, str]]]:
+def _classify_to_corners(moves: List[Tuple[str, str]], corner_size: int = 9) -> Dict[str, List[Tuple[str, str]]]:
     """
     将着法分类到四角（支持"角部-脱先-其他-回角部"完整序列）
     
-    策略：为每个角维护独立序列，当回到该角时继续追加
+    Args:
+        moves: [(color, coord), ...]
+        corner_size: 角大小，9 或 13（默认9）
     
     返回:
         {corner_key: [(color, coord), ...], ...}
         corner_key: 'tr', 'tl', 'bl', 'br'
     """
+    # 根据 corner_size 确定边界
+    if corner_size == 9:
+        tl_bound, tr_bound, bl_bound, br_bound = 8, 10, 8, 10
+    elif corner_size == 13:
+        tl_bound, tr_bound, bl_bound, br_bound = 12, 6, 12, 6
+    else:
+        raise ValueError(f"corner_size 必须是 9 或 13，得到 {corner_size}")
+    
     corners = {'tr': [], 'tl': [], 'bl': [], 'br': []}
-    last_corner = None
     
     for color, coord in moves:
         if coord == 'tt':
-            if last_corner:
-                corners[last_corner].append((color, coord))
-            continue
+            continue  # tt不归类到任何角
         
         col, row = CoordinateSystem.sgf_to_nums(coord)
-        current_corner = None
         
-        if col <= 8 and row <= 8:
-            current_corner = 'tl'
-        elif col >= 10 and row <= 8:
-            current_corner = 'tr'
-        elif col <= 8 and row >= 10:
-            current_corner = 'bl'
-        elif col >= 10 and row >= 10:
-            current_corner = 'br'
-        
-        if current_corner:
-            corners[current_corner].append((color, coord))
-            last_corner = current_corner
+        # 循环4次，每个角独立判断（允许重叠）
+        if corner_size == 9:
+            if col <= tl_bound and row <= tl_bound:
+                corners['tl'].append((color, coord))
+            if col >= tr_bound and row <= tl_bound:
+                corners['tr'].append((color, coord))
+            if col <= tl_bound and row >= bl_bound:
+                corners['bl'].append((color, coord))
+            if col >= tr_bound and row >= bl_bound:
+                corners['br'].append((color, coord))
+        else:  # 13路
+            if col <= tl_bound and row <= tl_bound:
+                corners['tl'].append((color, coord))
+            if col >= tr_bound and row <= tl_bound:
+                corners['tr'].append((color, coord))
+            if col <= tl_bound and row >= br_bound:
+                corners['bl'].append((color, coord))
+            if col >= tr_bound and row >= br_bound:
+                corners['br'].append((color, coord))
     
     return corners
 
 
-def extract_joseki_from_sgf_raw(sgf_data: str, first_n: int = 50) -> Dict[str, List[Tuple[str, str]]]:
+def extract_joseki_from_sgf_raw(sgf_data: str, first_n: int = 50, corner_size: int = 9) -> Dict[str, List[Tuple[str, str]]]:
     """
     从SGF提取四角定式，直接返回解析后的数据结构（消除双重解析）
     
     Args:
         sgf_data: SGF棋谱内容
         first_n: 只取前N手（默认50）
+        corner_size: 角大小，9 或 13（默认9）
     
     返回:
         {corner_key: [(color, coord), ...], ...}
@@ -263,7 +318,7 @@ def extract_joseki_from_sgf_raw(sgf_data: str, first_n: int = 50) -> Dict[str, L
     if not moves:
         return {}
     
-    corners = _classify_to_corners(moves)
+    corners = _classify_to_corners(moves, corner_size)
     
     result = {}
     for corner_key, seq in corners.items():
@@ -335,7 +390,7 @@ def process_corner_sequence_raw(
     return list(zip(colors, tr_coords))
 
 
-def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None) -> str:
+def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None, corner_size: int = 9) -> str:
     """
     从SGF提取四角定式，输出MULTIGOGM格式（保持向后兼容）
     
@@ -343,6 +398,7 @@ def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None
         sgf_data: SGF棋谱内容
         first_n: 只取前N手（默认50）
         corner: 指定提取哪个角 ('tl', 'tr', 'bl', 'br')，None表示全部
+        corner_size: 角大小，9 或 13（默认9）
     
     返回:
         MULTIGOGM格式的SGF字符串
@@ -352,7 +408,7 @@ def extract_joseki_from_sgf(sgf_data: str, first_n: int = 50, corner: str = None
     if not moves:
         return "(;CA[utf-8]FF[4]AP[JosekiExtract]SZ[19]GM[1]KM[0]MULTIGOGM[1])"
     
-    corners = _classify_to_corners(moves)
+    corners = _classify_to_corners(moves, corner_size)
     
     # 处理每角
     branches = []

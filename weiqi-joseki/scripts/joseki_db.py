@@ -492,16 +492,18 @@ class JosekiDB:
         """
         return self.match(moves, top_k=top_k)
     
-    def identify_corners(self, sgf_data: str, top_k: int = 3, first_n: int = 80) -> Dict[str, List[PrefixMatchResult]]:
+    def identify_corners(self, sgf_data: str, top_k: int = 3, first_n: int = 80, corner_size: int = 9) -> Dict[str, List[PrefixMatchResult]]:
         """
         从SGF识别四角定式
         
-        流程：
-        1. 先用 extract_joseki_from_sgf 提取四角定式（统一到右上角）
-        2. 对每个角的定式进行匹配（只需匹配2个方向）
+        Args:
+            sgf_data: SGF棋谱内容
+            top_k: 每个角返回前K个匹配结果
+            first_n: 只分析前N手
+            corner_size: 角大小，9 或 13（默认9）
         """
         # 提取四角定式（已经统一到右上角）
-        multigogm_sgf = extract_joseki_from_sgf(sgf_data, first_n=first_n)
+        multigogm_sgf = extract_joseki_from_sgf(sgf_data, first_n=first_n, corner_size=corner_size)
         corner_sequences = parse_multigogm(multigogm_sgf)
         
         results = {}
@@ -520,6 +522,7 @@ class JosekiDB:
         self,
         sgf_sources: List,
         first_n: int,
+        corner_size: int,
         verbose: bool,
         progress_callback: Optional[Callable] = None
     ) -> Tuple[Dict[str, int], int, int, int, int]:
@@ -553,7 +556,7 @@ class JosekiDB:
                 # 优化：使用 extract_joseki_from_sgf_raw 直接获取解析后的数据
                 # 避免先生成 SGF 字符串再解析回来的双重开销
                 for sgf_item in sgf_data:
-                    corner_dict = extract_joseki_from_sgf_raw(sgf_item, first_n=first_n)
+                    corner_dict = extract_joseki_from_sgf_raw(sgf_item, first_n=first_n, corner_size=corner_size)
                     
                     # corner_dict: {corner_key: [(color, coord), ...], ...}
                     for corner_key, moves in corner_dict.items():
@@ -787,6 +790,7 @@ class JosekiDB:
                         min_moves: int = 4,
                         min_rate: float = 0.0,
                         first_n: int = 80,
+                        corner_size: int = 9,
                         dry_run: bool = False,
                         progress_callback: Optional[Callable] = None,
                         category: str = "/自动",
@@ -801,6 +805,7 @@ class JosekiDB:
             min_moves: 定式至少多少手
             min_rate: 最小出现概率%
             first_n: 每谱提取前N手内的定式
+            corner_size: 角大小，9 或 13（默认9）
             dry_run: 试运行，只统计不真入库
             progress_callback: 进度回调函数(current, total)
             category: 定式分类路径（默认"/自动"）
@@ -812,7 +817,7 @@ class JosekiDB:
         """
         # 步骤1: 提取
         count_map, total_sources, total_sgf_files, total_extracted, unique_count = \
-            self._extract_joseki_from_sources(sgf_sources, first_n, verbose, progress_callback)
+            self._extract_joseki_from_sources(sgf_sources, first_n, corner_size, verbose, progress_callback)
         
         # 步骤2: 前缀累加
         count_map = self._accumulate_prefix_counts(count_map, verbose)
@@ -951,6 +956,7 @@ class JosekiDB:
         sgf_sources: List,
         first_n: int = 50,
         min_moves: int = 4,
+        corner_size: int = 9,
         limit: int = 50,
         verbose: bool = True
     ) -> Dict:
@@ -966,6 +972,7 @@ class JosekiDB:
             sgf_sources: SGF文件路径列表，或包含SGF内容的字符串列表
             first_n: 分析前N手的定式（默认50）
             min_moves: 定式最少手数（默认4）
+            corner_size: 角大小，9 或 13（默认9）
             limit: 最多返回多少个定式（默认50）
             verbose: 详细输出开关
         
@@ -1017,7 +1024,7 @@ class JosekiDB:
                 for sgf_data, sgf_path in sgf_contents:
                     total_files += 1
                     # 提取四角定式
-                    corner_dict = extract_joseki_from_sgf_raw(sgf_data, first_n=first_n)
+                    corner_dict = extract_joseki_from_sgf_raw(sgf_data, first_n=first_n, corner_size=corner_size)
                     
                     # 解析SGF元信息
                     sgf_info = self._parse_sgf_info(sgf_data, sgf_path)
