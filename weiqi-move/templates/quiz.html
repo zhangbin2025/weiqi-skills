@@ -249,7 +249,27 @@
         .nav-buttons {
             display: flex;
             align-items: center;
+            gap: 24px;
+            transition: gap 0.2s ease;
+        }
+        .nav-buttons.expanded {
             gap: 8px;
+        }
+        .extra-buttons {
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+        .extra-buttons.visible {
+            display: flex;
+        }
+        #moreBtn {
+            background: #f0f0f0;
+            transition: all 0.2s ease;
+        }
+        #moreBtn.active {
+            background: #667eea;
+            color: white;
         }
         
         /* 变化图面板 */
@@ -496,14 +516,15 @@
         <div class="main-panel" id="mainPanel">
             <div class="main-panel-center" style="flex: 1;">
                 <input type="range" id="moveSlider" min="0" max="0" value="0" oninput="goToMove(this.value)">
-                <div class="nav-buttons">
+                <div class="nav-buttons" id="navButtons">
                     <button class="btn btn-icon" onclick="prevMove()" title="上一手">◀</button>
                     <button class="btn btn-icon" onclick="nextMove()" title="下一手">▶</button>
+                    <div class="extra-buttons" id="extraButtons">
+                        <button class="btn btn-icon" id="soundToggleBtn" onclick="toggleSound()" title="音效开关">🔊</button>
+                        <button class="btn btn-icon" onclick="saveToSGF()" title="保存SGF">💾</button>
+                    </div>
+                    <button class="btn btn-icon" id="moreBtn" onclick="toggleMorePanel()" title="更多">⋮</button>
                 </div>
-            </div>
-            <div class="main-panel-right">
-                <button class="btn btn-icon" id="soundToggleBtn" onclick="toggleSound()" title="音效开关" style="background: #f0f0f0; width: 32px; height: 32px; min-width: 32px; font-size: 14px;">🔊</button>
-                <button class="btn btn-icon" onclick="saveToSGF()" title="保存SGF" style="background: #f0f0f0; width: 32px; height: 32px; min-width: 32px; font-size: 14px;">💾</button>
             </div>
         </div>
 
@@ -1163,6 +1184,16 @@
             if (btn) {
                 btn.textContent = soundEnabled ? '🔊' : '🔇';
             }
+        }
+
+        // ==================== 更多按钮面板 ====================
+        function toggleMorePanel() {
+            const panel = document.getElementById('extraButtons');
+            const btn = document.getElementById('moreBtn');
+            const navButtons = document.getElementById('navButtons');
+            panel.classList.toggle('visible');
+            btn.classList.toggle('active');
+            navButtons.classList.toggle('expanded');
         }
 
         // ==================== 打谱控制 ====================
