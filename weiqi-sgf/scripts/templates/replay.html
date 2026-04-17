@@ -93,6 +93,7 @@
         const tree = (() => { const textarea = document.createElement('textarea'); textarea.innerHTML = '{{TREE_JSON}}'; return JSON.parse(textarea.value); })();
         const BOARD_SIZE = {{BOARD_SIZE}};
         const handicapStones = {{HANDICAP_STONES}};
+        const DEFAULT_MOVE = {{DEFAULT_MOVE}};
         
         // 核心状态
         const state = {
@@ -1195,6 +1196,20 @@
         });
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
+        
+        // 页面加载后，如果设置了默认手数，跳转到该手数
+        // DEFAULT_MOVE = -1 表示跳转到最后一手（主分支终点）
+        if (DEFAULT_MOVE > 0 || DEFAULT_MOVE === -1) {
+            setTimeout(() => {
+                const currentNode = getNodeAt(tree, state.currentPath);
+                const maxDepth = getDefaultPathDepth(currentNode);
+                const targetMove = DEFAULT_MOVE === -1 ? maxDepth : Math.min(DEFAULT_MOVE, maxDepth);
+                if (targetMove > 0) {
+                    state.displayIndex = targetMove;
+                    updateDisplay();
+                }
+            }, 100);
+        }
     </script>
 </body>
 </html>
