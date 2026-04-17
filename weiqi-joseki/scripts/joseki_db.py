@@ -430,9 +430,14 @@ class JosekiDB:
     
     # ========== 匹配 ==========
     
-    def match(self, moves: List[str], top_k: int = 5) -> List[PrefixMatchResult]:
+    def match(self, moves: List[str], top_k: int = 5, corner: str = None) -> List[PrefixMatchResult]:
         """
         匹配定式 - 前缀匹配算法
+        
+        Args:
+            moves: 着法序列
+            top_k: 返回前K个结果
+            corner: 指定角位 ('tl', 'tr', 'bl', 'br')，None则自动检测
         
         规则：
         1. 保留脱先标记tt
@@ -446,9 +451,15 @@ class JosekiDB:
             return []
         
         # 检测角位并转换到右上角
-        detected_corner = detect_corner(coord_seq)
-        if detected_corner and detected_corner != 'tr':
-            coord_seq = convert_to_top_right(coord_seq, detected_corner)
+        if corner:
+            # 指定了角位，直接转换
+            if corner != 'tr':
+                coord_seq = convert_to_top_right(coord_seq, corner)
+        else:
+            # 自动检测角位
+            detected_corner = detect_corner(coord_seq)
+            if detected_corner and detected_corner != 'tr':
+                coord_seq = convert_to_top_right(coord_seq, detected_corner)
         
         # 在两个方向找最长前缀
         results_ruld = self._match_trie(self._trie, coord_seq, "ruld")
@@ -488,9 +499,9 @@ class JosekiDB:
     
     def match_top_right(self, moves: List[str], top_k: int = 5) -> List[PrefixMatchResult]:
         """
-        匹配右上角的定式 - 直接调用match（已统一转为右上角）
+        匹配右上角的定式 - 序列已经是右上角视角，不再转换
         """
-        return self.match(moves, top_k=top_k)
+        return self.match(moves, top_k=top_k, corner='tr')
     
     def identify_corners(self, sgf_data: str, top_k: int = 3, first_n: int = 80, corner_size: int = 9) -> Dict[str, List[PrefixMatchResult]]:
         """

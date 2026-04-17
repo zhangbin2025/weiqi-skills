@@ -181,7 +181,7 @@ def cmd_match(args):
     
     if args.corner:
         # 使用提取+匹配流程（统一到右上角）
-        multigogm = extract_joseki_from_sgf(sgf_data, first_n=50, corner_size=args.corner_size)
+        multigogm = extract_joseki_from_sgf(sgf_data, first_n=args.first_n, corner_size=args.corner_size)
         parsed = parse_multigogm(multigogm)
         
         if args.corner not in parsed:
@@ -189,17 +189,18 @@ def cmd_match(args):
             return
         
         comment, moves = parsed[args.corner]
-        coord_seq = [c for _, c in moves if c and c != 'tt']
+        coord_seq = [c for _, c in moves if c]
         
         if not coord_seq:
             print(f"⚠️  {args.corner} 角没有有效着法")
             return
         
-        results = db.match_top_right(coord_seq, top_k=args.top_k)
+        # 序列已经是右上角视角，直接匹配不再转换
+        results = db.match(coord_seq, top_k=args.top_k, corner='tr')
         print(f"\n『{args.corner.upper()}』角 ({comment}):")
         _print_match_results(results)
     else:
-        results = db.identify_corners(sgf_data, top_k=args.top_k, corner_size=args.corner_size)
+        results = db.identify_corners(sgf_data, top_k=args.top_k, first_n=args.first_n, corner_size=args.corner_size)
         for corner in ['tl', 'tr', 'bl', 'br']:
             matches = results.get(corner, [])
             if matches:
@@ -222,7 +223,7 @@ def cmd_identify(args):
         print("❌ 错误: 未提供SGF数据", file=sys.stderr)
         sys.exit(1)
     
-    results = db.identify_corners(sgf_data, top_k=args.top_k, corner_size=args.corner_size)
+    results = db.identify_corners(sgf_data, top_k=args.top_k, first_n=args.first_n, corner_size=args.corner_size)
     
     if args.output == "json":
         import json
@@ -659,6 +660,7 @@ def main():
     p_match.add_argument("--sgf-file")
     p_match.add_argument("--corner", choices=["tl", "tr", "bl", "br"])
     p_match.add_argument("--corner-size", type=int, default=9, choices=[9, 11, 13], help="角大小，9/11/13路（默认9）")
+    p_match.add_argument("--first-n", type=int, default=80, help="分析前N手（默认80）")
     p_match.add_argument("--top-k", type=int, default=5)
     
     p_identify = subparsers.add_parser("identify", help="识别整盘棋")
@@ -666,6 +668,7 @@ def main():
     p_identify.add_argument("--sgf-file")
     p_identify.add_argument("--corner-size", type=int, default=9, choices=[9, 11, 13], help="角大小，9/11/13路（默认9）")
     p_identify.add_argument("--top-k", type=int, default=1)
+    p_identify.add_argument("--first-n", type=int, default=80, help="分析前N手（默认80）")
     p_identify.add_argument("--output", choices=["table", "json"], default="table")
     
     p_stats = subparsers.add_parser("stats", help="统计信息")
