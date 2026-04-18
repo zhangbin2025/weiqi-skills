@@ -975,16 +975,16 @@ class JosekiDB:
         heap = []  # 小顶堆，按 count 排序
         seen_hashes = {}  # prefix_hash -> True (只存hash，不存引用)
         
-        def _get_hash(prefix_parts, direction):
-            """获取hash（方向+前缀元组）"""
-            return (direction, tuple(prefix_parts))
+        def _get_hash(prefix_parts):
+            """获取hash（前缀元组，不含方向）"""
+            return tuple(prefix_parts)
         
-        def _get_child_hash(prefix_parts, direction, seq_parts):
+        def _get_child_hash(prefix_parts, seq_parts):
             """获取子串hash（当前前缀+下一手，用于单链检测）"""
             if len(prefix_parts) >= len(seq_parts):
                 return None
             child_parts = prefix_parts + [seq_parts[len(prefix_parts)]]
-            return (direction, tuple(child_parts))
+            return tuple(child_parts)
         
         processed = 0
         prefix_processed = 0
@@ -1021,14 +1021,14 @@ class JosekiDB:
                         continue
                     
                     # 获取当前hash
-                    prefix_hash = _get_hash(prefix_parts, direction)
+                    prefix_hash = _get_hash(prefix_parts)
                     
                     # 单链检测：count和last_count相差不大，且下一前缀（子串）已处理
                     if last_count != float('inf'):
                         count_diff_ratio = abs(est_count - last_count) / max(est_count, last_count, 1)
                         if count_diff_ratio < SINGLE_CHAIN_THRESHOLD:
                             # 检查子串是否已处理（在堆中或被跳过）
-                            child_hash = _get_child_hash(prefix_parts, direction, seq_parts)
+                            child_hash = _get_child_hash(prefix_parts, seq_parts)
                             if child_hash and child_hash in seen_hashes:
                                 # 单链：被子串代表，跳过
                                 skipped_single_chain += 1
@@ -1065,19 +1065,43 @@ class JosekiDB:
             print(f"\n  堆中候选: {len(heap)} 个")
             print(f"  单链跳过: {skipped_single_chain} 个")
         
-        # Phase 4: 收集候选，按频率倒序排序
-        # 堆已经是实时去重后的，直接取出排序
-        # 注意：不再转换方向，保持原始方向入库
+        # Phase 4: 收集候选，统一转ruld方向去重
         candidates = []
+        seen_ruld = {}  # ruld_key -> count，用于去重保留最大count
+        
         for item in heap:
             parts = item.prefix.split()
             
+            # 统一转换为ruld方向
+            if item.direction == 'ruld':
+                ruld_parts = parts
+            else:
+                ruld_parts = self._convert_to_rudl(parts)  # rudl -> ruld
+            
+            ruld_key = tuple(ruld_parts)
+            if ruld_key in seen_ruld:
+                # 已存在，保留count更大的
+                if item.count > seen_ruld[ruld_key]:
+                    seen_ruld[ruld_key] = item.count
+                continue
+            
+            seen_ruld[ruld_key] = item.count
             candidates.append({
-                'moves': list(parts),
+                'moves': list(ruld_parts),
                 'count': item.count,
-                'move_str': " ".join(parts),  # 用于字符串排序
-                'direction': item.direction
+                'move_str': " ".join(ruld_parts),
             })
+        
+        # 如果有重复的只保留一个，需要重新构建candidates
+        final_candidates = []
+        for moves_tuple, count in seen_ruld.items():
+            move_list = list(moves_tuple)
+            final_candidates.append({
+                'moves': move_list,
+                'count': count,
+                'move_str': " ".join(move_list),
+            })
+        candidates = final_candidates
         
         # 按字符串顺序排序（方便查看）
         candidates.sort(key=lambda x: x['move_str'])
