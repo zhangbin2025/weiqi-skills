@@ -1288,7 +1288,7 @@ class JosekiDB:
         sgf_sources: List,
         first_n: int = 50,
         min_moves: int = 4,
-        corner_size: int = 9,
+        corner_sizes: List[int] = None,
         limit: int = 50,
         verbose: bool = True
     ) -> Dict:
@@ -1304,7 +1304,7 @@ class JosekiDB:
             sgf_sources: SGF文件路径列表，或包含SGF内容的字符串列表
             first_n: 分析前N手的定式（默认50）
             min_moves: 定式最少手数（默认4）
-            corner_size: 角大小，9 或 13（默认9）
+            corner_sizes: 角大小列表，如 [9, 11, 13]（默认[9, 11, 13]）
             limit: 最多返回多少个定式（默认50）
             verbose: 详细输出开关
         
@@ -1355,19 +1355,21 @@ class JosekiDB:
                 
                 for sgf_data, sgf_path in sgf_contents:
                     total_files += 1
-                    # 提取四角定式
-                    corner_dict = extract_joseki_from_sgf_raw(sgf_data, first_n=first_n, corner_size=corner_size)
-                    
                     # 解析SGF元信息
                     sgf_info = self._parse_sgf_info(sgf_data, sgf_path)
                     
-                    for corner, moves in corner_dict.items():
-                        # 提取坐标序列（保留脱先标记tt，过滤空字符串）
-                        coords = [coord for color, coord in moves if coord]
-                        # 计算有效手数（非tt的坐标）
-                        effective_moves = len([c for c in coords if c != 'tt'])
-                        if effective_moves >= min_moves:
-                            joseki_records.append((tuple(coords), sgf_info, corner))
+                    # 提取四角定式（多路）
+                    sizes = corner_sizes if corner_sizes else [9, 11, 13]
+                    for size in sizes:
+                        corner_dict = extract_joseki_from_sgf_raw(sgf_data, first_n=first_n, corner_size=size)
+                        
+                        for corner, moves in corner_dict.items():
+                            # 提取坐标序列（保留脱先标记tt，过滤空字符串）
+                            coords = [coord for color, coord in moves if coord]
+                            # 计算有效手数（非tt的坐标）
+                            effective_moves = len([c for c in coords if c != 'tt'])
+                            if effective_moves >= min_moves:
+                                joseki_records.append((tuple(coords), sgf_info, corner))
                 
             except Exception as e:
                 if verbose:
