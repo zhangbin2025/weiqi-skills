@@ -1075,35 +1075,29 @@ class JosekiDB:
             candidates.append({
                 'moves': list(parts),
                 'count': item.count,
-                'move_str': " ".join(parts),  # 优化4: 保存字符串用于排序
+                'move_str': " ".join(parts),  # 用于字符串排序
                 'direction': item.direction
             })
         
-        # 按频率降序排序
-        candidates.sort(key=lambda x: -x['count'])
-        
-        # 优化4: 入库前再按字符串顺序排序
+        # 按字符串顺序排序（方便查看）
         candidates.sort(key=lambda x: x['move_str'])
-        
-        final_candidates = candidates
         
         # Phase 5: 入库
         if verbose:
             print(f"🔄 Phase 3: 入库（按字符串顺序）...")
-            print(f"  候选定式: {len(final_candidates)} 个")
+            print(f"  候选定式: {len(candidates)} 个")
         
-        # 保留临时文件用于调试（临时注释掉删除）
-        # temp_path.unlink()
-        print(f"\n  临时文件保留: {temp_path}")
+        # 清理临时文件
+        temp_path.unlink()
         
         if dry_run:
-            return len(final_candidates), 0, final_candidates
+            return len(candidates), 0, candidates
         
         added = 0
         # 优化5: 概率计算 = 前缀出现次数 / 所有棋谱去重后的着法串总数
         probability_denominator = total_unique_sequences if total_unique_sequences > 0 else 1
         
-        for cand in final_candidates:
+        for cand in candidates:
             coords = cand['moves']
             count = cand['count']
             
@@ -1134,7 +1128,7 @@ class JosekiDB:
         if verbose:
             print(f"\n✅ 完成: 新增 {added} 定式")
         
-        return added, 0, final_candidates
+        return added, 0, candidates
     
     def import_from_katago_cache(self,
                                   cache_dir: Path,
