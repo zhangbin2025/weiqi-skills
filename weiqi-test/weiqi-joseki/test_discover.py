@@ -234,7 +234,7 @@ class TestDiscover(unittest.TestCase):
             sgf_sources=sgf_list,
             first_n=50,
             min_moves=3,
-            corner_size=9,
+            corner_sizes=[9],
             limit=50,
             verbose=False
         )
@@ -267,7 +267,7 @@ class TestDiscover(unittest.TestCase):
             sgf_sources=[sgf],
             first_n=50,
             min_moves=2,
-            corner_size=9,
+            corner_sizes=[9],
             limit=50,
             verbose=False
         )
