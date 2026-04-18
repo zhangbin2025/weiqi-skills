@@ -1094,12 +1094,25 @@ class JosekiDB:
             return len(candidates), 0, candidates
         
         added = 0
+        skipped = 0
         # 优化5: 概率计算 = 前缀出现次数 / 所有棋谱去重后的着法串总数
         probability_denominator = total_unique_sequences if total_unique_sequences > 0 else 1
+        
+        # 构建已有定式的moves集合用于查重（入库时 moves 是纯坐标列表）
+        existing_moves = set()
+        for j in self.joseki_list:
+            moves = j.get("moves", [])
+            if moves:
+                existing_moves.add(tuple(moves))
         
         for cand in candidates:
             coords = cand['moves']
             count = cand['count']
+            
+            # 检查是否已存在相同的着法序列
+            if tuple(coords) in existing_moves:
+                skipped += 1
+                continue
             
             # 统一存储频率和概率（katago和导入模式）
             data = {
@@ -1117,6 +1130,7 @@ class JosekiDB:
                 data["name"] = f"{name_prefix}-{len(coords)}手"
             
             self.joseki_list.append(data)
+            existing_moves.add(tuple(coords))  # 添加到查重集合
             added += 1
             
             if verbose and added % 1000 == 0:
@@ -1126,9 +1140,12 @@ class JosekiDB:
             self._save()
         
         if verbose:
-            print(f"\n✅ 完成: 新增 {added} 定式")
+            if skipped > 0:
+                print(f"\n✅ 完成: 新增 {added} 定式，跳过 {skipped} 个重复")
+            else:
+                print(f"\n✅ 完成: 新增 {added} 定式")
         
-        return added, 0, candidates
+        return added, skipped, candidates
     
     def import_from_katago_cache(self,
                                   cache_dir: Path,
