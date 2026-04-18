@@ -336,6 +336,54 @@ def extract_joseki_from_sgf_raw(sgf_data: str, first_n: int = 50, corner_size: i
     return result
 
 
+def extract_joseki_from_sgf_multi(sgf_data: str, first_n: int = 50, corner_sizes: List[int] = None) -> Dict[int, Dict[str, List[Tuple[str, str]]]]:
+    """
+    从SGF提取四角定式（多路版本，只解析一次SGF）
+    
+    优化：SGF解析是CPU瓶颈，多路提取时只解析一次，然后对每个路数分别分类
+    
+    Args:
+        sgf_data: SGF棋谱内容
+        first_n: 只取前N手（默认50）
+        corner_sizes: 角大小列表，如 [9, 11, 13]（默认[9]）
+    
+    返回:
+        {
+            9: {corner_key: [(color, coord), ...], ...},
+            11: {...},
+            13: {...}
+        }
+        corner_key: 'tr', 'tl', 'bl', 'br'
+        坐标已转换为右上角视角，颜色已标准化为黑先
+    """
+    if corner_sizes is None:
+        corner_sizes = [9]
+    
+    # 优化：只解析一次SGF
+    moves = _extract_moves_from_sgf(sgf_data, first_n)
+    
+    if not moves:
+        return {size: {} for size in corner_sizes}
+    
+    # 对每个路数分别分类到四角
+    result = {}
+    for size in corner_sizes:
+        corners = _classify_to_corners(moves, size)
+        
+        size_result = {}
+        for corner_key, seq in corners.items():
+            if len(seq) < 2:
+                continue
+            
+            processed = process_corner_sequence_raw(seq, corner_key)
+            if processed:
+                size_result[corner_key] = processed
+        
+        result[size] = size_result
+    
+    return result
+
+
 def process_corner_sequence_raw(
     moves: List[Tuple[str, str]],
     corner_key: str

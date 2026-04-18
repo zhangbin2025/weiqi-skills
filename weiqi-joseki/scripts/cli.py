@@ -395,7 +395,8 @@ def cmd_import(args):
         first_n=args.first_n,
         corner_sizes=corner_sizes,
         dry_run=args.dry_run,
-        progress_callback=progress_callback
+        progress_callback=progress_callback,
+        top_k=args.top_k
     )
     
     print()  # 换行
@@ -598,7 +599,8 @@ def cmd_katago(args):
         dry_run=args.dry_run,
         progress_callback=progress_callback,
         category="/katago",
-        verbose=True
+        verbose=True,
+        top_k=args.top_k
     )
     
     print()  # 换行
@@ -782,6 +784,7 @@ def main():
     p_import.add_argument("--first-n", type=int, default=80, help="每谱提取前N手内的定式（默认80）")
     p_import.add_argument("--corner-sizes", type=str, default="9,11,13", help="角大小，如'9,11,13'（默认9,11,13）")
     p_import.add_argument("--dry-run", action="store_true", help="试运行，只统计不真入库")
+    p_import.add_argument("--top-k", type=int, default=200000, help="返回前k个高频定式（默认200000）")
     
     # 新增 export 命令
     p_export = subparsers.add_parser("export", help="导出定式库到SGF")
@@ -807,6 +810,7 @@ def main():
     p_katago.add_argument("--first-n", type=int, default=80, help="每谱提取前N手内的定式（默认80）")
     p_katago.add_argument("--corner-sizes", type=str, default="9,11,13", help="角大小，如'9,11,13'（默认9,11,13）")
     p_katago.add_argument("--dry-run", action="store_true", help="试运行，只统计不真入库")
+    p_katago.add_argument("--top-k", type=int, default=200000, help="返回前k个高频定式（默认200000）")
     p_katago.add_argument("--progress-file", help="进度文件路径（默认 ~/.weiqi-joseki/katago-progress.json）")
     
     # Discover 命令 - 发现有研究价值的定式

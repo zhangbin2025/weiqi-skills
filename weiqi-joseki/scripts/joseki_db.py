@@ -16,14 +16,14 @@ from collections import Counter
 try:
     from .joseki_extractor import (
         CoordinateSystem, COORDINATE_SYSTEMS,
-        extract_joseki_from_sgf, extract_joseki_from_sgf_raw,
+        extract_joseki_from_sgf, extract_joseki_from_sgf_raw, extract_joseki_from_sgf_multi,
         parse_multigogm, detect_corner, convert_to_top_right
     )
     from .katago_downloader import iter_sgf_from_tar
 except ImportError:
     from joseki_extractor import (
         CoordinateSystem, COORDINATE_SYSTEMS,
-        extract_joseki_from_sgf, extract_joseki_from_sgf_raw,
+        extract_joseki_from_sgf, extract_joseki_from_sgf_raw, extract_joseki_from_sgf_multi,
         parse_multigogm, detect_corner, convert_to_top_right
     )
     from katago_downloader import iter_sgf_from_tar
@@ -860,6 +860,7 @@ class JosekiDB:
         total_sources = len(sgf_sources)
         total_files = 0
         total_joseki = 0
+        total_unique_sequences = 0  # 所有棋谱去重后的着法串总数（用于概率计算）
         
         # Phase 1: 初始化 CMS 和临时文件
         cms_width = getattr(self, '_cms_width', 200000)
@@ -874,6 +875,7 @@ class JosekiDB:
             print(f"   CMS内存: ~{cms_width * cms_depth * 4 / 1024 / 1024:.1f}MB")
         
         # Phase 2: 遍历棋谱，提取定式串并写入临时文件，同时更新CMS（所有前缀）
+        # 优化1: 每谱24个着法串（4角×3路×2方向）按字符串去重后再继续
         joseki_count = 0  # 定式串数量（不是前缀数量）
         prefix_count = 0   # 前缀数量（仅统计）
         with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
@@ -897,12 +899,16 @@ class JosekiDB:
                         
                         total_files += 1
                         
+                        # 每谱的着法串去重集合
+                        seen_sequences = set()
+                        
+                        # 优化7: 多路提取只解析一次SGF
                         # 提取四角定式（9/11/13路）
-                        for size in sizes:
-                            corner_dict = extract_joseki_from_sgf_raw(
-                                sgf_content, first_n=first_n, corner_size=size
-                            )
-                            
+                        multi_result = extract_joseki_from_sgf_multi(
+                            sgf_content, first_n=first_n, corner_sizes=sizes
+                        )
+                        
+                        for size, corner_dict in multi_result.items():
                             for corner_key, moves in corner_dict.items():
                                 coords = [c for _, c in moves if c]
                                 if len(coords) < min_moves:
@@ -912,8 +918,12 @@ class JosekiDB:
                                 ruld = " ".join(coords)
                                 rudl = " ".join(self._convert_to_rudl(coords))
                                 
-                                # 对每个方向：写入临时文件（只写定式串），同时展开所有前缀更新CMS
+                                # 优化1: 按字符串去重
                                 for direction, seq in [('ruld', ruld), ('rudl', rudl)]:
+                                    if seq in seen_sequences:
+                                        continue
+                                    seen_sequences.add(seq)
+                                    
                                     # 写入临时文件：只写定式串
                                     f_out.write(f"{direction}|{seq}\n")
                                     joseki_count += 1
@@ -927,6 +937,9 @@ class JosekiDB:
                                 
                                 total_joseki += 2  # ruld + rudl
                         
+                        # 累加每谱去重后的着法串数量（用于概率计算）
+                        total_unique_sequences += len(seen_sequences)
+                        
                         if progress_callback:
                             progress_callback(i + 1, total_sources, source, 0)
                         
@@ -939,16 +952,29 @@ class JosekiDB:
                     continue
         
         if verbose:
-            print(f"\n✅ Phase 1: {total_files} 棋谱, {total_joseki} 定式, {joseki_count} 定式串写入临时文件")
+            print(f"\n✅ Phase 1: {total_files} 棋谱, {total_joseki} 定式, {joseki_count} 定式串（去重后）写入临时文件")
+            print(f"   去重后着法串总数: {total_unique_sequences}")
         
         # Phase 3: 遍历临时文件，读取定式串，展开前缀，用 CMS 估算频率，选出 top-k
-        # 实时去重：插入堆时检查ruld/rudl是否已存在
+        # 优化2: 实时去重 + 父串升级（解决单链前缀占用top k问题）
         if verbose:
-            print(f"🔄 Phase 2: CMS估算前缀并选取 top-{top_k}（实时去重）...")
+            print(f"🔄 Phase 2: CMS估算前缀并选取 top-{top_k}（实时去重+父串升级）...")
         
-        # 使用最小堆 + dict 实时去重
-        heap = []  # (count, prefix, direction)
-        seen_hashes = {}  # ruld_hash -> (count, prefix, direction) 堆中的元素
+        # 堆项类：支持通过引用修改属性
+        class HeapItem:
+            __slots__ = ['count', 'prefix', 'direction', 'ruld_hash']
+            
+            def __init__(self, count, prefix, direction, ruld_hash):
+                self.count = count
+                self.prefix = prefix
+                self.direction = direction
+                self.ruld_hash = ruld_hash
+            
+            def __lt__(self, other):
+                return self.count < other.count
+        
+        heap = []  # HeapItem 对象列表
+        seen_hashes = {}  # ruld_hash -> HeapItem 对象引用
         
         def _get_hash(prefix_parts, direction):
             """获取标准化hash（统一为ruld方向）"""
@@ -958,9 +984,17 @@ class JosekiDB:
                 ruld_parts = self._convert_to_rudl(prefix_parts)
             return tuple(ruld_parts)
         
+        def _get_parent_hash(prefix_parts, direction):
+            """获取父串的hash（去掉最后一个坐标）"""
+            if len(prefix_parts) <= 1:
+                return None
+            parent_parts = prefix_parts[:-1]
+            return _get_hash(parent_parts, direction)
+        
         processed = 0
         prefix_processed = 0
         skipped_duplicate = 0
+        parent_upgraded = 0  # 父串升级计数
         
         with gzip.open(temp_path, 'rt', encoding='utf-8') as f_in:
             for line in f_in:
@@ -983,59 +1017,84 @@ class JosekiDB:
                     if est_count < min_count:
                         continue
                     
+                    # 优化6: 前缀单调性剪枝
+                    # 如果当前前缀进不了堆，更长的前缀肯定也进不了
+                    if len(heap) >= top_k and est_count <= heap[0].count:
+                        break  # 跳过这个着法串的剩余前缀
+                    
                     # 实时去重：检查ruld/rudl是否已存在
                     ruld_hash = _get_hash(prefix_parts, direction)
                     if ruld_hash in seen_hashes:
                         skipped_duplicate += 1
                         continue  # 已存在，跳过
                     
-                    # 插入堆和dict
-                    if len(heap) < top_k:
-                        heapq.heappush(heap, (est_count, prefix, direction))
-                        seen_hashes[ruld_hash] = (est_count, prefix, direction)
-                    elif est_count > heap[0][0]:  # 比堆顶大，替换
-                        # 移除堆顶元素
-                        old_count, old_prefix, old_direction = heap[0]
-                        old_parts = old_prefix.split()
-                        old_ruld_hash = _get_hash(old_parts, old_direction)
-                        del seen_hashes[old_ruld_hash]
-                        # 插入新元素
-                        heapq.heapreplace(heap, (est_count, prefix, direction))
-                        seen_hashes[ruld_hash] = (est_count, prefix, direction)
+                    # 优化2: 父串升级检查
+                    # 如果父串在堆中且当前次数 >= 父串次数×95%，父串"升级"为子串
+                    parent_hash = _get_parent_hash(prefix_parts, direction)
+                    upgraded = False
+                    
+                    if parent_hash and parent_hash in seen_hashes:
+                        parent_item = seen_hashes[parent_hash]
+                        # 检查当前次数是否 >= 父串次数 × 95%
+                        if est_count >= parent_item.count * 0.95:
+                            # 父串升级为子串：直接修改对象属性！
+                            parent_item.prefix = prefix
+                            parent_item.ruld_hash = ruld_hash
+                            seen_hashes[ruld_hash] = parent_item  # 新hash指向同一对象
+                            del seen_hashes[parent_hash]  # 删除旧hash
+                            upgraded = True
+                            parent_upgraded += 1
+                            continue  # 子串不入堆，因为父串已"变成"子串
+                    
+                    # 正常插入堆（未升级的情况）
+                    if not upgraded:
+                        item = HeapItem(est_count, prefix, direction, ruld_hash)
+                        if len(heap) < top_k:
+                            heapq.heappush(heap, item)
+                            seen_hashes[ruld_hash] = item
+                        elif est_count > heap[0].count:  # 比堆顶大，替换
+                            old_item = heapq.heapreplace(heap, item)
+                            del seen_hashes[old_item.ruld_hash]
+                            seen_hashes[ruld_hash] = item
                     
                     prefix_processed += 1
                 
                 processed += 1
                 if verbose and prefix_processed % 100000 == 0:
-                    print(f"\r  处理: {processed}定式/{prefix_processed}前缀, 堆大小: {len(heap)}, 跳过重复: {skipped_duplicate}", end='', flush=True)
+                    print(f"\r  处理: {processed}定式/{prefix_processed}前缀, 堆大小: {len(heap)}, 跳过重复: {skipped_duplicate}, 父串升级: {parent_upgraded}", end='', flush=True)
         
         if verbose:
             print(f"\n  堆中候选: {len(heap)} 个（已实时去重）")
+            print(f"  父串升级: {parent_upgraded} 个")
         
         # Phase 4: 收集候选，按频率倒序排序
         # 堆已经是实时去重后的，直接取出排序
         candidates = []
-        for count, prefix, direction in heap:
+        for item in heap:
             # 统一转换为 ruld 方向的 moves
-            parts = prefix.split()
-            if direction == 'ruld':
+            parts = item.prefix.split()
+            if item.direction == 'ruld':
                 ruld_moves = parts
             else:
                 ruld_moves = self._convert_to_rudl(parts)
             
             candidates.append({
                 'moves': list(ruld_moves),
-                'count': count
+                'count': item.count,
+                'move_str': " ".join(ruld_moves)  # 优化4: 保存字符串用于排序
             })
         
         # 按频率降序排序
         candidates.sort(key=lambda x: -x['count'])
         
+        # 优化4: 入库前再按字符串顺序排序
+        candidates.sort(key=lambda x: x['move_str'])
+        
         final_candidates = candidates
         
         # Phase 5: 入库
         if verbose:
-            print(f"🔄 Phase 3: 按频率排序并入库...")
+            print(f"🔄 Phase 3: 入库（按字符串顺序）...")
             print(f"  候选定式: {len(final_candidates)} 个")
         
         # 清理临时文件
@@ -1045,19 +1104,21 @@ class JosekiDB:
             return len(final_candidates), 0, final_candidates
         
         added = 0
+        # 优化5: 概率计算 = 前缀出现次数 / 所有棋谱去重后的着法串总数
+        probability_denominator = total_unique_sequences if total_unique_sequences > 0 else 1
+        
         for cand in final_candidates:
             coords = cand['moves']
             count = cand['count']
             
             if category == "/katago":
-                # 概率分母：棋谱数 × 4角 × 3路数（9/11/13）
-                total_positions = total_files * 4 * len(sizes) if total_files > 0 else 1
+                # 优化5: 概率 = 前缀出现次数 / 去重后的着法串总数
                 data = {
                     "id": f"joseki_{len(self.joseki_list) + added + 1:03d}",
                     "category_path": "/katago",
                     "moves": coords,
                     "frequency": count,
-                    "probability": round(count / total_positions, 6),
+                    "probability": round(count / probability_denominator, 6),
                     "move_count": len(coords),
                     "created_at": self._now()
                 }
