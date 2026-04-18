@@ -364,17 +364,12 @@ def cmd_import(args):
         return
     
     print(f"📁 找到 {len(sgf_files)} 个SGF文件")
-    print(f"⏳ 正在提取定式（前{args.first_n}手）...")
     
     # 使用 joseki_db 的导入功能
     db = JosekiDB(args.db)
     
     # 使用高精度CMS配置
     db.set_cms_config(width=4194304, depth=4)
-    
-    def progress_callback(current, total):
-        if current % 10 == 0 or current == total:
-            print(f"\r  处理进度: {current}/{total}", end='', flush=True)
     
     # 解析多路参数
     corner_sizes = None
@@ -387,6 +382,16 @@ def cmd_import(args):
         except ValueError:
             corner_sizes = None
     
+    # 导入定式
+    if corner_sizes:
+        print(f"\n⏳ 开始提取定式（前{args.first_n}手，多路: {corner_sizes}）...")
+    else:
+        print(f"\n⏳ 开始提取定式（前{args.first_n}手）...")
+    
+    def progress_callback(current, total, source, sgf_count):
+        if current % 10 == 0 or current == total:
+            print(f"\r  提取进度: {current}/{total}", end='', flush=True)
+    
     added, skipped, candidates = db.import_from_sgfs(
         sgf_sources=sgf_files,
         min_count=args.min_count,
@@ -396,19 +401,19 @@ def cmd_import(args):
         corner_sizes=corner_sizes,
         dry_run=args.dry_run,
         progress_callback=progress_callback,
+        category="/导入",
+        verbose=True,
         top_k=args.top_k
     )
     
     print()  # 换行
     
-    # 显示统计结果
-    print(f"\n📊 统计结果（次数≥{args.min_count}，手数≥{args.min_moves}，概率≥{args.min_rate}%）：")
+    print(f"\n📊 统计结果：")
     print(f"   候选定式: {len(candidates)}个")
     print(f"{'排名':<6} {'频率':<8} {'定式':<40}")
     print("-" * 60)
     
     for rank, candidate in enumerate(candidates[:20], 1):
-        # candidate 格式: "prefix (count次)"
         if " (" in candidate:
             prefix, count_str = candidate.rsplit(" (", 1)
             count = count_str.replace("次)", "")

@@ -981,7 +981,11 @@ class JosekiDB:
             if direction == 'ruld':
                 ruld_parts = prefix_parts
             else:
-                ruld_parts = self._convert_to_rudl(prefix_parts)
+                # rudl -> ruld: 使用反向转换
+                # _convert_to_rudl 是 ruld->rudl，所以调用两次就回到ruld
+                # 或者需要实现 _convert_to_ruld 函数
+                rudl_parts = self._convert_to_rudl(prefix_parts)
+                ruld_parts = self._convert_to_rudl(rudl_parts)  # 再转一次回到ruld
             return tuple(ruld_parts)
         
         def _get_parent_hash(prefix_parts, direction):
