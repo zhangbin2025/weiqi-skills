@@ -109,14 +109,25 @@ def cmd_list(args):
     if args.limit:
         joseki_list = joseki_list[:args.limit]
     
-    # 新格式：ID, 分类, 手数, 次数, 概率, 名称
-    print(f"{'ID':<10} {'分类':<18} {'手数':<5} {'次数':<7} {'概率':<8} {'名称':<20}")
-    print("-" * 75)
+    max_moves = getattr(args, 'max_moves', 8)
+    
+    # 新格式：ID, 分类, 手数, 次数, 概率, 着法, 名称
+    print(f"{'ID':<10} {'分类':<16} {'手数':<4} {'次数':<7} {'概率':<8} {'着法':<{max_moves*3}} {'名称':<16}")
+    print("-" * (60 + max_moves*3))
     for j in joseki_list:
         freq = str(j['frequency']) if j.get('frequency') is not None else "-"
         prob = f"{j['probability']:.2%}" if j.get('probability') is not None else "-"
         name = j['name'] if j.get('name') else "(空)"
-        print(f"{j['id']:<10} {j['category_path']:<18} {j['move_count']:<5} {freq:<7} {prob:<8} {name:<20}")
+        # 显示着法，截断到 max_moves
+        moves = j.get('moves', [])
+        if moves:
+            display_moves = moves[:max_moves]
+            moves_str = " ".join(display_moves)
+            if len(moves) > max_moves:
+                moves_str += "..."
+        else:
+            moves_str = "-"
+        print(f"{j['id']:<10} {j['category_path']:<16} {j['move_count']:<4} {freq:<7} {prob:<8} {moves_str:<{max_moves*3+3}} {name:<16}")
 
 
 def cmd_8way(args):
@@ -179,28 +190,48 @@ def cmd_match(args):
         print("❌ 错误: 未提供SGF数据", file=sys.stderr)
         sys.exit(1)
     
+    # 解析多路参数（默认9,11,13）
+    try:
+        corner_sizes = [int(x.strip()) for x in args.corner_sizes.split(',')]
+        corner_sizes = [x for x in corner_sizes if x in [9, 11, 13]]
+        if not corner_sizes:
+            corner_sizes = [9, 11, 13]
+    except (ValueError, AttributeError):
+        corner_sizes = [9, 11, 13]
+    
     if args.corner:
-        # 使用提取+匹配流程（统一到右上角）
-        multigogm = extract_joseki_from_sgf(sgf_data, first_n=args.first_n, corner_size=args.corner_size)
-        parsed = parse_multigogm(multigogm)
+        # 指定了具体角，进行多路匹配
+        all_matches = []
+        for size in corner_sizes:
+            multigogm = extract_joseki_from_sgf(sgf_data, first_n=args.first_n, corner=args.corner, corner_size=size)
+            parsed = parse_multigogm(multigogm)
+            
+            if args.corner not in parsed:
+                continue
+            
+            comment, moves = parsed[args.corner]
+            coord_seq = [c for _, c in moves if c]
+            
+            if not coord_seq:
+                continue
+            
+            matches = db.match(coord_seq, top_k=args.top_k, corner='tr')
+            for m in matches:
+                object.__setattr__(m, 'matched_from_size', size)
+            all_matches.extend(matches)
         
-        if args.corner not in parsed:
+        # 按前缀长度排序
+        if all_matches:
+            all_matches.sort(key=lambda x: (-x.prefix_len, x.total_moves))
+            results = all_matches[:args.top_k]
+            print(f"\n『{args.corner.upper()}』角 (多路匹配 {corner_sizes}):")
+            _print_match_results(results)
+        else:
             print(f"⚠️  {args.corner} 角没有着法")
-            return
-        
-        comment, moves = parsed[args.corner]
-        coord_seq = [c for _, c in moves if c]
-        
-        if not coord_seq:
-            print(f"⚠️  {args.corner} 角没有有效着法")
-            return
-        
-        # 序列已经是右上角视角，直接匹配不再转换
-        results = db.match(coord_seq, top_k=args.top_k, corner='tr')
-        print(f"\n『{args.corner.upper()}』角 ({comment}):")
-        _print_match_results(results)
     else:
-        results = db.identify_corners(sgf_data, top_k=args.top_k, first_n=args.first_n, corner_size=args.corner_size)
+        # 未指定角，使用identify_corners（多路）
+        results = db.identify_corners(sgf_data, top_k=args.top_k, first_n=args.first_n, 
+                                       corner_sizes=corner_sizes)
         for corner in ['tl', 'tr', 'bl', 'br']:
             matches = results.get(corner, [])
             if matches:
@@ -223,7 +254,17 @@ def cmd_identify(args):
         print("❌ 错误: 未提供SGF数据", file=sys.stderr)
         sys.exit(1)
     
-    results = db.identify_corners(sgf_data, top_k=args.top_k, first_n=args.first_n, corner_size=args.corner_size)
+    # 解析多路参数（默认9,11,13）
+    try:
+        corner_sizes = [int(x.strip()) for x in args.corner_sizes.split(',')]
+        corner_sizes = [x for x in corner_sizes if x in [9, 11, 13]]
+        if not corner_sizes:
+            corner_sizes = [9, 11, 13]
+    except (ValueError, AttributeError):
+        corner_sizes = [9, 11, 13]
+    
+    results = db.identify_corners(sgf_data, top_k=args.top_k, first_n=args.first_n, 
+                                   corner_sizes=corner_sizes)
     
     if args.output == "json":
         import json
@@ -240,6 +281,8 @@ def cmd_identify(args):
     else:
         print("\n" + "=" * 70)
         print("「定式识别结果」")
+        if corner_sizes:
+            print(f"（多路匹配: {corner_sizes}路，取最长前缀）")
         print("=" * 70)
         corner_names = {"tl": "左上", "tr": "右上", "bl": "左下", "br": "右下"}
         for corner in ["tl", "tr", "bl", "br"]:
@@ -247,8 +290,11 @@ def cmd_identify(args):
             cn = corner_names.get(corner, corner)
             if matches:
                 best = matches[0]
+                # 显示来源路数
+                from_size = getattr(best, 'matched_from_size', None)
+                size_info = f"[{from_size}路] " if from_size else ""
                 # 新格式：显示前缀/总手数
-                match_str = f"{best.name} ({best.prefix_len}/{best.total_moves}手)"
+                match_str = f"{size_info}{best.name} ({best.prefix_len}/{best.total_moves}手)"
                 if best.prefix_len == best.total_moves:
                     match_str += " ✓ 完全匹配"
                 elif best.prefix_len >= 4:
@@ -284,7 +330,14 @@ def cmd_extract(args):
         print("❌ 错误: 未提供SGF数据", file=sys.stderr)
         sys.exit(1)
     
-    result = extract_joseki_from_sgf(sgf_data, first_n=args.first_n, corner=args.corner, corner_size=args.corner_size)
+    # 解析corner_sizes，取第一个作为extract的size（extract不支持多路）
+    try:
+        corner_sizes = [int(x.strip()) for x in args.corner_sizes.split(',')]
+        corner_size = corner_sizes[0] if corner_sizes else 9
+    except (ValueError, AttributeError):
+        corner_size = 9
+    
+    result = extract_joseki_from_sgf(sgf_data, first_n=args.first_n, corner=args.corner, corner_size=corner_size)
     
     if args.output:
         with open(args.output, 'w', encoding='utf-8') as f:
@@ -316,9 +369,23 @@ def cmd_import(args):
     # 使用 joseki_db 的导入功能
     db = JosekiDB(args.db)
     
+    # 使用高精度CMS配置
+    db.set_cms_config(width=4194304, depth=4)
+    
     def progress_callback(current, total):
         if current % 10 == 0 or current == total:
             print(f"\r  处理进度: {current}/{total}", end='', flush=True)
+    
+    # 解析多路参数
+    corner_sizes = None
+    if args.corner_sizes:
+        try:
+            corner_sizes = [int(x.strip()) for x in args.corner_sizes.split(',')]
+            corner_sizes = [x for x in corner_sizes if x in [9, 11, 13]]
+            if not corner_sizes:
+                corner_sizes = None
+        except ValueError:
+            corner_sizes = None
     
     added, skipped, candidates = db.import_from_sgfs(
         sgf_sources=sgf_files,
@@ -326,7 +393,7 @@ def cmd_import(args):
         min_moves=args.min_moves,
         min_rate=args.min_rate,
         first_n=args.first_n,
-        corner_size=args.corner_size,
+        corner_sizes=corner_sizes,
         dry_run=args.dry_run,
         progress_callback=progress_callback
     )
@@ -494,10 +561,27 @@ def cmd_katago(args):
         if tar_path and tar_path.exists():
             tar_files.append(tar_path)
     
+    # 解析多路参数
+    corner_sizes = None
+    if args.corner_sizes:
+        try:
+            corner_sizes = [int(x.strip()) for x in args.corner_sizes.split(',')]
+            corner_sizes = [x for x in corner_sizes if x in [9, 11, 13]]
+            if not corner_sizes:
+                corner_sizes = None
+        except ValueError:
+            corner_sizes = None
+    
     # 导入定式
-    print(f"\n⏳ 开始提取定式（前{args.first_n}手）...")
+    if corner_sizes:
+        print(f"\n⏳ 开始提取定式（前{args.first_n}手，多路: {corner_sizes}）...")
+    else:
+        print(f"\n⏳ 开始提取定式（前{args.first_n}手）...")
     
     db = JosekiDB(args.db)
+    
+    # 使用高精度CMS配置
+    db.set_cms_config(width=4194304, depth=4)
     
     def progress_callback(current, total, source, sgf_count):
         if current % 100 == 0 or current == total:
@@ -510,7 +594,7 @@ def cmd_katago(args):
         min_moves=args.min_moves,
         min_rate=args.min_rate,
         first_n=args.first_n,
-        corner_size=args.corner_size,
+        corner_sizes=corner_sizes,
         dry_run=args.dry_run,
         progress_callback=progress_callback,
         category="/katago",
@@ -561,13 +645,22 @@ def cmd_discover(args):
             print("❌ 错误: 没有有效的SGF源")
         sys.exit(1)
     
+    # 解析多路参数（默认9,11,13）
+    try:
+        corner_sizes = [int(x.strip()) for x in args.corner_sizes.split(',')]
+        corner_sizes = [x for x in corner_sizes if x in [9, 11, 13]]
+        if not corner_sizes:
+            corner_sizes = [9, 11, 13]
+    except (ValueError, AttributeError):
+        corner_sizes = [9, 11, 13]
+    
     db = JosekiDB(args.db)
     
     result = db.discover(
         sgf_sources=sgf_sources,
         first_n=args.first_n,
         min_moves=args.min_moves,
-        corner_size=args.corner_size,
+        corner_sizes=corner_sizes,
         limit=args.limit,
         verbose=not args.quiet
     )
@@ -649,6 +742,7 @@ def main():
     p_list = subparsers.add_parser("list", help="列出现式")
     p_list.add_argument("--category")
     p_list.add_argument("--limit", type=int)
+    p_list.add_argument("--max-moves", type=int, default=8, help="最多显示多少手（默认8）")
     
     p_8way = subparsers.add_parser("8way", help="生成定式8向变化SGF")
     p_8way.add_argument("id", help="定式ID")
@@ -659,14 +753,14 @@ def main():
     p_match.add_argument("--sgf")
     p_match.add_argument("--sgf-file")
     p_match.add_argument("--corner", choices=["tl", "tr", "bl", "br"])
-    p_match.add_argument("--corner-size", type=int, default=9, choices=[9, 11, 13], help="角大小，9/11/13路（默认9）")
+    p_match.add_argument("--corner-sizes", type=str, default="9,11,13", help="角大小，如'9,11,13'（默认9,11,13）")
     p_match.add_argument("--first-n", type=int, default=80, help="分析前N手（默认80）")
     p_match.add_argument("--top-k", type=int, default=5)
     
     p_identify = subparsers.add_parser("identify", help="识别整盘棋")
     p_identify.add_argument("--sgf")
     p_identify.add_argument("--sgf-file")
-    p_identify.add_argument("--corner-size", type=int, default=9, choices=[9, 11, 13], help="角大小，9/11/13路（默认9）")
+    p_identify.add_argument("--corner-sizes", type=str, default="9,11,13", help="角大小，如'9,11,13'（默认9,11,13）")
     p_identify.add_argument("--top-k", type=int, default=1)
     p_identify.add_argument("--first-n", type=int, default=80, help="分析前N手（默认80）")
     p_identify.add_argument("--output", choices=["table", "json"], default="table")
@@ -676,7 +770,7 @@ def main():
     p_extract = subparsers.add_parser("extract", help="从SGF提取四角定式")
     p_extract.add_argument("--sgf-file", help="SGF文件路径")
     p_extract.add_argument("--first-n", type=int, default=50, help="只取前N手（默认50）")
-    p_extract.add_argument("--corner-size", type=int, default=9, choices=[9, 11, 13], help="角大小，9/11/13路（默认9）")
+    p_extract.add_argument("--corner-sizes", type=str, default="9,11,13", help="角大小，如'9,11,13'（默认9,11,13）")
     p_extract.add_argument("--output", "-o", help="输出文件路径")
     p_extract.add_argument("--corner", choices=["tl", "tr", "bl", "br"], help="只提取指定角 (tl=左上, tr=右上, bl=左下, br=右下)")
     
@@ -686,7 +780,7 @@ def main():
     p_import.add_argument("--min-moves", type=int, default=4, help="定式至少多少手才入库（默认4）")
     p_import.add_argument("--min-rate", type=float, default=0.0, help="最小出现概率%%才入库（默认0，例如：1表示1%%，0.5表示0.5%%）")
     p_import.add_argument("--first-n", type=int, default=80, help="每谱提取前N手内的定式（默认80）")
-    p_import.add_argument("--corner-size", type=int, default=9, choices=[9, 11, 13], help="角大小，9/11/13路（默认9）")
+    p_import.add_argument("--corner-sizes", type=str, default="9,11,13", help="角大小，如'9,11,13'（默认9,11,13）")
     p_import.add_argument("--dry-run", action="store_true", help="试运行，只统计不真入库")
     
     # 新增 export 命令
@@ -711,7 +805,7 @@ def main():
     p_katago.add_argument("--min-moves", type=int, default=4, help="定式至少多少手才入库（默认4）")
     p_katago.add_argument("--min-rate", type=float, default=0.5, help="最小出现概率%%才入库（默认0.5）")
     p_katago.add_argument("--first-n", type=int, default=80, help="每谱提取前N手内的定式（默认80）")
-    p_katago.add_argument("--corner-size", type=int, default=9, choices=[9, 11, 13], help="角大小，9/11/13路（默认9）")
+    p_katago.add_argument("--corner-sizes", type=str, default="9,11,13", help="角大小，如'9,11,13'（默认9,11,13）")
     p_katago.add_argument("--dry-run", action="store_true", help="试运行，只统计不真入库")
     p_katago.add_argument("--progress-file", help="进度文件路径（默认 ~/.weiqi-joseki/katago-progress.json）")
     
@@ -720,7 +814,7 @@ def main():
     p_discover.add_argument("paths", nargs="+", help="SGF文件或目录路径（可多个）")
     p_discover.add_argument("--first-n", type=int, default=50, help="分析前N手的定式（默认50）")
     p_discover.add_argument("--min-moves", type=int, default=4, help="定式最少手数（默认4）")
-    p_discover.add_argument("--corner-size", type=int, default=9, choices=[9, 11, 13], help="角大小，9/11/13路（默认9）")
+    p_discover.add_argument("--corner-sizes", type=str, default="9,11,13", help="角大小，如'9,11,13'（默认9,11,13）")
     p_discover.add_argument("--limit", type=int, default=50, help="最多返回多少个定式（默认50）")
     p_discover.add_argument("--output", choices=["table", "json"], default="table", help="输出格式（默认table）")
     p_discover.add_argument("--quiet", action="store_true", help="安静模式，只输出JSON结果（自动设置--output=json）")

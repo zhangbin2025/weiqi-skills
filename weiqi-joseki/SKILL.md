@@ -160,6 +160,9 @@ python3 scripts/cli.py identify --sgf-file game.sgf --output json
 
 # 指定返回匹配数量
 python3 scripts/cli.py identify --sgf-file game.sgf --top-k 3
+
+# 多路匹配（9/11/13路），取最长前缀
+python3 scripts/cli.py identify --sgf-file game.sgf --corner-sizes "9,11,13"
 ```
 
 **输出示例：**
@@ -220,6 +223,12 @@ python3 scripts/cli.py import /path/to/sgf/dir --min-rate 1.0
 
 # 设置每谱提取前N手（默认50）
 python3 scripts/cli.py import /path/to/sgf/dir --first-n 80
+
+# 单路提取（默认9路）
+python3 scripts/cli.py import /path/to/sgf/dir --corner-size 13
+
+# 多路同时提取（9/11/13路），自动去重并标记来源
+python3 scripts/cli.py import /path/to/sgf/dir --corner-sizes "9,11,13"
 
 # 试运行（只统计不真入库）
 python3 scripts/cli.py import /path/to/sgf/dir --dry-run
@@ -598,6 +607,16 @@ B[pd](右上) W[dp](右下) B[pp](右下) W[dd](左上) B[qf](右上) ...
 - 无第三方依赖（纯标准库）
 
 ## 版本更新
+
+### v1.2.2 (2026-04-17)
+- ✅ **多路提取**: 支持9/11/13路同时提取定式
+  - `--corner-sizes "9,11,13"` 参数，自动去重并标记来源路数
+  - 解决9路范围下被误判为脱先的着法问题
+- ✅ **多路匹配**: 支持9/11/13路同时匹配，取最长前缀
+  - `identify` 命令新增 `--corner-sizes` 参数
+  - 自动选择匹配前缀最长的结果，提高定式识别率
+- ✅ **来源标记**: 入库定式新增 `extracted_from` 字段，记录来源路数
+  - 示例: `"extracted_from": [9, 11]` 表示该定式在9路和11路都被提取到
 
 ### v1.2.1 (2026-04-14)
 - ✅ **新增命令**: `discover` - 发现值得研究的定式

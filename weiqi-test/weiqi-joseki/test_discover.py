@@ -229,10 +229,12 @@ class TestDiscover(unittest.TestCase):
             "(;GM[1];B[pd];W[qf];B[nc])",  # 完全相同的定式
         ]
         
+        # 使用单路提取避免多路重复计数
         result = self.db.discover(
             sgf_sources=sgf_list,
             first_n=50,
             min_moves=3,
+            corner_size=9,
             limit=50,
             verbose=False
         )
@@ -260,10 +262,12 @@ class TestDiscover(unittest.TestCase):
         """测试来源信息包含在结果中"""
         sgf = "(;GM[1]PB[柯洁]PW[申真谞];B[pd];W[qf])"
         
+        # 使用单路提取避免多路重复计数
         result = self.db.discover(
             sgf_sources=[sgf],
             first_n=50,
             min_moves=2,
+            corner_size=9,
             limit=50,
             verbose=False
         )

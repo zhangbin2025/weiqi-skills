@@ -68,10 +68,15 @@ class JosekiDB:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
     
     def _load(self) -> dict:
-        """加载数据库"""
+        """加载数据库（兼容旧格式列表和新格式字典）"""
         if self.db_path.exists():
             with open(self.db_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                # 兼容旧格式: 直接是列表
+                if isinstance(data, list):
+                    return {"version": "1.0.0", "joseki_list": data}
+                # 新格式: 字典
+                return data
         return {"version": "1.0.0", "joseki_list": []}
     
     def _save(self):
@@ -423,6 +428,7 @@ class JosekiDB:
             "name": j.get("name", ""),
             "category_path": j.get("category_path", ""),
             "move_count": len(j.get("moves", [])),
+            "moves": j.get("moves", []),
             "frequency": j.get("frequency"),
             "probability": j.get("probability"),
             "tags": j.get("tags", [])
@@ -795,60 +801,287 @@ class JosekiDB:
 
         return added, skipped, [f"{prefix} ({count}次)" for prefix, count in candidates]
 
+    def set_cms_config(self, width: int = 200000, depth: int = 5):
+        """设置 CMS 配置
+        
+        推荐配置：
+        - 低内存: width=200000, depth=5, 内存~3.8MB, 误差~0.5%
+        - 高精度: width=4194304, depth=4, 内存~64MB, 误差~0.024%
+        
+        需在调用 import_from_sgfs 前设置。
+        """
+        self._cms_width = width
+        self._cms_depth = depth
+
     def import_from_sgfs(self,
                         sgf_sources: List,
                         min_count: int = 10,
                         min_moves: int = 4,
                         min_rate: float = 0.0,
                         first_n: int = 80,
-                        corner_size: int = 9,
+                        corner_sizes: List[int] = None,
                         dry_run: bool = False,
                         progress_callback: Optional[Callable] = None,
                         category: str = "/自动",
                         name_prefix: str = "自动提取",
-                        verbose: bool = True) -> Tuple[int, int, List[str]]:
-        """
-        从SGF文件列表批量导入定式 - 主控流程
-
+                        verbose: bool = True,
+                        top_k: int = 200000) -> Tuple[int, int, List]:
+        """从SGF列表导入定式 - CMS版本（支持大规模数据）
+        
+        使用 Count-Min Sketch 估算前缀频率，找到 top-k 前缀定式。
+        
         Args:
-            sgf_sources: SGF文件路径列表，或包含多个SGF文件的tar.bz2文件，或包含SGF内容的字符串列表（自动识别）
-            min_count: 最少出现次数才入库
-            min_moves: 定式至少多少手
-            min_rate: 最小出现概率%
-            first_n: 每谱提取前N手内的定式
-            corner_size: 角大小，9 或 13（默认9）
-            dry_run: 试运行，只统计不真入库
-            progress_callback: 进度回调函数(current, total)
-            category: 定式分类路径（默认"/自动"）
-            name_prefix: 名称前缀（默认"自动提取"）
-            verbose: 详细输出开关（默认True）
-
-        返回:
+            sgf_sources: SGF文件路径列表或内容列表
+            min_count: 最少出现次数
+            min_moves: 最少手数（前缀从此手数开始提取）
+            min_rate: 最小出现概率百分比
+            first_n: 每谱提取前N手
+            corner_sizes: 角部大小列表 [9, 11, 13]
+            dry_run: 试运行模式
+            progress_callback: 进度回调函数
+            category: 分类路径
+            name_prefix: 名称前缀
+            verbose: 详细输出
+            top_k: 返回前k个高频定式，默认20万
+        
+        Returns:
             (added_count, skipped_count, candidates_list)
         """
-        # 步骤1: 提取
-        count_map, total_sources, total_sgf_files, total_extracted, unique_count = \
-            self._extract_joseki_from_sources(sgf_sources, first_n, corner_size, verbose, progress_callback)
+        import heapq
+        import tempfile
+        import gzip
         
-        # 步骤2: 前缀累加
-        count_map = self._accumulate_prefix_counts(count_map, verbose)
+        try:
+            from .cms import CountMinSketch
+        except ImportError:
+            from cms import CountMinSketch
         
-        # 步骤3: 筛选（使用实际的SGF文件数量）
-        candidates = self._filter_candidates(count_map, total_sgf_files, min_count, min_moves, min_rate, verbose)
+        sizes = corner_sizes if corner_sizes else [9, 11, 13]  # 提取9/11/13路（考虑脱先场景）
+        total_sources = len(sgf_sources)
+        total_files = 0
+        total_joseki = 0
+        
+        # Phase 1: 初始化 CMS 和临时文件
+        cms_width = getattr(self, '_cms_width', 200000)
+        cms_depth = getattr(self, '_cms_depth', 5)
+        cms = CountMinSketch(width=cms_width, depth=cms_depth)
+        temp_file = tempfile.NamedTemporaryFile(mode='wb', suffix='.gz', delete=False)
+        temp_path = Path(temp_file.name)
+        
+        if verbose:
+            print(f"📊 CMS定式提取（路数: {sizes}, top_k: {top_k}）")
+            print(f"   CMS配置: width={cms_width}, depth={cms_depth}")
+            print(f"   CMS内存: ~{cms_width * cms_depth * 4 / 1024 / 1024:.1f}MB")
+        
+        # Phase 2: 遍历棋谱，提取定式串并写入临时文件，同时更新CMS（所有前缀）
+        joseki_count = 0  # 定式串数量（不是前缀数量）
+        prefix_count = 0   # 前缀数量（仅统计）
+        with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
+            for i, source in enumerate(sgf_sources):
+                try:
+                    # 获取SGF内容
+                    sgf_gen = []
+                    if isinstance(source, Path):
+                        if source.suffix == '.sgf':
+                            sgf_gen = [(source.read_text(encoding='utf-8', errors='ignore'), source)]
+                        else:
+                            sgf_gen = iter_sgf_from_tar(source)
+                    else:
+                        sgf_gen = [(source, None)]
+                    
+                    for sgf_data in sgf_gen:
+                        if isinstance(sgf_data, tuple):
+                            sgf_content, _ = sgf_data
+                        else:
+                            sgf_content = sgf_data
+                        
+                        total_files += 1
+                        
+                        # 提取四角定式（9/11/13路）
+                        for size in sizes:
+                            corner_dict = extract_joseki_from_sgf_raw(
+                                sgf_content, first_n=first_n, corner_size=size
+                            )
+                            
+                            for corner_key, moves in corner_dict.items():
+                                coords = [c for _, c in moves if c]
+                                if len(coords) < min_moves:
+                                    continue
+                                
+                                # 生成 ruld 和 rudl 两个方向
+                                ruld = " ".join(coords)
+                                rudl = " ".join(self._convert_to_rudl(coords))
+                                
+                                # 对每个方向：写入临时文件（只写定式串），同时展开所有前缀更新CMS
+                                for direction, seq in [('ruld', ruld), ('rudl', rudl)]:
+                                    # 写入临时文件：只写定式串
+                                    f_out.write(f"{direction}|{seq}\n")
+                                    joseki_count += 1
+                                    
+                                    # 展开所有前缀并更新CMS
+                                    seq_parts = seq.split()
+                                    for end in range(min_moves, len(seq_parts) + 1):
+                                        prefix = " ".join(seq_parts[:end])
+                                        cms.update(prefix)
+                                        prefix_count += 1
+                                
+                                total_joseki += 2  # ruld + rudl
+                        
+                        if progress_callback:
+                            progress_callback(i + 1, total_sources, source, 0)
+                        
+                        if verbose and total_files % 1000 == 0:
+                            print(f"\r  已处理: {total_files} 谱, {joseki_count} 定式串, {prefix_count} 前缀", end='', flush=True)
+                            
+                except Exception as e:
+                    if verbose:
+                        print(f"\n  跳过: {e}")
+                    continue
+        
+        if verbose:
+            print(f"\n✅ Phase 1: {total_files} 棋谱, {total_joseki} 定式, {joseki_count} 定式串写入临时文件")
+        
+        # Phase 3: 遍历临时文件，读取定式串，展开前缀，用 CMS 估算频率，选出 top-k
+        # 实时去重：插入堆时检查ruld/rudl是否已存在
+        if verbose:
+            print(f"🔄 Phase 2: CMS估算前缀并选取 top-{top_k}（实时去重）...")
+        
+        # 使用最小堆 + dict 实时去重
+        heap = []  # (count, prefix, direction)
+        seen_hashes = {}  # ruld_hash -> (count, prefix, direction) 堆中的元素
+        
+        def _get_hash(prefix_parts, direction):
+            """获取标准化hash（统一为ruld方向）"""
+            if direction == 'ruld':
+                ruld_parts = prefix_parts
+            else:
+                ruld_parts = self._convert_to_rudl(prefix_parts)
+            return tuple(ruld_parts)
+        
+        processed = 0
+        prefix_processed = 0
+        skipped_duplicate = 0
+        
+        with gzip.open(temp_path, 'rt', encoding='utf-8') as f_in:
+            for line in f_in:
+                line = line.strip()
+                if not line or '|' not in line:
+                    continue
+                
+                direction, joseki_str = line.split('|', 1)
+                
+                # 展开所有前缀并估算
+                seq_parts = joseki_str.split()
+                for end in range(min_moves, len(seq_parts) + 1):
+                    prefix = " ".join(seq_parts[:end])
+                    prefix_parts = seq_parts[:end]
+                    
+                    # CMS 估算频率
+                    est_count = cms.estimate(prefix)
+                    
+                    # 过滤低频前缀
+                    if est_count < min_count:
+                        continue
+                    
+                    # 实时去重：检查ruld/rudl是否已存在
+                    ruld_hash = _get_hash(prefix_parts, direction)
+                    if ruld_hash in seen_hashes:
+                        skipped_duplicate += 1
+                        continue  # 已存在，跳过
+                    
+                    # 插入堆和dict
+                    if len(heap) < top_k:
+                        heapq.heappush(heap, (est_count, prefix, direction))
+                        seen_hashes[ruld_hash] = (est_count, prefix, direction)
+                    elif est_count > heap[0][0]:  # 比堆顶大，替换
+                        # 移除堆顶元素
+                        old_count, old_prefix, old_direction = heap[0]
+                        old_parts = old_prefix.split()
+                        old_ruld_hash = _get_hash(old_parts, old_direction)
+                        del seen_hashes[old_ruld_hash]
+                        # 插入新元素
+                        heapq.heapreplace(heap, (est_count, prefix, direction))
+                        seen_hashes[ruld_hash] = (est_count, prefix, direction)
+                    
+                    prefix_processed += 1
+                
+                processed += 1
+                if verbose and prefix_processed % 100000 == 0:
+                    print(f"\r  处理: {processed}定式/{prefix_processed}前缀, 堆大小: {len(heap)}, 跳过重复: {skipped_duplicate}", end='', flush=True)
+        
+        if verbose:
+            print(f"\n  堆中候选: {len(heap)} 个（已实时去重）")
+        
+        # Phase 4: 收集候选，按频率倒序排序
+        # 堆已经是实时去重后的，直接取出排序
+        candidates = []
+        for count, prefix, direction in heap:
+            # 统一转换为 ruld 方向的 moves
+            parts = prefix.split()
+            if direction == 'ruld':
+                ruld_moves = parts
+            else:
+                ruld_moves = self._convert_to_rudl(parts)
+            
+            candidates.append({
+                'moves': list(ruld_moves),
+                'count': count
+            })
+        
+        # 按频率降序排序
+        candidates.sort(key=lambda x: -x['count'])
+        
+        final_candidates = candidates
+        
+        # Phase 5: 入库
+        if verbose:
+            print(f"🔄 Phase 3: 按频率排序并入库...")
+            print(f"  候选定式: {len(final_candidates)} 个")
+        
+        # 清理临时文件
+        temp_path.unlink()
         
         if dry_run:
-            return 0, 0, [f"{prefix} ({count}次)" for prefix, count in candidates]
+            return len(final_candidates), 0, final_candidates
         
-        # 步骤4: 预计算 hash
-        ruld_hashes, rudl_hashes = self._build_conflict_hash_sets(self.joseki_list)
+        added = 0
+        for cand in final_candidates:
+            coords = cand['moves']
+            count = cand['count']
+            
+            if category == "/katago":
+                # 概率分母：棋谱数 × 4角 × 3路数（9/11/13）
+                total_positions = total_files * 4 * len(sizes) if total_files > 0 else 1
+                data = {
+                    "id": f"joseki_{len(self.joseki_list) + added + 1:03d}",
+                    "category_path": "/katago",
+                    "moves": coords,
+                    "frequency": count,
+                    "probability": round(count / total_positions, 6),
+                    "move_count": len(coords),
+                    "created_at": self._now()
+                }
+                self.joseki_list.append(data)
+                added += 1
+            else:
+                moves = []
+                color = 'B'
+                for c in coords:
+                    moves.append(f"{color}[{c}]")
+                    color = 'W' if color == 'B' else 'B'
+                self.add(name=f"{name_prefix}-{len(coords)}手", moves=moves, category_path=category)
+                added += 1
+            
+            if verbose and added % 1000 == 0:
+                print(f"\r  入库: {added}", end='', flush=True)
         
-        # 步骤5: 批量入库（使用实际的SGF文件数量计算概率）
-        added, skipped, _ = self._batch_add_joseki(
-            candidates, total_sgf_files, category, name_prefix,
-            ruld_hashes, rudl_hashes, verbose
-        )
+        if added > 0:
+            self._save()
         
-        return added, skipped, [f"{prefix} ({count}次)" for prefix, count in candidates]
+        if verbose:
+            print(f"\n✅ 完成: 新增 {added} 定式")
+        
+        return added, 0, final_candidates
     
     def import_from_katago_cache(self,
                                   cache_dir: Path,
