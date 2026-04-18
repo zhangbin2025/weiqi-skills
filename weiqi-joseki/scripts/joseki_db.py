@@ -956,49 +956,42 @@ class JosekiDB:
             print(f"   去重后着法串总数: {total_unique_sequences}")
         
         # Phase 3: 遍历临时文件，读取定式串，展开前缀，用 CMS 估算频率，选出 top-k
-        # 优化2: 实时去重 + 父串升级（解决单链前缀占用top k问题）
+        # 新算法: 逆向遍历(从长到短) + 单链检测(子串代表父串)
         if verbose:
-            print(f"🔄 Phase 2: CMS估算前缀并选取 top-{top_k}（实时去重+父串升级）...")
+            print(f"🔄 Phase 2: CMS估算前缀并选取 top-{top_k}（逆向遍历+单链检测）...")
         
-        # 堆项类：支持通过引用修改属性
         class HeapItem:
-            __slots__ = ['count', 'prefix', 'direction', 'ruld_hash']
+            __slots__ = ['count', 'prefix', 'direction', 'prefix_hash']
             
-            def __init__(self, count, prefix, direction, ruld_hash):
+            def __init__(self, count, prefix, direction, prefix_hash):
                 self.count = count
                 self.prefix = prefix
                 self.direction = direction
-                self.ruld_hash = ruld_hash
+                self.prefix_hash = prefix_hash
             
             def __lt__(self, other):
                 return self.count < other.count
         
-        heap = []  # HeapItem 对象列表
-        seen_hashes = {}  # ruld_hash -> HeapItem 对象引用
+        heap = []  # 小顶堆，按 count 排序
+        seen_hashes = {}  # prefix_hash -> True (只存hash，不存引用)
         
         def _get_hash(prefix_parts, direction):
-            """获取标准化hash（统一为ruld方向）"""
-            if direction == 'ruld':
-                ruld_parts = prefix_parts
-            else:
-                # rudl -> ruld: 使用反向转换
-                # _convert_to_rudl 是 ruld->rudl，所以调用两次就回到ruld
-                # 或者需要实现 _convert_to_ruld 函数
-                rudl_parts = self._convert_to_rudl(prefix_parts)
-                ruld_parts = self._convert_to_rudl(rudl_parts)  # 再转一次回到ruld
-            return tuple(ruld_parts)
+            """获取hash（方向+前缀元组）"""
+            return (direction, tuple(prefix_parts))
         
-        def _get_parent_hash(prefix_parts, direction):
-            """获取父串的hash（去掉最后一个坐标）"""
-            if len(prefix_parts) <= 1:
+        def _get_child_hash(prefix_parts, direction, seq_parts):
+            """获取子串hash（当前前缀+下一手，用于单链检测）"""
+            if len(prefix_parts) >= len(seq_parts):
                 return None
-            parent_parts = prefix_parts[:-1]
-            return _get_hash(parent_parts, direction)
+            child_parts = prefix_parts + [seq_parts[len(prefix_parts)]]
+            return (direction, tuple(child_parts))
         
         processed = 0
         prefix_processed = 0
-        skipped_duplicate = 0
-        parent_upgraded = 0  # 父串升级计数
+        skipped_single_chain = 0  # 单链跳过计数
+        
+        # 单链检测阈值：次数相差在5%以内认为是单链
+        SINGLE_CHAIN_THRESHOLD = 0.05
         
         with gzip.open(temp_path, 'rt', encoding='utf-8') as f_in:
             for line in f_in:
@@ -1007,85 +1000,83 @@ class JosekiDB:
                     continue
                 
                 direction, joseki_str = line.split('|', 1)
-                
-                # 展开所有前缀并估算
                 seq_parts = joseki_str.split()
-                for end in range(min_moves, len(seq_parts) + 1):
-                    prefix = " ".join(seq_parts[:end])
+                
+                if len(seq_parts) < min_moves:
+                    continue
+                
+                # 逆向遍历：从最长前缀到 min_moves
+                last_count = float('inf')  # 上一个前缀的出现次数
+                
+                for end in range(len(seq_parts), min_moves - 1, -1):
                     prefix_parts = seq_parts[:end]
+                    prefix = " ".join(prefix_parts)
                     
                     # CMS 估算频率
                     est_count = cms.estimate(prefix)
                     
                     # 过滤低频前缀
                     if est_count < min_count:
+                        last_count = est_count
                         continue
                     
-                    # 优化6: 前缀单调性剪枝
-                    # 如果当前前缀进不了堆，更长的前缀肯定也进不了
-                    if len(heap) >= top_k and est_count <= heap[0].count:
-                        break  # 跳过这个着法串的剩余前缀
+                    # 获取当前hash
+                    prefix_hash = _get_hash(prefix_parts, direction)
                     
-                    # 实时去重：检查ruld/rudl是否已存在
-                    ruld_hash = _get_hash(prefix_parts, direction)
-                    if ruld_hash in seen_hashes:
-                        skipped_duplicate += 1
-                        continue  # 已存在，跳过
+                    # 单链检测：count和last_count相差不大，且下一前缀（子串）已处理
+                    if last_count != float('inf'):
+                        count_diff_ratio = abs(est_count - last_count) / max(est_count, last_count, 1)
+                        if count_diff_ratio < SINGLE_CHAIN_THRESHOLD:
+                            # 检查子串是否已处理（在堆中或被跳过）
+                            child_hash = _get_child_hash(prefix_parts, direction, seq_parts)
+                            if child_hash and child_hash in seen_hashes:
+                                # 单链：被子串代表，跳过
+                                skipped_single_chain += 1
+                                seen_hashes[prefix_hash] = False  # 标记为已处理（被代表）
+                                last_count = est_count
+                                continue
                     
-                    # 优化2: 父串升级检查
-                    # 如果父串在堆中且当前次数 >= 父串次数×95%，父串"升级"为子串
-                    parent_hash = _get_parent_hash(prefix_parts, direction)
-                    upgraded = False
+                    last_count = est_count
                     
-                    if parent_hash and parent_hash in seen_hashes:
-                        parent_item = seen_hashes[parent_hash]
-                        # 检查当前次数是否 >= 父串次数 × 95%
-                        if est_count >= parent_item.count * 0.95:
-                            # 父串升级为子串：直接修改对象属性！
-                            parent_item.prefix = prefix
-                            parent_item.ruld_hash = ruld_hash
-                            seen_hashes[ruld_hash] = parent_item  # 新hash指向同一对象
-                            del seen_hashes[parent_hash]  # 删除旧hash
-                            upgraded = True
-                            parent_upgraded += 1
-                            continue  # 子串不入堆，因为父串已"变成"子串
+                    # 检查当前前缀是否已在堆中（或被跳过）
+                    if prefix_hash in seen_hashes:
+                        # 父串已经被处理过，不需要继续
+                        break
                     
-                    # 正常插入堆（未升级的情况）
-                    if not upgraded:
-                        item = HeapItem(est_count, prefix, direction, ruld_hash)
-                        if len(heap) < top_k:
-                            heapq.heappush(heap, item)
-                            seen_hashes[ruld_hash] = item
-                        elif est_count > heap[0].count:  # 比堆顶大，替换
-                            old_item = heapq.heapreplace(heap, item)
-                            del seen_hashes[old_item.ruld_hash]
-                            seen_hashes[ruld_hash] = item
-                    
-                    prefix_processed += 1
+                    # 尝试入堆
+                    if len(heap) < top_k:
+                        item = HeapItem(est_count, prefix, direction, prefix_hash)
+                        heapq.heappush(heap, item)
+                        seen_hashes[prefix_hash] = True
+                        prefix_processed += 1
+                    elif est_count > heap[0].count:
+                        # 比堆顶大，替换
+                        old_item = heapq.heapreplace(heap, HeapItem(est_count, prefix, direction, prefix_hash))
+                        del seen_hashes[old_item.prefix_hash]
+                        seen_hashes[prefix_hash] = True
+                        prefix_processed += 1
+                    # 否则：进不了堆，但继续处理更短的前缀（因为更短的前缀次数可能更高）
                 
                 processed += 1
-                if verbose and prefix_processed % 100000 == 0:
-                    print(f"\r  处理: {processed}定式/{prefix_processed}前缀, 堆大小: {len(heap)}, 跳过重复: {skipped_duplicate}, 父串升级: {parent_upgraded}", end='', flush=True)
+                if verbose and processed % 10000 == 0:
+                    print(f"\r  处理: {processed}定式/{prefix_processed}前缀, 堆大小: {len(heap)}, 单链跳过: {skipped_single_chain}", end='', flush=True)
         
         if verbose:
-            print(f"\n  堆中候选: {len(heap)} 个（已实时去重）")
-            print(f"  父串升级: {parent_upgraded} 个")
+            print(f"\n  堆中候选: {len(heap)} 个")
+            print(f"  单链跳过: {skipped_single_chain} 个")
         
         # Phase 4: 收集候选，按频率倒序排序
         # 堆已经是实时去重后的，直接取出排序
+        # 注意：不再转换方向，保持原始方向入库
         candidates = []
         for item in heap:
-            # 统一转换为 ruld 方向的 moves
             parts = item.prefix.split()
-            if item.direction == 'ruld':
-                ruld_moves = parts
-            else:
-                ruld_moves = self._convert_to_rudl(parts)
             
             candidates.append({
-                'moves': list(ruld_moves),
+                'moves': list(parts),
                 'count': item.count,
-                'move_str': " ".join(ruld_moves)  # 优化4: 保存字符串用于排序
+                'move_str': " ".join(parts),  # 优化4: 保存字符串用于排序
+                'direction': item.direction
             })
         
         # 按频率降序排序
@@ -1101,8 +1092,9 @@ class JosekiDB:
             print(f"🔄 Phase 3: 入库（按字符串顺序）...")
             print(f"  候选定式: {len(final_candidates)} 个")
         
-        # 清理临时文件
-        temp_path.unlink()
+        # 保留临时文件用于调试（临时注释掉删除）
+        # temp_path.unlink()
+        print(f"\n  临时文件保留: {temp_path}")
         
         if dry_run:
             return len(final_candidates), 0, final_candidates
@@ -1115,27 +1107,23 @@ class JosekiDB:
             coords = cand['moves']
             count = cand['count']
             
-            if category == "/katago":
-                # 优化5: 概率 = 前缀出现次数 / 去重后的着法串总数
-                data = {
-                    "id": f"joseki_{len(self.joseki_list) + added + 1:03d}",
-                    "category_path": "/katago",
-                    "moves": coords,
-                    "frequency": count,
-                    "probability": round(count / probability_denominator, 6),
-                    "move_count": len(coords),
-                    "created_at": self._now()
-                }
-                self.joseki_list.append(data)
-                added += 1
-            else:
-                moves = []
-                color = 'B'
-                for c in coords:
-                    moves.append(f"{color}[{c}]")
-                    color = 'W' if color == 'B' else 'B'
-                self.add(name=f"{name_prefix}-{len(coords)}手", moves=moves, category_path=category)
-                added += 1
+            # 统一存储频率和概率（katago和导入模式）
+            data = {
+                "id": f"joseki_{len(self.joseki_list) + added + 1:03d}",
+                "category_path": category,
+                "moves": coords,
+                "frequency": count,
+                "probability": round(count / probability_denominator, 6),
+                "move_count": len(coords),
+                "created_at": self._now()
+            }
+            
+            # 如果是手动导入，额外添加name字段
+            if category != "/katago":
+                data["name"] = f"{name_prefix}-{len(coords)}手"
+            
+            self.joseki_list.append(data)
+            added += 1
             
             if verbose and added % 1000 == 0:
                 print(f"\r  入库: {added}", end='', flush=True)
