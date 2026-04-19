@@ -1531,11 +1531,11 @@ class JosekiDB:
             corner_best_matches[(file_path, corner)] = unique_matches[:top_k]  # 每个角最多top_k个
             
             # 保存该角的各路数前缀信息（用于后续判断是否使用9路着法串）
-            # 条件：9/11/13路的最大匹配前缀长度都一样，且都<3（很短）
+            # 条件：9/11/13路的最大匹配前缀长度都很短（<=3），且9路有数据
             use_nine_way = False
-            if prefix_lens_by_size and len(set(prefix_lens_by_size.values())) == 1:
-                common_len = list(prefix_lens_by_size.values())[0]
-                if common_len < 3 and nine_way_moves:
+            if prefix_lens_by_size and nine_way_moves:
+                all_short = all(plen <= 3 for plen in prefix_lens_by_size.values())
+                if all_short:
                     use_nine_way = True
             corner_best_matches[(file_path, corner)].append(use_nine_way)  # 追加标记
             corner_best_matches[(file_path, corner)].append(nine_way_moves)  # 追加9路着法串
