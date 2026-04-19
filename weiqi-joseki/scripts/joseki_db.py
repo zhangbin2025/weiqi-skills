@@ -1437,79 +1437,79 @@ class JosekiDB:
         if verbose:
             print(f"✅ 扫描完成: {total_files} 个文件，提取 {total_joseki} 个定式")
         
-        # 步骤2: 去重并聚合来源
-        unique_joseki = {}  # {moves_tuple: {'sources': [], 'count': 0}}
-        seen_sources = {}  # {moves_tuple: set(source_keys)}
-        source_counter = 0  # 用于区分内联SGF
+        # 步骤2: 按 (文件, 角) 分组，对每个分组只保留最佳匹配（和 match/identify 一致）
+        # 先对每个序列查询匹配，然后按 (file_path, corner) 分组取最佳
+        corner_records = []  # [(file_path, corner, moves_tuple, match_result, sgf_info)]
+        source_counter = 0
+        
+        if verbose:
+            print("🔎 正在比对定式库...")
         
         for moves_tuple, sgf_info, corner in joseki_records:
+            coords = list(moves_tuple)
+            # 查询最佳匹配的定式
+            matches = self.match_top_right(coords, top_k=1)
+            
+            if matches:
+                best_match = matches[0]
+                file_path = sgf_info.get('file', 'unknown')
+                if file_path == 'inline':
+                    source_counter += 1
+                    file_path = f"inline_{source_counter}"
+                corner_records.append((file_path, corner, moves_tuple, best_match, sgf_info))
+        
+        # 按 (file_path, corner) 分组，只保留 prefix_len 最大的
+        best_by_corner = {}  # {(file_path, corner): (moves_tuple, match_result, sgf_info)}
+        
+        for file_path, corner, moves_tuple, match_result, sgf_info in corner_records:
+            key = (file_path, corner)
+            if key not in best_by_corner:
+                best_by_corner[key] = (moves_tuple, match_result, sgf_info)
+            else:
+                # 保留 prefix_len 更大的
+                existing_match = best_by_corner[key][1]
+                if match_result.prefix_len > existing_match.prefix_len:
+                    best_by_corner[key] = (moves_tuple, match_result, sgf_info)
+        
+        # 步骤3: 按 moves_tuple 去重并聚合来源（同一序列可能来自不同文件/角）
+        unique_joseki = {}  # {moves_tuple: {'match_result': ..., 'sources': [], 'count': 0}}
+        
+        for (file_path, corner), (moves_tuple, match_result, sgf_info) in best_by_corner.items():
             if moves_tuple not in unique_joseki:
                 unique_joseki[moves_tuple] = {
+                    'match_result': match_result,
                     'sources': [],
                     'count': 0,
-                    'moves': list(moves_tuple),
-                    'move_count': len(moves_tuple)
+                    'moves': list(moves_tuple)
                 }
-                seen_sources[moves_tuple] = set()
             
             unique_joseki[moves_tuple]['count'] += 1
-            
-            # 生成唯一来源键
-            file_path = sgf_info.get('file', 'unknown')
-            if file_path == 'inline':
-                # 内联SGF使用计数器区分
-                source_counter += 1
-                source_key = f"inline_{source_counter}_{corner}"
-            else:
-                source_key = f"{file_path}_{corner}"
-            
-            # 避免重复添加相同来源
-            if source_key not in seen_sources[moves_tuple]:
-                seen_sources[moves_tuple].add(source_key)
-                source_copy = sgf_info.copy()
-                source_copy['corner'] = corner
-                unique_joseki[moves_tuple]['sources'].append(source_copy)
+            source_copy = sgf_info.copy()
+            source_copy['corner'] = corner
+            unique_joseki[moves_tuple]['sources'].append(source_copy)
         
         unique_count = len(unique_joseki)
         if verbose:
             print(f"📊 去重后: {unique_count} 个唯一定式")
         
-        # 步骤3: 查询每个定式在库中的情况
+        # 步骤4: 组装结果
         results = []
         
-        if verbose:
-            print("🔎 正在比对定式库...")
-        
-        for idx, (moves_tuple, data) in enumerate(unique_joseki.items()):
+        for moves_tuple, data in unique_joseki.items():
             coords = data['moves']
+            match_result = data['match_result']
             
-            # 查询最佳匹配的定式（使用新的前缀匹配）
-            matches = self.match_top_right(coords, top_k=1)
+            best_id = match_result.id
+            matched_prefix_len = match_result.prefix_len
+            matched_prefix_moves = coords[:matched_prefix_len]
             
-            best_id = ''
-            matched_prefix_len = 0
-            matched_prefix_moves = []
-            frequency = 0
-            is_rare = True  # 默认为罕见
+            # 获取匹配的定式序列
+            matched_joseki = self.get(best_id)
+            frequency = matched_joseki.get('frequency', 1) if matched_joseki else 1
+            library_probability = matched_joseki.get('probability', 0.0) if matched_joseki else 0.0
             
-            # 从定式库获取匹配定式的 probability
-            library_probability = 0.0
-            
-            if matches:
-                best_match = matches[0]
-                best_id = best_match.id
-                matched_prefix_len = best_match.prefix_len
-                matched_prefix_moves = coords[:matched_prefix_len]
-                
-                # 获取匹配的定式序列
-                matched_joseki = self.get(best_id)
-                if matched_joseki:
-                    frequency = matched_joseki.get('frequency', 1)
-                    # 获取库中定式的概率（入库时计算的）
-                    library_probability = matched_joseki.get('probability', 0.0)
-                
-                # 判断是否罕见：前缀长度是否达到 min_moves
-                is_rare = matched_prefix_len < min_moves
+            # 判断是否罕见：前缀长度是否达到 min_moves
+            is_rare = matched_prefix_len < min_moves
             
             # 计算发现概率（出现次数 / 总文件数）
             discovery_probability = data['count'] / total_files if total_files > 0 else 0.0
@@ -1521,14 +1521,11 @@ class JosekiDB:
                 'move_count': len(coords),
                 'matched_prefix': matched_prefix_moves,
                 'matched_prefix_len': matched_prefix_len,
-                'frequency': frequency,  # 库中匹配定式的出现次数（用于排序）
-                'probability': round(library_probability, 4),  # 库中定式的概率
-                'discovery_probability': round(discovery_probability, 4),  # 当前发现的出现概率
+                'frequency': frequency,
+                'probability': round(library_probability, 4),
+                'discovery_probability': round(discovery_probability, 4),
                 'sources': data['sources']
             })
-            
-            if verbose and (idx + 1) % 100 == 0:
-                print(f"  进度: {idx + 1}/{len(unique_joseki)}", end='', flush=True)
         
         if verbose:
             print(f"\n✅ 比对完成")
