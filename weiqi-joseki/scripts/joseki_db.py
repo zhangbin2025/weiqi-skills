@@ -1536,6 +1536,7 @@ class JosekiDB:
                 'move_count': len(coords),
                 'matched_prefix': matched_prefix_moves,
                 'matched_prefix_len': matched_prefix_len,
+                'matched_direction': direction,  # 添加 direction 字段
                 'frequency': frequency,
                 'probability': round(library_probability, 4),
                 'discovery_probability': round(discovery_probability, 4),
