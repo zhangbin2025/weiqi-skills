@@ -828,7 +828,7 @@ def main():
     # Discover 命令 - 发现有研究价值的定式
     p_discover = subparsers.add_parser("discover", help="发现值得研究的定式（罕见定式优先）")
     p_discover.add_argument("paths", nargs="+", help="SGF文件或目录路径（可多个）")
-    p_discover.add_argument("--first-n", type=int, default=50, help="分析前N手的定式（默认50）")
+    p_discover.add_argument("--first-n", type=int, default=80, help="分析前N手的定式（默认80）")
     p_discover.add_argument("--min-moves", type=int, default=4, help="定式最少手数（默认4）")
     p_discover.add_argument("--corner-sizes", type=str, default="9,11,13", help="角大小，如'9,11,13'（默认9,11,13）")
     p_discover.add_argument("--limit", type=int, default=50, help="最多返回多少个定式（默认50）")

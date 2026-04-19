@@ -1343,7 +1343,7 @@ class JosekiDB:
     def discover(
         self,
         sgf_sources: List,
-        first_n: int = 50,
+        first_n: int = 80,
         min_moves: int = 4,
         corner_sizes: List[int] = None,
         limit: int = 50,
