@@ -1424,10 +1424,8 @@ class JosekiDB:
                         for corner, moves in corner_dict.items():
                             # 提取坐标序列（保留脱先标记tt，过滤空字符串）
                             coords = [coord for color, coord in moves if coord]
-                            # 计算有效手数（非tt的坐标）
-                            effective_moves = len([c for c in coords if c != 'tt'])
-                            if effective_moves >= min_moves:
-                                joseki_records.append((tuple(coords), sgf_info, corner))
+                            # 注意：这里不再过滤有效手数，让后续逻辑处理
+                            joseki_records.append((tuple(coords), sgf_info, corner, size))
                 
             except Exception as e:
                 if verbose:
@@ -1438,61 +1436,91 @@ class JosekiDB:
         if verbose:
             print(f"✅ 扫描完成: {total_files} 个文件，提取 {total_joseki} 个定式")
         
-        # 步骤2: 按 (文件, 角) 收集所有 moves_tuple，然后像 identify 一样处理
-        # 首先按 (file_path, corner) 分组收集所有路数的 moves_tuple
-        corner_sequences = {}  # {(file_path, corner): [(moves_tuple, sgf_info)]}
+        # 步骤2: 按 (文件, 角, 路数) 收集所有 moves_tuple
+        # 修改：保留路数信息，用于后续多路浅匹配过滤
+        corner_sequences = {}  # {(file_path, corner, size): [(moves_tuple, sgf_info)]}
         source_counter = 0
         
-        for moves_tuple, sgf_info, corner in joseki_records:
+        for moves_tuple, sgf_info, corner, size in joseki_records:
             file_path = sgf_info.get('file', 'unknown')
             if file_path == 'inline':
                 source_counter += 1
                 file_path = f"inline_{source_counter}"
             
-            key = (file_path, corner)
+            key = (file_path, corner, size)
             if key not in corner_sequences:
                 corner_sequences[key] = []
             corner_sequences[key].append((moves_tuple, sgf_info))
         
-        # 步骤3: 对每个 (file_path, corner) 的多个路数结果进行合并匹配
-        # 逻辑与 identify_corners 对每个角的逻辑完全一致：
-        # 1. 收集所有路数的匹配结果
-        # 2. 按 joseki_id+direction 去重保留最佳
-        # 3. 按 prefix_len 降序排序，取前3个（与 identify 的 top_k=3 一致）
+        # 步骤3: 对每个 (file_path, corner) 进行多路浅匹配过滤
+        # 新逻辑：
+        # 1. 收集该角在所有路数下的匹配结果
+        # 2. 如果所有路数的匹配前缀都很短（< 3），且9路着法串很短（< min_moves），则过滤掉
+        # 3. 否则按 identify_corners 逻辑处理
         if verbose:
             print("🔎 正在比对定式库...")
         
-        corner_best_matches = {}  # {(file_path, corner): [(joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info)]}
+        corner_best_matches = {}  # {(file_path, corner): [(joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info, size)]}
         
-        for (file_path, corner), seq_list in corner_sequences.items():
+        # 先按 (file_path, corner) 分组
+        file_corner_groups = {}  # {(file_path, corner): [(size, seq_list)]}
+        for (file_path, corner, size), seq_list in corner_sequences.items():
+            key = (file_path, corner)
+            if key not in file_corner_groups:
+                file_corner_groups[key] = []
+            file_corner_groups[key].append((size, seq_list))
+        
+        # 对每个 (file_path, corner) 进行处理
+        for (file_path, corner), size_seq_list in file_corner_groups.items():
             corner_matches = []  # 这个角的所有匹配
+            all_prefix_lens = []  # 所有路数的最大匹配前缀
+            nine_way_moves = None  # 9路的着法串
             
-            # 对这个角的所有路数序列进行匹配（使用 top_k=3 与 identify 一致）
-            for moves_tuple, sgf_info in seq_list:
-                coords = list(moves_tuple)
-                matches = self.match_top_right(coords, top_k=top_k)
-                
-                if matches:
-                    for match in matches:
-                        corner_matches.append((match.id, match.matched_direction, match.prefix_len, moves_tuple, match, sgf_info))
-                else:
-                    # 空库中没有匹配的定式，添加一个空匹配（prefix_len=0）
-                    from scripts.joseki_db import PrefixMatchResult
-                    empty_match = PrefixMatchResult(
-                        id='',
-                        name='',
-                        prefix_len=0,
-                        total_moves=len(coords),
-                        matched_direction='ruld'
-                    )
-                    corner_matches.append(('', 'ruld', 0, moves_tuple, empty_match, sgf_info))
+            # 对这个角的所有路数序列进行匹配
+            for size, seq_list in size_seq_list:
+                for moves_tuple, sgf_info in seq_list:
+                    coords = list(moves_tuple)
+                    
+                    # 记录9路的着法串
+                    if size == 9:
+                        nine_way_moves = coords
+                    
+                    matches = self.match_top_right(coords, top_k=top_k)
+                    
+                    # 记录该路数的最大匹配前缀
+                    max_prefix_len = matches[0].prefix_len if matches else 0
+                    all_prefix_lens.append(max_prefix_len)
+                    
+                    if matches:
+                        for match in matches:
+                            corner_matches.append((match.id, match.matched_direction, match.prefix_len, moves_tuple, match, sgf_info, size))
+                    else:
+                        # 空库中没有匹配的定式，添加一个空匹配（prefix_len=0）
+                        from scripts.joseki_db import PrefixMatchResult
+                        empty_match = PrefixMatchResult(
+                            id='',
+                            name='',
+                            prefix_len=0,
+                            total_moves=len(coords),
+                            matched_direction='ruld'
+                        )
+                        corner_matches.append(('', 'ruld', 0, moves_tuple, empty_match, sgf_info, size))
+            
+            # 【多路浅匹配过滤】
+            # 如果所有路数的匹配前缀都很短（< 3），且9路着法串很短（< min_moves），则过滤掉
+            if all_prefix_lens and max(all_prefix_lens) < 3:
+                nine_way_effective_moves = len([c for c in (nine_way_moves or []) if c != 'tt'])
+                if nine_way_effective_moves < min_moves:
+                    if verbose:
+                        print(f"  🗑️  过滤假定式: {file_path} {corner} (最大前缀:{max(all_prefix_lens)}, 9路手数:{nine_way_effective_moves})")
+                    continue  # 跳过这个假定式
             
             # 先按 (joseki_id, direction) 去重，保留 prefix_len 最大的
             seen = {}
-            for joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info in corner_matches:
+            for joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info, size in corner_matches:
                 key = (joseki_id, direction)
                 if key not in seen or seen[key][2] < prefix_len:
-                    seen[key] = (joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info)
+                    seen[key] = (joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info, size)
             
             # 再按 prefix_len 降序排序，取前top_k个
             unique_matches = list(seen.values())
@@ -1503,7 +1531,7 @@ class JosekiDB:
         unique_joseki = {}  # {(moves_tuple, joseki_id, direction): {'match_result': ..., 'sources': [], 'count': 0}}
         
         for (file_path, corner), matches in corner_best_matches.items():
-            for joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info in matches:
+            for joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info, size in matches:
                 key = (moves_tuple, joseki_id, direction)
                 if key not in unique_joseki:
                     unique_joseki[key] = {
@@ -1516,6 +1544,7 @@ class JosekiDB:
                 unique_joseki[key]['count'] += 1
                 source_copy = sgf_info.copy()
                 source_copy['corner'] = corner
+                source_copy['size'] = size  # 保留路数信息
                 unique_joseki[key]['sources'].append(source_copy)
         
         unique_count = len(unique_joseki)
