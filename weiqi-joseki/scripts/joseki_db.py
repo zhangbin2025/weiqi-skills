@@ -1471,8 +1471,21 @@ class JosekiDB:
             for moves_tuple, sgf_info in seq_list:
                 coords = list(moves_tuple)
                 matches = self.match_top_right(coords, top_k=top_k)
-                for match in matches:
-                    corner_matches.append((match.id, match.matched_direction, match.prefix_len, moves_tuple, match, sgf_info))
+                
+                if matches:
+                    for match in matches:
+                        corner_matches.append((match.id, match.matched_direction, match.prefix_len, moves_tuple, match, sgf_info))
+                else:
+                    # 空库中没有匹配的定式，添加一个空匹配（prefix_len=0）
+                    from scripts.joseki_db import PrefixMatchResult
+                    empty_match = PrefixMatchResult(
+                        id='',
+                        name='',
+                        prefix_len=0,
+                        total_moves=len(coords),
+                        matched_direction='ruld'
+                    )
+                    corner_matches.append(('', 'ruld', 0, moves_tuple, empty_match, sgf_info))
             
             # 先按 (joseki_id, direction) 去重，保留 prefix_len 最大的
             seen = {}
