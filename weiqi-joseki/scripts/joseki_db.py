@@ -1473,14 +1473,14 @@ class JosekiDB:
                 for match in matches:
                     corner_matches.append((match.id, match.matched_direction, match.prefix_len, moves_tuple, match, sgf_info))
             
-            # 按 (joseki_id, direction) 去重，保留 prefix_len 最大的
+            # 先按 (joseki_id, direction) 去重，保留 prefix_len 最大的
             seen = {}
             for joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info in corner_matches:
                 key = (joseki_id, direction)
                 if key not in seen or seen[key][2] < prefix_len:
                     seen[key] = (joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info)
             
-            # 按 prefix_len 降序排序，取前3个（与 identify 的 top_k=3 一致）
+            # 再按 prefix_len 降序排序，取前3个（与 identify 的 top_k=3 一致）
             unique_matches = list(seen.values())
             unique_matches.sort(key=lambda x: -x[2])  # 按 prefix_len 降序
             corner_best_matches[(file_path, corner)] = unique_matches[:3]  # 每个角最多3个
@@ -1546,16 +1546,13 @@ class JosekiDB:
         if verbose:
             print(f"\n✅ 比对完成")
         
-        # 步骤4: 按研究价值排序
+        # 步骤4: 按最长匹配优先排序
         # 排序规则：
-        # 1. 罕见的优先（is_rare=True）
-        # 2. 罕见内部：匹配前缀短的优先（前缀短的更罕见）
-        # 3. 相同前缀长度：匹配定式频率少的优先
-        # 4. 最后排不罕见的（is_rare=False）
+        # 1. 匹配前缀长的优先（最长匹配优先，与 identify 一致）
+        # 2. 相同前缀长度：匹配定式频率高的优先
         results.sort(key=lambda x: (
-            not x['is_rare'],           # 罕见的在前
-            x['matched_prefix_len'],    # 匹配前缀短的优先
-            x['frequency'],             # 频率少的优先
+            -x['matched_prefix_len'],   # 匹配前缀长的优先（负号表示降序）
+            -x['frequency'],            # 频率高的优先
             -x['move_count']            # 手数多的优先
         ))
         
