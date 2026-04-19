@@ -1230,7 +1230,12 @@
                 const maxDepth = getDefaultPathDepth(currentNode);
                 const targetMove = DEFAULT_MOVE === -1 ? maxDepth : Math.min(DEFAULT_MOVE, maxDepth);
                 if (targetMove > 0) {
-                    state.displayIndex = targetMove;
+                    // 修复：将 displayIndex 对应的默认路径加入 currentPath
+                    // 确保试下等功能能正确获取当前局面的棋子
+                    for (let i = 0; i < targetMove; i++) {
+                        state.currentPath.push(0);
+                    }
+                    state.displayIndex = 0;
                     updateDisplay();
                 }
             }, 100);
