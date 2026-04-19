@@ -1346,11 +1346,12 @@ class JosekiDB:
         first_n: int = 80,
         min_moves: int = 4,
         corner_sizes: List[int] = None,
+        top_k: int = 1,
         limit: int = 50,
         verbose: bool = True
     ) -> Dict:
         """
-        发现值得研究的定式（罕见定式优先）
+        发现值得研究的定式（每个角最长匹配优先）
         
         排序规则（优先级从高到低）：
         1. 罕见定式（匹配前缀短）
@@ -1469,7 +1470,7 @@ class JosekiDB:
             # 对这个角的所有路数序列进行匹配（使用 top_k=3 与 identify 一致）
             for moves_tuple, sgf_info in seq_list:
                 coords = list(moves_tuple)
-                matches = self.match_top_right(coords, top_k=3)  # 与 identify 一致
+                matches = self.match_top_right(coords, top_k=top_k)
                 for match in matches:
                     corner_matches.append((match.id, match.matched_direction, match.prefix_len, moves_tuple, match, sgf_info))
             
@@ -1480,10 +1481,10 @@ class JosekiDB:
                 if key not in seen or seen[key][2] < prefix_len:
                     seen[key] = (joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info)
             
-            # 再按 prefix_len 降序排序，取前3个（与 identify 的 top_k=3 一致）
+            # 再按 prefix_len 降序排序，取前top_k个
             unique_matches = list(seen.values())
             unique_matches.sort(key=lambda x: -x[2])  # 按 prefix_len 降序
-            corner_best_matches[(file_path, corner)] = unique_matches[:3]  # 每个角最多3个
+            corner_best_matches[(file_path, corner)] = unique_matches[:top_k]  # 每个角最多top_k个
         
         # 步骤4: 按 (moves_tuple, joseki_id, direction) 聚合来源（同一序列+定式可能来自多个文件/角）
         unique_joseki = {}  # {(moves_tuple, joseki_id, direction): {'match_result': ..., 'sources': [], 'count': 0}}

@@ -672,6 +672,7 @@ def cmd_discover(args):
         first_n=args.first_n,
         min_moves=args.min_moves,
         corner_sizes=corner_sizes,
+        top_k=args.top_k,
         limit=args.limit,
         verbose=not args.quiet
     )
@@ -831,7 +832,8 @@ def main():
     p_discover.add_argument("--first-n", type=int, default=80, help="分析前N手的定式（默认80）")
     p_discover.add_argument("--min-moves", type=int, default=4, help="定式最少手数（默认4）")
     p_discover.add_argument("--corner-sizes", type=str, default="9,11,13", help="角大小，如'9,11,13'（默认9,11,13）")
-    p_discover.add_argument("--limit", type=int, default=50, help="最多返回多少个定式（默认50）")
+    p_discover.add_argument("--top-k", type=int, default=1, help="每个角返回前K个匹配（默认1）")
+    p_discover.add_argument("--limit", type=int, default=50, help="最多返回多少个定式（默认50，与top-k共同限制）")
     p_discover.add_argument("--output", choices=["table", "json"], default="table", help="输出格式（默认table）")
     p_discover.add_argument("--quiet", action="store_true", help="安静模式，只输出JSON结果（自动设置--output=json）")
     
