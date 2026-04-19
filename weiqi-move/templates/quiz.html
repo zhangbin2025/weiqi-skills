@@ -296,8 +296,8 @@
         .variation-controls {
             display: flex;
             align-items: center;
-            justify-content: center;
-            gap: 24px;
+            justify-content: space-around;
+            padding: 0 20px;
         }
         
         /* 变化图提示 */
@@ -587,7 +587,7 @@
                 <span class="variation-hint-text">👆 点击上方按钮查看 AI 推荐变化图</span>
                 <button class="variation-hint-close" onclick="hideVariationHint()" title="知道了">✕</button>
             </div>
-            <div class="variation-controls" id="variationControls" style="display: none; justify-content: center; align-items: center; gap: 8px;">
+            <div class="variation-controls" id="variationControls" style="display: none;">
                 <button class="btn btn-icon" onclick="varPrev()" title="上一步">◀</button>
                 <span id="varProgress">0 / 0</span>
                 <button class="btn btn-icon" onclick="varNext()" title="下一步">▶</button>
