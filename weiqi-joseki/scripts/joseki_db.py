@@ -1437,74 +1437,89 @@ class JosekiDB:
         if verbose:
             print(f"✅ 扫描完成: {total_files} 个文件，提取 {total_joseki} 个定式")
         
-        # 步骤2: 按 (文件, 角) 分组，对每个分组只保留最佳匹配（和 match/identify 一致）
-        # 先对每个序列查询匹配，然后按 (file_path, corner) 分组取最佳
-        corner_records = []  # [(file_path, corner, moves_tuple, match_result, sgf_info)]
+        # 步骤2: 按 (文件, 角) 收集所有 moves_tuple，然后像 identify 一样处理
+        # 首先按 (file_path, corner) 分组收集所有路数的 moves_tuple
+        corner_sequences = {}  # {(file_path, corner): [(moves_tuple, sgf_info)]}
         source_counter = 0
         
+        for moves_tuple, sgf_info, corner in joseki_records:
+            file_path = sgf_info.get('file', 'unknown')
+            if file_path == 'inline':
+                source_counter += 1
+                file_path = f"inline_{source_counter}"
+            
+            key = (file_path, corner)
+            if key not in corner_sequences:
+                corner_sequences[key] = []
+            corner_sequences[key].append((moves_tuple, sgf_info))
+        
+        # 步骤3: 对每个 (file_path, corner) 的多个路数结果进行合并匹配
+        # 逻辑与 identify_corners 对每个角的逻辑完全一致：
+        # 1. 收集所有路数的匹配结果
+        # 2. 按 joseki_id+direction 去重保留最佳
+        # 3. 按 prefix_len 降序排序，取前3个（与 identify 的 top_k=3 一致）
         if verbose:
             print("🔎 正在比对定式库...")
         
-        for moves_tuple, sgf_info, corner in joseki_records:
-            coords = list(moves_tuple)
-            # 查询最佳匹配的定式
-            matches = self.match_top_right(coords, top_k=1)
+        corner_best_matches = {}  # {(file_path, corner): [(joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info)]}
+        
+        for (file_path, corner), seq_list in corner_sequences.items():
+            corner_matches = []  # 这个角的所有匹配
             
-            if matches:
-                best_match = matches[0]
-                file_path = sgf_info.get('file', 'unknown')
-                if file_path == 'inline':
-                    source_counter += 1
-                    file_path = f"inline_{source_counter}"
-                corner_records.append((file_path, corner, moves_tuple, best_match, sgf_info))
-        
-        # 按 (file_path, corner) 分组，只保留 prefix_len 最大的
-        best_by_corner = {}  # {(file_path, corner): (moves_tuple, match_result, sgf_info)}
-        
-        for file_path, corner, moves_tuple, match_result, sgf_info in corner_records:
-            key = (file_path, corner)
-            if key not in best_by_corner:
-                best_by_corner[key] = (moves_tuple, match_result, sgf_info)
-            else:
-                # 保留 prefix_len 更大的
-                existing_match = best_by_corner[key][1]
-                if match_result.prefix_len > existing_match.prefix_len:
-                    best_by_corner[key] = (moves_tuple, match_result, sgf_info)
-        
-        # 步骤3: 按 moves_tuple 去重并聚合来源（同一序列可能来自不同文件/角）
-        unique_joseki = {}  # {moves_tuple: {'match_result': ..., 'sources': [], 'count': 0}}
-        
-        for (file_path, corner), (moves_tuple, match_result, sgf_info) in best_by_corner.items():
-            if moves_tuple not in unique_joseki:
-                unique_joseki[moves_tuple] = {
-                    'match_result': match_result,
-                    'sources': [],
-                    'count': 0,
-                    'moves': list(moves_tuple)
-                }
+            # 对这个角的所有路数序列进行匹配（使用 top_k=3 与 identify 一致）
+            for moves_tuple, sgf_info in seq_list:
+                coords = list(moves_tuple)
+                matches = self.match_top_right(coords, top_k=3)  # 与 identify 一致
+                for match in matches:
+                    corner_matches.append((match.id, match.matched_direction, match.prefix_len, moves_tuple, match, sgf_info))
             
-            unique_joseki[moves_tuple]['count'] += 1
-            source_copy = sgf_info.copy()
-            source_copy['corner'] = corner
-            unique_joseki[moves_tuple]['sources'].append(source_copy)
+            # 按 (joseki_id, direction) 去重，保留 prefix_len 最大的
+            seen = {}
+            for joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info in corner_matches:
+                key = (joseki_id, direction)
+                if key not in seen or seen[key][2] < prefix_len:
+                    seen[key] = (joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info)
+            
+            # 按 prefix_len 降序排序，取前3个（与 identify 的 top_k=3 一致）
+            unique_matches = list(seen.values())
+            unique_matches.sort(key=lambda x: -x[2])  # 按 prefix_len 降序
+            corner_best_matches[(file_path, corner)] = unique_matches[:3]  # 每个角最多3个
+        
+        # 步骤4: 按 (moves_tuple, joseki_id, direction) 聚合来源（同一序列+定式可能来自多个文件/角）
+        unique_joseki = {}  # {(moves_tuple, joseki_id, direction): {'match_result': ..., 'sources': [], 'count': 0}}
+        
+        for (file_path, corner), matches in corner_best_matches.items():
+            for joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info in matches:
+                key = (moves_tuple, joseki_id, direction)
+                if key not in unique_joseki:
+                    unique_joseki[key] = {
+                        'match_result': match_result,
+                        'sources': [],
+                        'count': 0,
+                        'moves': list(moves_tuple)
+                    }
+                
+                unique_joseki[key]['count'] += 1
+                source_copy = sgf_info.copy()
+                source_copy['corner'] = corner
+                unique_joseki[key]['sources'].append(source_copy)
         
         unique_count = len(unique_joseki)
         if verbose:
             print(f"📊 去重后: {unique_count} 个唯一定式")
         
-        # 步骤4: 组装结果
+        # 步骤6: 组装结果
         results = []
         
-        for moves_tuple, data in unique_joseki.items():
+        for (moves_tuple, joseki_id, direction), data in unique_joseki.items():
             coords = data['moves']
             match_result = data['match_result']
             
-            best_id = match_result.id
             matched_prefix_len = match_result.prefix_len
             matched_prefix_moves = coords[:matched_prefix_len]
             
             # 获取匹配的定式序列
-            matched_joseki = self.get(best_id)
+            matched_joseki = self.get(joseki_id)
             frequency = matched_joseki.get('frequency', 1) if matched_joseki else 1
             library_probability = matched_joseki.get('probability', 0.0) if matched_joseki else 0.0
             
@@ -1515,7 +1530,7 @@ class JosekiDB:
             discovery_probability = data['count'] / total_files if total_files > 0 else 0.0
             
             results.append({
-                'joseki_id': best_id,
+                'joseki_id': joseki_id,
                 'is_rare': is_rare,
                 'moves': coords,
                 'move_count': len(coords),
