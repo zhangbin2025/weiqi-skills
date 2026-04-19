@@ -1510,12 +1510,27 @@ class JosekiDB:
             all_prefix_lens = list(prefix_lens_by_size.values())
             
             # 【多路浅匹配过滤】
-            # 如果所有路数的匹配前缀都很短（< 3），则判定为假定式并过滤掉
-            # 原理：真正的角部定式应该在至少一个路数下形成较长的匹配前缀
+            # 判定为假定式并过滤掉的情况：
+            # 1. 所有路数的匹配前缀都很短（< 3）
+            # 2. 或者9路和11路都没有数据（着法超出小角范围，只有13路有数据）
+            is_fake_joseki = False
+            
+            # 情况1：所有路数的匹配前缀都很短
             if all_prefix_lens and max(all_prefix_lens) < 3:
+                is_fake_joseki = True
+            
+            # 情况2：9路和11路都没有数据（prefix_lens_by_size不包含9和11）
+            if 9 not in prefix_lens_by_size and 11 not in prefix_lens_by_size:
+                # 只有13路有数据，说明着法超出小角范围
+                is_fake_joseki = True
+            
+            if is_fake_joseki:
                 if verbose:
-                    nine_way_effective_moves = len([c for c in (nine_way_moves or []) if c != 'tt'])
-                    print(f"  🗑️  过滤假定式: {file_path} {corner} (9/11/13路最大前缀:{max(all_prefix_lens)}, 9路手数:{nine_way_effective_moves})")
+                    if all_prefix_lens and max(all_prefix_lens) < 3:
+                        nine_way_effective_moves = len([c for c in (nine_way_moves or []) if c != 'tt'])
+                        print(f"  🗑️  过滤假定式: {file_path} {corner} (9/11/13路最大前缀:{max(all_prefix_lens)}, 9路手数:{nine_way_effective_moves})")
+                    else:
+                        print(f"  🗑️  过滤假定式: {file_path} {corner} (9/11路无数据，着法超出小角范围)")
                 continue  # 跳过这个假定式
             
             # 先按 (joseki_id, direction) 去重，保留 prefix_len 最大的
