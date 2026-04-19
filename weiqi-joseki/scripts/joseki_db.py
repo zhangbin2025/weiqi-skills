@@ -417,13 +417,20 @@ class JosekiDB:
         """获取定式详情 (O(1) 字典查找)"""
         return self._id_index.get(joseki_id)
     
-    def list_all(self, category: str = None) -> List[dict]:
-        """列出现式（精简字段）"""
+    def list_all(self, category: str = None, sort_by: str = None, sort_order: str = "desc") -> List[dict]:
+        """列出现式（精简字段）
+        
+        Args:
+            category: 按分类路径过滤（前缀匹配）
+            sort_by: 排序字段，可选：id, name, category_path, move_count, frequency, probability, created_at
+            sort_order: 排序方向，asc（升序）或 desc（降序），默认 desc
+        """
         result = self.joseki_list
         if category:
             result = [j for j in result if j.get("category_path", "").startswith(category)]
         
-        return [{
+        # 构建结果列表
+        items = [{
             "id": j["id"],
             "name": j.get("name", ""),
             "category_path": j.get("category_path", ""),
@@ -431,8 +438,33 @@ class JosekiDB:
             "moves": j.get("moves", []),
             "frequency": j.get("frequency"),
             "probability": j.get("probability"),
-            "tags": j.get("tags", [])
+            "tags": j.get("tags", []),
+            "created_at": j.get("created_at", "")
         } for j in result]
+        
+        # 排序处理
+        if sort_by:
+            # 有效的排序字段
+            valid_fields = ["id", "name", "category_path", "move_count", "frequency", "probability", "created_at"]
+            if sort_by not in valid_fields:
+                sort_by = "id"  # 默认按ID排序
+            
+            # 反转标志：desc = True（降序），asc = False（升序）
+            reverse = sort_order.lower() != "asc"
+            
+            def sort_key(item):
+                value = item.get(sort_by)
+                # 处理 None 值
+                if value is None:
+                    # 数值字段用 0，字符串用空字符串
+                    if sort_by in ["move_count", "frequency", "probability"]:
+                        return 0
+                    return ""
+                return value
+            
+            items.sort(key=sort_key, reverse=reverse)
+        
+        return items
     
     # ========== 匹配 ==========
     

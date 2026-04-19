@@ -403,6 +403,168 @@ class TestJosekiDB(unittest.TestCase):
             self.assertIn('frequency', j)
             self.assertIn('probability', j)
 
+    # ========== list_all 排序功能测试 ==========
+    
+    def test_list_all_sort_by_id_desc(self):
+        """按ID降序排序（默认）"""
+        self.db.add(name="定式A", moves=["B[pd]", "W[qf]"])
+        self.db.add(name="定式B", moves=["B[dd]", "W[cc]"])
+        self.db.add(name="定式C", moves=["B[qq]", "W[rr]"])
+        
+        result = self.db.list_all(sort_by="id", sort_order="desc")
+        self.assertEqual(len(result), 3)
+        # 降序：joseki_003, joseki_002, joseki_001
+        self.assertEqual(result[0]['id'], "joseki_003")
+        self.assertEqual(result[1]['id'], "joseki_002")
+        self.assertEqual(result[2]['id'], "joseki_001")
+    
+    def test_list_all_sort_by_id_asc(self):
+        """按ID升序排序"""
+        self.db.add(name="定式A", moves=["B[pd]", "W[qf]"])
+        self.db.add(name="定式B", moves=["B[dd]", "W[cc]"])
+        self.db.add(name="定式C", moves=["B[qq]", "W[rr]"])
+        
+        result = self.db.list_all(sort_by="id", sort_order="asc")
+        self.assertEqual(len(result), 3)
+        # 升序：joseki_001, joseki_002, joseki_003
+        self.assertEqual(result[0]['id'], "joseki_001")
+        self.assertEqual(result[1]['id'], "joseki_002")
+        self.assertEqual(result[2]['id'], "joseki_003")
+    
+    def test_list_all_sort_by_frequency_desc(self):
+        """按出现次数降序排序"""
+        # 创建带 frequency 的定式
+        self.db.joseki_list = [
+            {"id": "joseki_001", "name": "高频定式", "category_path": "/test", "moves": ["pd", "qf"], "frequency": 100, "probability": 0.5},
+            {"id": "joseki_002", "name": "中频定式", "category_path": "/test", "moves": ["dd", "cc"], "frequency": 50, "probability": 0.3},
+            {"id": "joseki_003", "name": "低频定式", "category_path": "/test", "moves": ["qq", "rr"], "frequency": 10, "probability": 0.1},
+        ]
+        self.db._save()
+        
+        result = self.db.list_all(sort_by="frequency", sort_order="desc")
+        self.assertEqual(result[0]['frequency'], 100)
+        self.assertEqual(result[1]['frequency'], 50)
+        self.assertEqual(result[2]['frequency'], 10)
+    
+    def test_list_all_sort_by_frequency_asc(self):
+        """按出现次数升序排序"""
+        self.db.joseki_list = [
+            {"id": "joseki_001", "name": "高频定式", "category_path": "/test", "moves": ["pd", "qf"], "frequency": 100, "probability": 0.5},
+            {"id": "joseki_002", "name": "中频定式", "category_path": "/test", "moves": ["dd", "cc"], "frequency": 50, "probability": 0.3},
+            {"id": "joseki_003", "name": "低频定式", "category_path": "/test", "moves": ["qq", "rr"], "frequency": 10, "probability": 0.1},
+        ]
+        self.db._save()
+        
+        result = self.db.list_all(sort_by="frequency", sort_order="asc")
+        self.assertEqual(result[0]['frequency'], 10)
+        self.assertEqual(result[1]['frequency'], 50)
+        self.assertEqual(result[2]['frequency'], 100)
+    
+    def test_list_all_sort_by_move_count(self):
+        """按手数排序"""
+        self.db.joseki_list = [
+            {"id": "joseki_001", "name": "长定式", "category_path": "/test", "moves": ["pd", "qf", "nc", "rd", "qf"]},  # 5手
+            {"id": "joseki_002", "name": "短定式", "category_path": "/test", "moves": ["pd", "qf"]},  # 2手
+            {"id": "joseki_003", "name": "中等定式", "category_path": "/test", "moves": ["dd", "cc", "fc"]},  # 3手
+        ]
+        self.db._save()
+        
+        result = self.db.list_all(sort_by="move_count", sort_order="desc")
+        self.assertEqual(result[0]['move_count'], 5)
+        self.assertEqual(result[1]['move_count'], 3)
+        self.assertEqual(result[2]['move_count'], 2)
+    
+    def test_list_all_sort_by_name(self):
+        """按名称排序"""
+        self.db.add(name="Charlie", moves=["B[pd]", "W[qf]"])
+        self.db.add(name="Alpha", moves=["B[dd]", "W[cc]"])
+        self.db.add(name="Bravo", moves=["B[qq]", "W[rr]"])
+        
+        result = self.db.list_all(sort_by="name", sort_order="asc")
+        self.assertEqual(result[0]['name'], "Alpha")
+        self.assertEqual(result[1]['name'], "Bravo")
+        self.assertEqual(result[2]['name'], "Charlie")
+    
+    def test_list_all_sort_by_probability(self):
+        """按概率排序"""
+        self.db.joseki_list = [
+            {"id": "joseki_001", "name": "定式1", "category_path": "/test", "moves": ["pd", "qf"], "frequency": 100, "probability": 0.01},
+            {"id": "joseki_002", "name": "定式2", "category_path": "/test", "moves": ["dd", "cc"], "frequency": 50, "probability": 0.50},
+            {"id": "joseki_003", "name": "定式3", "category_path": "/test", "moves": ["qq", "rr"], "frequency": 10, "probability": 0.25},
+        ]
+        self.db._save()
+        
+        result = self.db.list_all(sort_by="probability", sort_order="desc")
+        self.assertAlmostEqual(result[0]['probability'], 0.50)
+        self.assertAlmostEqual(result[1]['probability'], 0.25)
+        self.assertAlmostEqual(result[2]['probability'], 0.01)
+    
+    def test_list_all_sort_with_none_values(self):
+        """排序时处理 None 值"""
+        self.db.joseki_list = [
+            {"id": "joseki_001", "name": "定式1", "category_path": "/test", "moves": ["pd", "qf"], "frequency": None, "probability": None},
+            {"id": "joseki_002", "name": "定式2", "category_path": "/test", "moves": ["dd", "cc"], "frequency": 100, "probability": 0.5},
+            {"id": "joseki_003", "name": "定式3", "category_path": "/test", "moves": ["qq", "rr"], "frequency": 50, "probability": 0.3},
+        ]
+        self.db._save()
+        
+        # 降序：None 会被当作 0，所以在最后
+        result = self.db.list_all(sort_by="frequency", sort_order="desc")
+        self.assertEqual(result[0]['frequency'], 100)
+        self.assertEqual(result[1]['frequency'], 50)
+        self.assertIsNone(result[2]['frequency'])
+    
+    def test_list_all_sort_by_category_path(self):
+        """按分类路径排序"""
+        self.db.add(name="定式B", category_path="/星位/小飞挂", moves=["B[pd]", "W[qf]"])
+        self.db.add(name="定式A", category_path="/小目/小飞挂", moves=["B[dd]", "W[cc]"])
+        self.db.add(name="定式C", category_path="/三三/肩冲", moves=["B[qq]", "W[rr]"])
+        
+        result = self.db.list_all(sort_by="category_path", sort_order="asc")
+        # 按字母顺序：三三 < 小目 < 星位
+        self.assertEqual(result[0]['category_path'], "/三三/肩冲")
+        self.assertEqual(result[1]['category_path'], "/小目/小飞挂")
+        self.assertEqual(result[2]['category_path'], "/星位/小飞挂")
+    
+    def test_list_all_sort_by_created_at(self):
+        """按创建时间排序"""
+        from datetime import datetime
+        
+        self.db.joseki_list = [
+            {"id": "joseki_001", "name": "早期定式", "category_path": "/test", "moves": ["pd", "qf"], "created_at": "2026-01-01T10:00:00"},
+            {"id": "joseki_002", "name": "晚期定式", "category_path": "/test", "moves": ["dd", "cc"], "created_at": "2026-03-01T10:00:00"},
+            {"id": "joseki_003", "name": "中期定式", "category_path": "/test", "moves": ["qq", "rr"], "created_at": "2026-02-01T10:00:00"},
+        ]
+        self.db._save()
+        
+        result = self.db.list_all(sort_by="created_at", sort_order="desc")
+        self.assertEqual(result[0]['name'], "晚期定式")
+        self.assertEqual(result[1]['name'], "中期定式")
+        self.assertEqual(result[2]['name'], "早期定式")
+    
+    def test_list_all_sort_with_category_filter(self):
+        """排序结合分类过滤"""
+        self.db.add(name="定式A", category_path="/星位", moves=["B[pd]", "W[qf]"])
+        self.db.add(name="定式B", category_path="/星位", moves=["B[pd]", "W[qf]", "B[nc]"])
+        self.db.add(name="定式C", category_path="/小目", moves=["B[dd]", "W[cc]"])
+        
+        result = self.db.list_all(category="/星位", sort_by="move_count", sort_order="desc")
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]['name'], "定式B")  # 3手
+        self.assertEqual(result[1]['name'], "定式A")  # 2手
+    
+    def test_list_all_no_sort(self):
+        """不指定排序时保持原始顺序"""
+        self.db.add(name="定式1", moves=["B[pd]", "W[qf]"])
+        self.db.add(name="定式2", moves=["B[dd]", "W[cc]"])
+        self.db.add(name="定式3", moves=["B[qq]", "W[rr]"])
+        
+        result = self.db.list_all()
+        # 不排序时保持添加顺序
+        self.assertEqual(result[0]['name'], "定式1")
+        self.assertEqual(result[1]['name'], "定式2")
+        self.assertEqual(result[2]['name'], "定式3")
+
 
 class TestConflictCheck(unittest.TestCase):
     """测试冲突检测"""

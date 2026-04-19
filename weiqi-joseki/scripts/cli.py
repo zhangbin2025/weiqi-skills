@@ -102,7 +102,11 @@ def cmd_clear(args):
 
 def cmd_list(args):
     db = JosekiDB(args.db)
-    joseki_list = db.list_all(category=args.category)
+    joseki_list = db.list_all(
+        category=args.category,
+        sort_by=args.sort_by,
+        sort_order=args.sort_order
+    )
     if not joseki_list:
         print("数据库为空")
         return
@@ -750,6 +754,9 @@ def main():
     p_list.add_argument("--category")
     p_list.add_argument("--limit", type=int)
     p_list.add_argument("--max-moves", type=int, default=8, help="最多显示多少手（默认8）")
+    p_list.add_argument("--sort-by", choices=["id", "name", "category_path", "move_count", "frequency", "probability", "created_at"],
+                       default="id", help="排序字段（默认id）")
+    p_list.add_argument("--sort-order", choices=["asc", "desc"], default="desc", help="排序方向（默认desc）")
     
     p_8way = subparsers.add_parser("8way", help="生成定式8向变化SGF")
     p_8way.add_argument("id", help="定式ID")
