@@ -1527,18 +1527,34 @@ class JosekiDB:
             unique_matches.sort(key=lambda x: -x[2])  # 按 prefix_len 降序
             corner_best_matches[(file_path, corner)] = unique_matches[:top_k]  # 每个角最多top_k个
         
-        # 步骤4: 按 (moves_tuple, joseki_id, direction) 聚合来源（同一序列+定式可能来自多个文件/角）
+        # 步骤4: 按 (file_path, corner) 聚合结果，优先使用9路的着法序列
+        # 收集每个 (file_path, corner) 的9路着法串
+        nine_way_sequences = {}  # {(file_path, corner): moves_tuple}
+        for (file_path, corner), size_seq_list in file_corner_groups.items():
+            for size, seq_list in size_seq_list:
+                if size == 9:
+                    for moves_tuple, sgf_info in seq_list:
+                        nine_way_sequences[(file_path, corner)] = moves_tuple
+                        break  # 只取第一个
+        
+        # 按 (moves_tuple, joseki_id, direction) 聚合来源
         unique_joseki = {}  # {(moves_tuple, joseki_id, direction): {'match_result': ..., 'sources': [], 'count': 0}}
         
         for (file_path, corner), matches in corner_best_matches.items():
+            # 获取该角的9路着法串（如果存在）
+            nine_way_moves = nine_way_sequences.get((file_path, corner))
+            
             for joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info, size in matches:
-                key = (moves_tuple, joseki_id, direction)
+                # 使用9路的着法序列（如果存在），否则使用匹配来源的序列
+                display_moves = nine_way_moves if nine_way_moves else moves_tuple
+                
+                key = (display_moves, joseki_id, direction)
                 if key not in unique_joseki:
                     unique_joseki[key] = {
                         'match_result': match_result,
                         'sources': [],
                         'count': 0,
-                        'moves': list(moves_tuple)
+                        'moves': list(display_moves)
                     }
                 
                 unique_joseki[key]['count'] += 1
