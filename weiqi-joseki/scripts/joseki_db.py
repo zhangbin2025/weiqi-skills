@@ -1473,7 +1473,7 @@ class JosekiDB:
         # 对每个 (file_path, corner) 进行处理
         for (file_path, corner), size_seq_list in file_corner_groups.items():
             corner_matches = []  # 这个角的所有匹配
-            all_prefix_lens = []  # 所有路数的最大匹配前缀
+            prefix_lens_by_size = {}  # {size: max_prefix_len} 记录各路数的最大匹配前缀
             nine_way_moves = None  # 9路的着法串
             
             # 对这个角的所有路数序列进行匹配
@@ -1483,13 +1483,13 @@ class JosekiDB:
                     
                     # 记录9路的着法串
                     if size == 9:
-                        nine_way_moves = coords
+                        nine_way_moves = moves_tuple
                     
                     matches = self.match_top_right(coords, top_k=top_k)
                     
                     # 记录该路数的最大匹配前缀
                     max_prefix_len = matches[0].prefix_len if matches else 0
-                    all_prefix_lens.append(max_prefix_len)
+                    prefix_lens_by_size[size] = max_prefix_len
                     
                     if matches:
                         for match in matches:
@@ -1505,6 +1505,9 @@ class JosekiDB:
                             matched_direction='ruld'
                         )
                         corner_matches.append(('', 'ruld', 0, moves_tuple, empty_match, sgf_info, size))
+            
+            # 收集所有路数的最大前缀长度
+            all_prefix_lens = list(prefix_lens_by_size.values())
             
             # 【多路浅匹配过滤】
             # 如果所有路数的匹配前缀都很短（< 3），则判定为假定式并过滤掉
@@ -1526,27 +1529,34 @@ class JosekiDB:
             unique_matches = list(seen.values())
             unique_matches.sort(key=lambda x: -x[2])  # 按 prefix_len 降序
             corner_best_matches[(file_path, corner)] = unique_matches[:top_k]  # 每个角最多top_k个
+            
+            # 保存该角的各路数前缀信息（用于后续判断是否使用9路着法串）
+            # 条件：9/11/13路的最大匹配前缀长度都一样，且都<3（很短）
+            use_nine_way = False
+            if prefix_lens_by_size and len(set(prefix_lens_by_size.values())) == 1:
+                common_len = list(prefix_lens_by_size.values())[0]
+                if common_len < 3 and nine_way_moves:
+                    use_nine_way = True
+            corner_best_matches[(file_path, corner)].append(use_nine_way)  # 追加标记
+            corner_best_matches[(file_path, corner)].append(nine_way_moves)  # 追加9路着法串
         
-        # 步骤4: 按 (file_path, corner) 聚合结果，优先使用9路的着法序列
-        # 收集每个 (file_path, corner) 的9路着法串
-        nine_way_sequences = {}  # {(file_path, corner): moves_tuple}
-        for (file_path, corner), size_seq_list in file_corner_groups.items():
-            for size, seq_list in size_seq_list:
-                if size == 9:
-                    for moves_tuple, sgf_info in seq_list:
-                        nine_way_sequences[(file_path, corner)] = moves_tuple
-                        break  # 只取第一个
-        
-        # 按 (moves_tuple, joseki_id, direction) 聚合来源
+        # 步骤4: 按 (moves_tuple, joseki_id, direction) 聚合来源
         unique_joseki = {}  # {(moves_tuple, joseki_id, direction): {'match_result': ..., 'sources': [], 'count': 0}}
         
-        for (file_path, corner), matches in corner_best_matches.items():
-            # 获取该角的9路着法串（如果存在）
-            nine_way_moves = nine_way_sequences.get((file_path, corner))
+        for (file_path, corner), matches_with_meta in corner_best_matches.items():
+            # 分离元数据
+            if len(matches_with_meta) >= 3 and isinstance(matches_with_meta[-2], bool):
+                use_nine_way = matches_with_meta[-2]
+                nine_way_moves = matches_with_meta[-1]
+                matches = matches_with_meta[:-2]
+            else:
+                use_nine_way = False
+                nine_way_moves = None
+                matches = matches_with_meta
             
             for joseki_id, direction, prefix_len, moves_tuple, match_result, sgf_info, size in matches:
-                # 使用9路的着法序列（如果存在），否则使用匹配来源的序列
-                display_moves = nine_way_moves if nine_way_moves else moves_tuple
+                # 如果多路前缀一样且很短，使用9路着法串；否则使用匹配来源的序列
+                display_moves = nine_way_moves if use_nine_way else moves_tuple
                 
                 key = (display_moves, joseki_id, direction)
                 if key not in unique_joseki:
