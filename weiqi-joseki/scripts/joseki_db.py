@@ -1507,13 +1507,13 @@ class JosekiDB:
                         corner_matches.append(('', 'ruld', 0, moves_tuple, empty_match, sgf_info, size))
             
             # 【多路浅匹配过滤】
-            # 如果所有路数的匹配前缀都很短（< 3），且9路着法串很短（< min_moves），则过滤掉
+            # 如果所有路数的匹配前缀都很短（< 3），则判定为假定式并过滤掉
+            # 原理：真正的角部定式应该在至少一个路数下形成较长的匹配前缀
             if all_prefix_lens and max(all_prefix_lens) < 3:
-                nine_way_effective_moves = len([c for c in (nine_way_moves or []) if c != 'tt'])
-                if nine_way_effective_moves < min_moves:
-                    if verbose:
-                        print(f"  🗑️  过滤假定式: {file_path} {corner} (最大前缀:{max(all_prefix_lens)}, 9路手数:{nine_way_effective_moves})")
-                    continue  # 跳过这个假定式
+                if verbose:
+                    nine_way_effective_moves = len([c for c in (nine_way_moves or []) if c != 'tt'])
+                    print(f"  🗑️  过滤假定式: {file_path} {corner} (9/11/13路最大前缀:{max(all_prefix_lens)}, 9路手数:{nine_way_effective_moves})")
+                continue  # 跳过这个假定式
             
             # 先按 (joseki_id, direction) 去重，保留 prefix_len 最大的
             seen = {}
