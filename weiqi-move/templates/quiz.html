@@ -300,6 +300,54 @@
             gap: 10px;
         }
         
+        /* 变化图提示 */
+        .variation-hint {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            animation: slideDown 0.3s ease;
+        }
+        .variation-hint.hidden {
+            display: none;
+        }
+        .variation-hint-text {
+            flex: 1;
+        }
+        .variation-hint-close {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .variation-hint-close:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
         /* 试下模式面板 */
         .tryplay-panel {
             display: none;
@@ -530,6 +578,11 @@
 
         <!-- 变化图面板 -->
         <div class="variation-panel" id="variationPanel">
+            <!-- 变化图提示 -->
+            <div class="variation-hint" id="variationHint">
+                <span class="variation-hint-text">👆 点击上方按钮查看 AI 推荐变化图</span>
+                <button class="variation-hint-close" onclick="hideVariationHint()" title="知道了">✕</button>
+            </div>
             <div class="variation-header" id="variationHeader" style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px;">
                 <div class="variation-options" id="variationOptions" style="flex: 1; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start;"></div>
                 <button class="btn btn-icon btn-danger" onclick="backToMain()" title="返回主面板" style="flex-shrink: 0;">↩</button>
@@ -743,6 +796,10 @@
         const problems = {{PROBLEMS_JSON}};
         let currentProblemIndex = 0;
         let currentProblem = problems[0];
+        
+        // 变化图提示状态
+        const VARIATION_HINT_KEY = 'weiqi_move_variation_hint_seen';
+        let variationHintShown = localStorage.getItem(VARIATION_HINT_KEY) === 'true';
         
         // 状态管理
         const STATE_MAIN = 'main';        // 主面板状态
@@ -1270,8 +1327,33 @@
             if (document.getElementById('variationHeader')) {
                 document.getElementById('variationHeader').style.display = 'flex';
             }
+            
+            // 显示或隐藏变化图提示
+            updateVariationHint();
 
             updateDisplay();
+        }
+        
+        // 更新变化图提示显示
+        function updateVariationHint() {
+            const hint = document.getElementById('variationHint');
+            if (hint) {
+                if (variationHintShown) {
+                    hint.classList.add('hidden');
+                } else {
+                    hint.classList.remove('hidden');
+                }
+            }
+        }
+        
+        // 隐藏变化图提示
+        function hideVariationHint() {
+            const hint = document.getElementById('variationHint');
+            if (hint) {
+                hint.classList.add('hidden');
+            }
+            variationHintShown = true;
+            localStorage.setItem(VARIATION_HINT_KEY, 'true');
         }
 
         function showTryplayPanel() {
@@ -1378,6 +1460,7 @@
         // 加载实战变化图
         function loadPracticalVariation() {
             if (!currentProblem.practical_move) return;
+            hideVariationHint();  // 用户点击后隐藏提示
             
             // 计算变化图着法的提子情况
             const board = createBoard();
@@ -1428,6 +1511,7 @@
         }
 
         function loadVariation(idx) {
+            hideVariationHint();  // 用户点击后隐藏提示
             const opt = currentProblem.options[idx];
             currentVariationOption = idx;
 
