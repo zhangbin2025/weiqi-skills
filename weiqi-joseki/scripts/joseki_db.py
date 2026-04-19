@@ -541,27 +541,52 @@ class JosekiDB:
         """
         return self.match(moves, top_k=top_k, corner='tr')
     
-    def identify_corners(self, sgf_data: str, top_k: int = 3, first_n: int = 80, corner_size: int = 9) -> Dict[str, List[PrefixMatchResult]]:
+    def identify_corners(self, sgf_data: str, top_k: int = 3, first_n: int = 80, corner_sizes: List[int] = None) -> Dict[str, List[PrefixMatchResult]]:
         """
-        从SGF识别四角定式
+        从SGF识别四角定式（支持多路匹配）
         
         Args:
             sgf_data: SGF棋谱内容
             top_k: 每个角返回前K个匹配结果
             first_n: 只分析前N手
-            corner_size: 角大小，9 或 13（默认9）
+            corner_sizes: 角大小列表，如 [9, 11, 13]，默认 [9, 11, 13]
         """
-        # 提取四角定式（已经统一到右上角）
-        multigogm_sgf = extract_joseki_from_sgf(sgf_data, first_n=first_n, corner_size=corner_size)
-        corner_sequences = parse_multigogm(multigogm_sgf)
+        if corner_sizes is None:
+            corner_sizes = [9, 11, 13]
         
+        # 收集每个尺寸在每个角的匹配结果
+        all_results: Dict[str, List[PrefixMatchResult]] = {}
+        
+        for size in corner_sizes:
+            multigogm_sgf = extract_joseki_from_sgf(sgf_data, first_n=first_n, corner_size=size)
+            corner_sequences = parse_multigogm(multigogm_sgf)
+            
+            for corner_key, (comment, moves) in corner_sequences.items():
+                if len(moves) >= 2:  # 至少2手才算定式
+                    coord_seq = [coord for _, coord in moves if coord]
+                    if coord_seq:
+                        matches = self.match_top_right(coord_seq, top_k)
+                        if corner_key not in all_results:
+                            all_results[corner_key] = []
+                        # 标记匹配来源的尺寸
+                        for m in matches:
+                            object.__setattr__(m, 'matched_from_size', size)
+                        all_results[corner_key].extend(matches)
+        
+        # 对每个角的结果去重并排序（按 prefix_len 降序，相同 prefix_len 按 total_moves 升序）
         results = {}
-        for corner_key, (comment, moves) in corner_sequences.items():
-            if len(moves) >= 2:  # 至少2手才算定式
-                # 提取纯坐标序列（忽略颜色）
-                coord_seq = [coord for _, coord in moves if coord]
-                if coord_seq:
-                    results[corner_key] = self.match_top_right(coord_seq, top_k)
+        for corner_key, matches in all_results.items():
+            # 按 id 和 direction 去重，保留 prefix_len 最大的
+            seen = {}
+            for m in matches:
+                key = (m.id, m.matched_direction)
+                if key not in seen or seen[key].prefix_len < m.prefix_len:
+                    seen[key] = m
+            
+            # 排序并取 top_k
+            unique_matches = list(seen.values())
+            unique_matches.sort(key=lambda x: (-x.prefix_len, x.total_moves))
+            results[corner_key] = unique_matches[:top_k]
         
         return results
     
