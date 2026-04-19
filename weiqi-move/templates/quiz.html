@@ -578,14 +578,14 @@
 
         <!-- 变化图面板 -->
         <div class="variation-panel" id="variationPanel">
+            <div class="variation-header" id="variationHeader" style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px;">
+                <div class="variation-options" id="variationOptions" style="flex: 1; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start;"></div>
+                <button class="btn btn-icon btn-danger" onclick="backToMain()" title="返回主面板" style="flex-shrink: 0;">↩</button>
+            </div>
             <!-- 变化图提示 -->
             <div class="variation-hint" id="variationHint">
                 <span class="variation-hint-text">👆 点击上方按钮查看 AI 推荐变化图</span>
                 <button class="variation-hint-close" onclick="hideVariationHint()" title="知道了">✕</button>
-            </div>
-            <div class="variation-header" id="variationHeader" style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px;">
-                <div class="variation-options" id="variationOptions" style="flex: 1; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start;"></div>
-                <button class="btn btn-icon btn-danger" onclick="backToMain()" title="返回主面板" style="flex-shrink: 0;">↩</button>
             </div>
             <div class="variation-controls" id="variationControls" style="display: none; justify-content: center; align-items: center; gap: 8px;">
                 <button class="btn btn-icon" onclick="varPrev()" title="上一步">◀</button>
