@@ -1511,12 +1511,14 @@ class JosekiDB:
             
             # 【多路浅匹配过滤】
             # 判定为假定式并过滤掉的情况：
-            # 1. 所有路数的匹配前缀都很短（< 3）
+            # 1. 所有路数的匹配前缀都很短（< 3），但不是空库（至少有一些匹配）
             # 2. 或者9路和11路都没有数据（着法超出小角范围，只有13路有数据）
             is_fake_joseki = False
             
-            # 情况1：所有路数的匹配前缀都很短
-            if all_prefix_lens and max(all_prefix_lens) < 3:
+            # 情况1：所有路数的匹配前缀都很短（但不是完全没匹配）
+            # 注意：空库时 prefix_lens_by_size 为空或全为0，此时应保留结果用于发现新定式
+            has_some_matches = any(plen > 0 for plen in all_prefix_lens)
+            if has_some_matches and all_prefix_lens and max(all_prefix_lens) < 3:
                 is_fake_joseki = True
             
             # 情况2：9路和11路都没有数据（prefix_lens_by_size不包含9和11）
@@ -1592,11 +1594,17 @@ class JosekiDB:
         if verbose:
             print(f"📊 去重后: {unique_count} 个唯一定式")
         
-        # 步骤6: 组装结果
+        # 步骤6: 组装结果（过滤掉有效手数少于 min_moves 的定式）
         results = []
         
         for (moves_tuple, joseki_id, direction), data in unique_joseki.items():
             coords = data['moves']
+            
+            # 过滤：有效手数（非tt）必须 >= min_moves
+            effective_moves = len([c for c in coords if c != 'tt'])
+            if effective_moves < min_moves:
+                continue
+            
             match_result = data['match_result']
             
             matched_prefix_len = match_result.prefix_len
