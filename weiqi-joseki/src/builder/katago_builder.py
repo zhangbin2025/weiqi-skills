@@ -81,22 +81,27 @@ def generate_eight_directions(corner_moves: Dict[str, List[str]]) -> List[Tuple[
     return results
 
 
-def extract_prefixes(moves: List[str], max_prefix: int = 30) -> List[str]:
+def extract_prefixes(moves: List[str], min_moves: int = 4) -> List[str]:
     """
     从着法串提取所有可能的前缀
     
+    与原代码保持一致：
+    - 从 min_moves 开始到序列末尾
+    - 没有最大长度限制
+    - 使用空格分隔（与原代码一致）
+    
     Args:
         moves: 着法序列
-        max_prefix: 最大前缀长度
+        min_moves: 最少手数（前缀从此手数开始提取）
     
     Returns:
-        前缀列表（逗号分隔的字符串）
+        前缀列表（空格分隔的字符串）
     """
     prefixes = []
-    n = min(len(moves), max_prefix)
+    n = len(moves)
     
-    for i in range(2, n + 1):  # 至少2手
-        prefix = ','.join(moves[:i])
+    for i in range(min_moves, n + 1):
+        prefix = ' '.join(moves[:i])
         prefixes.append(prefix)
     
     return prefixes
@@ -157,9 +162,9 @@ class KatagoJosekiBuilder:
                 # 生成8个方向
                 eight_directions = generate_eight_directions(corner_moves)
                 
-                # 提取所有前缀
+                # 提取所有前缀（从min_moves开始）
                 for direction_id, moves in eight_directions:
-                    prefixes = extract_prefixes(moves)
+                    prefixes = extract_prefixes(moves, min_moves=4)
                     for prefix in prefixes:
                         # 前缀格式: "direction_id:moves"
                         key = f"{direction_id}:{prefix}"
@@ -212,7 +217,7 @@ class KatagoJosekiBuilder:
         for i, (key, freq) in enumerate(sorted_prefixes):
             direction_id, moves_str = key.split(':', 1)
             corner, direction = direction_id.rsplit('_', 1)
-            moves = moves_str.split(',')
+            moves = moves_str.split()  # 空格分隔，与原代码一致
             
             joseki = {
                 "id": f"kj_{i+1:05d}",
