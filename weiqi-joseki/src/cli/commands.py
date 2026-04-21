@@ -380,8 +380,8 @@ def cmd_discover(args):
         print("❌ 未找到SGF文件")
         return 1
     
-    # 批量处理
-    all_results = []
+    # 批量处理 - 收集所有匹配结果
+    all_matches = []
     for sgf_file in sgf_files:
         try:
             sgf_data = sgf_file.read_text(encoding='utf-8')
@@ -402,36 +402,35 @@ def cmd_discover(args):
                 distance_threshold=args.distance_threshold
             )
             
-            if results:
-                # 转换为可序列化格式
-                result_entry = {
-                    "file": str(sgf_file),
-                    "extracted_moves": extracted_moves,
-                    "matches": {}
-                }
-                for corner, matches in results.items():
-                    result_entry["matches"][corner] = [
-                        {
-                            "joseki_id": m.joseki_id,
-                            "prefix": m.prefix,
-                            "prefix_len": m.prefix_len,
-                            "total_moves": m.total_moves,
-                            "source_corner": m.source_corner
-                        }
-                        for m in matches
-                    ]
-                all_results.append(result_entry)
+            # 每条定式一条记录
+            for corner, matches in results.items():
+                for m in matches:
+                    joseki = storage.get(m.joseki_id)
+                    all_matches.append({
+                        "file": str(sgf_file),
+                        "source_corner": m.source_corner,
+                        "extracted_moves": extracted_moves.get(m.source_corner, ""),
+                        "joseki_id": m.joseki_id,
+                        "prefix": m.prefix,
+                        "prefix_len": m.prefix_len,
+                        "total_moves": m.total_moves,
+                        "frequency": joseki.get("frequency", 0) if joseki else 0,
+                        "probability": joseki.get("probability", 0.0) if joseki else 0.0
+                    })
         except Exception as e:
             print(f"⚠️  处理失败 {sgf_file}: {e}")
             continue
     
-    if not all_results:
+    if not all_matches:
         print("未发现定式")
         return
     
+    # 按匹配长度从长到短排序
+    all_matches.sort(key=lambda x: -x["prefix_len"])
+    
     # JSON输出
     if args.json:
-        output = json.dumps(all_results, ensure_ascii=False, indent=2)
+        output = json.dumps(all_matches, ensure_ascii=False, indent=2)
         if args.output:
             Path(args.output).write_text(output, encoding='utf-8')
             print(f"✅ 已保存到: {args.output}")
@@ -440,13 +439,15 @@ def cmd_discover(args):
     else:
         # 文本输出
         corner_names = {'tl': '左上', 'tr': '右上', 'bl': '左下', 'br': '右下'}
-        for entry in all_results:
-            print(f"\n📄 {entry['file']}")
-            for corner, matches in entry['matches'].items():
-                if matches:
-                    print(f"  【{corner_names.get(corner, corner)}】")
-                    for m in matches:
-                        print(f"    - {m['joseki_id']}: 匹配{m['prefix_len']}/{m['total_moves']}手 ({m['matched_direction']})")
+        print(f"\n发现 {len(all_matches)} 个定式匹配（按匹配长度排序）：\n")
+        for m in all_matches:
+            print(f"📄 {m['file']}")
+            print(f"  来源角: {corner_names.get(m['source_corner'], m['source_corner'])}")
+            print(f"  定式ID: {m['joseki_id']}")
+            print(f"  匹配: {m['prefix_len']}/{m['total_moves']}手")
+            print(f"  前缀: {m['prefix']}")
+            print(f"  频率: {m['frequency']}  概率: {m['probability']:.4%}")
+            print()
 
 
 def cmd_export(args):
