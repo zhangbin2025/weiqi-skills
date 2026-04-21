@@ -2,19 +2,27 @@
 """
 KataGo定式库构建器
 基于KataGo Archive棋谱构建定式库
+
+核心算法（与原代码保持一致）：
+1. Phase 1: CMS统计频率 + 临时文件存储
+2. Phase 2: 逆向遍历 + 单链检测 + 小顶堆选top-k
+3. Phase 3: 统一转ruld方向去重
+4. Phase 4: 入库
 """
 
-import json
-import tarfile
+import gzip
+import heapq
+import tempfile
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Iterator
+from typing import List, Dict, Tuple, Optional
 from collections import Counter
 from datetime import datetime
 
 from ..extraction import extract_moves_all_corners, get_move_sequence
 from ..extraction.katago_downloader import iter_sgf_from_tar
-from ..core.coords import convert_to_top_right, COORDINATE_SYSTEMS
+from ..core.coords import convert_to_top_right
 from ..storage.json_storage import JsonStorage, DEFAULT_DB_PATH
+from ..utils import CountMinSketch
 
 
 # 四角配置
@@ -27,22 +35,16 @@ def convert_to_rudl(moves: List[str]) -> List[str]:
     
     ruld: 右上(左→下) - 原点是sa(18,0)
     rudl: 右上(下→左) - 原点是ss(18,18)
-    
-    转换: (x,y) → (y,x) 然后取反
     """
     rudl_moves = []
     for sgf in moves:
         if not sgf or sgf == 'pass' or sgf == 'tt':
             rudl_moves.append(sgf)
         else:
-            # ruld SGF坐标 → 局部坐标
-            c = ord(sgf[0]) - ord('a')  # 0-18
-            r = ord(sgf[1]) - ord('a')  # 0-18
-            # ruld局部坐标: x = 18-c, y = r
+            c = ord(sgf[0]) - ord('a')
+            r = ord(sgf[1]) - ord('a')
             x = 18 - c
             y = r
-            # rudl局部坐标: x' = y, y' = x
-            # rudl SGF: col = 18-y', row = 18-x'
             new_col = 18 - y
             new_row = 18 - x
             new_sgf = chr(ord('a') + new_col) + chr(ord('a') + new_row)
@@ -50,145 +52,79 @@ def convert_to_rudl(moves: List[str]) -> List[str]:
     return rudl_moves
 
 
-def generate_eight_directions(corner_moves: Dict[str, List[str]]) -> List[Tuple[str, List[str]]]:
+def convert_to_ruld(moves: List[str]) -> List[str]:
     """
-    生成8个方向的着法串（四角 × 两方向）
-    
-    Args:
-        corner_moves: {corner: [coord, ...], ...} 原始SGF坐标
-    
-    Returns:
-        [(direction_id, moves), ...]
-        direction_id: 如 "tr_ruld", "tr_rudl", "tl_ruld", ...
+    将rudl方向的着法序列转换回ruld方向
+    （convert_to_rudl的逆操作）
     """
-    results = []
-    
-    for corner in CORNERS:
-        moves = corner_moves.get(corner)
-        if not moves or len(moves) < 2:
-            continue
-        
-        # 转换到右上角视角
-        tr_moves = convert_to_top_right(moves, corner)
-        
-        # ruld方向
-        results.append((f"{corner}_ruld", tr_moves))
-        
-        # rudl方向
-        rudl_moves = convert_to_rudl(tr_moves)
-        results.append((f"{corner}_rudl", rudl_moves))
-    
-    return results
+    ruld_moves = []
+    for sgf in moves:
+        if not sgf or sgf == 'pass' or sgf == 'tt':
+            ruld_moves.append(sgf)
+        else:
+            # rudl SGF坐标 → 局部坐标
+            c = ord(sgf[0]) - ord('a')
+            r = ord(sgf[1]) - ord('a')
+            # rudl局部坐标: x = 18-c, y = 18-r
+            x = 18 - c
+            y = 18 - r
+            # ruld局部坐标: x' = y, y' = x
+            # ruld SGF: col = 18-y', row = x'
+            new_col = 18 - y
+            new_row = x
+            new_sgf = chr(ord('a') + new_col) + chr(ord('a') + new_row)
+            ruld_moves.append(new_sgf)
+    return ruld_moves
 
 
-def extract_prefixes(moves: List[str], min_moves: int = 4) -> List[str]:
-    """
-    从着法串提取所有可能的前缀
+class HeapItem:
+    """堆项 - 用于小顶堆选top-k"""
+    __slots__ = ['count', 'prefix', 'direction', 'prefix_hash']
     
-    与原代码保持一致：
-    - 从 min_moves 开始到序列末尾
-    - 没有最大长度限制
-    - 使用空格分隔（与原代码一致）
+    def __init__(self, count, prefix, direction, prefix_hash):
+        self.count = count
+        self.prefix = prefix
+        self.direction = direction
+        self.prefix_hash = prefix_hash
     
-    Args:
-        moves: 着法序列
-        min_moves: 最少手数（前缀从此手数开始提取）
-    
-    Returns:
-        前缀列表（空格分隔的字符串）
-    """
-    prefixes = []
-    n = len(moves)
-    
-    for i in range(min_moves, n + 1):
-        prefix = ' '.join(moves[:i])
-        prefixes.append(prefix)
-    
-    return prefixes
+    def __lt__(self, other):
+        return self.count < other.count
 
 
 class KatagoJosekiBuilder:
-    """KataGo定式库构建器"""
+    """
+    KataGo定式库构建器
+    
+    保留原代码核心算法：
+    - CMS频率估算
+    - 临时文件存储
+    - 逆向遍历
+    - 单链检测
+    - 小顶堆选top-k
+    """
     
     def __init__(self, db_path: Optional[str] = None):
         self.storage = JsonStorage(db_path)
-        self.prefix_counter = Counter()
+        # CMS配置（与原代码一致）
+        self._cms_width = 200000
+        self._cms_depth = 5
     
-    def process_sgf(self, sgf_data: str, first_n: int = 80, 
-                    distance_threshold: int = 4) -> Dict[str, List[str]]:
-        """
-        处理单个SGF，提取四角着法
-        
-        Returns:
-            {corner: [coord, ...], ...} 原始SGF坐标
-        """
-        corner_moves = extract_moves_all_corners(
-            sgf_data, 
-            first_n=first_n, 
-            distance_threshold=distance_threshold
-        )
-        
-        # 转换为纯坐标序列
-        return {corner: get_move_sequence(moves) 
-                for corner, moves in corner_moves.items()}
+    def set_cms_config(self, width: int = 200000, depth: int = 5):
+        """设置CMS配置（与原代码一致）"""
+        self._cms_width = width
+        self._cms_depth = depth
     
-    def process_tar_file(self, tar_path: str, max_games: int = None,
-                         first_n: int = 80, distance_threshold: int = 4) -> Counter:
-        """
-        处理tar文件中的所有SGF，统计前缀频率
-        
-        Args:
-            tar_path: tar文件路径
-            max_games: 最大处理棋谱数（None表示全部）
-            first_n: 提取前N手
-            distance_threshold: 连通块距离阈值
-        
-        Returns:
-            Counter: 前缀频率统计
-        """
-        counter = Counter()
-        processed = 0
-        
-        print(f"开始处理: {tar_path}")
-        
-        for sgf_data in iter_sgf_from_tar(tar_path):
-            if max_games and processed >= max_games:
-                break
-            
-            try:
-                # 提取四角着法
-                corner_moves = self.process_sgf(sgf_data, first_n, distance_threshold)
-                
-                # 生成8个方向
-                eight_directions = generate_eight_directions(corner_moves)
-                
-                # 提取所有前缀（从min_moves开始）
-                for direction_id, moves in eight_directions:
-                    prefixes = extract_prefixes(moves, min_moves=4)
-                    for prefix in prefixes:
-                        # 前缀格式: "direction_id:moves"
-                        key = f"{direction_id}:{prefix}"
-                        counter[key] += 1
-                
-                processed += 1
-                if processed % 1000 == 0:
-                    print(f"  已处理 {processed} 局棋谱，当前前缀数: {len(counter)}")
-            
-            except Exception as e:
-                # 跳过有问题的棋谱
-                continue
-        
-        print(f"处理完成: {processed} 局棋谱，共 {len(counter)} 个唯一前缀")
-        return counter
-    
-    def build_from_tar(self, tar_path: str, 
+    def build_from_tar(self, 
+                       tar_path: str,
                        min_freq: int = 5,
                        top_k: int = 10000,
                        max_games: int = None,
                        first_n: int = 80,
-                       distance_threshold: int = 4) -> List[dict]:
+                       distance_threshold: int = 4,
+                       min_moves: int = 4,
+                       verbose: bool = True) -> List[dict]:
         """
-        从tar文件构建定式库
+        从tar文件构建定式库（完整保留原代码算法）
         
         Args:
             tar_path: tar文件路径
@@ -197,50 +133,239 @@ class KatagoJosekiBuilder:
             max_games: 最大处理棋谱数
             first_n: 提取前N手
             distance_threshold: 连通块距离阈值
+            min_moves: 最少手数（前缀从此手数开始提取）
+            verbose: 详细输出
         
         Returns:
             入库的定式列表
         """
-        # 统计前缀频率
-        counter = self.process_tar_file(tar_path, max_games, first_n, distance_threshold)
+        # ===== Phase 1: CMS统计 + 临时文件存储 =====
+        cms = CountMinSketch(width=self._cms_width, depth=self._cms_depth)
+        temp_file = tempfile.NamedTemporaryFile(mode='wb', suffix='.gz', delete=False)
+        temp_path = Path(temp_file.name)
         
-        # 过滤低频前缀
-        frequent_prefixes = {k: v for k, v in counter.items() if v >= min_freq}
+        if verbose:
+            print(f"📊 Phase 1: CMS统计前缀频率（CMS: {self._cms_width}x{self._cms_depth}）")
+            print(f"   内存占用: ~{self._cms_width * self._cms_depth * 4 / 1024 / 1024:.1f}MB")
         
-        print(f"频率>={min_freq}的前缀: {len(frequent_prefixes)} 个")
+        processed = 0
+        joseki_count = 0
+        prefix_count = 0
+        total_unique_sequences = 0
         
-        # 按频率排序，取top-k
-        sorted_prefixes = sorted(frequent_prefixes.items(), key=lambda x: -x[1])[:top_k]
+        with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
+            for sgf_data in iter_sgf_from_tar(tar_path):
+                if max_games and processed >= max_games:
+                    break
+                
+                try:
+                    # 提取四角着法
+                    corner_moves_dict = extract_moves_all_corners(
+                        sgf_data, first_n=first_n, distance_threshold=distance_threshold
+                    )
+                    
+                    # 每谱的着法串去重集合
+                    seen_sequences = set()
+                    
+                    # 生成8个方向（四角 × 2方向）
+                    for corner in CORNERS:
+                        moves = corner_moves_dict.get(corner)
+                        if not moves or len(moves) < min_moves:
+                            continue
+                        
+                        # 转换为纯坐标序列
+                        coords = get_move_sequence(moves)
+                        if len(coords) < min_moves:
+                            continue
+                        
+                        # 转换到右上角视角
+                        tr_coords = convert_to_top_right(coords, corner)
+                        
+                        # 生成ruld和rudl两个方向
+                        ruld = " ".join(tr_coords)
+                        rudl = " ".join(convert_to_rudl(tr_coords))
+                        
+                        for direction, seq in [('ruld', ruld), ('rudl', rudl)]:
+                            if seq in seen_sequences:
+                                continue
+                            seen_sequences.add(seq)
+                            
+                            # 写入临时文件
+                            f_out.write(f"{direction}|{seq}\n")
+                            joseki_count += 1
+                            
+                            # 展开所有前缀并更新CMS
+                            seq_parts = seq.split()
+                            for end in range(min_moves, len(seq_parts) + 1):
+                                prefix = " ".join(seq_parts[:end])
+                                cms.update(prefix)
+                                prefix_count += 1
+                    
+                    total_unique_sequences += len(seen_sequences)
+                    processed += 1
+                    
+                    if verbose and processed % 1000 == 0:
+                        print(f"\r  已处理: {processed}谱, {joseki_count}定式串, {prefix_count}前缀", 
+                              end='', flush=True)
+                
+                except Exception as e:
+                    continue
         
-        # 转换为定式格式
-        joseki_list = []
-        for i, (key, freq) in enumerate(sorted_prefixes):
-            direction_id, moves_str = key.split(':', 1)
-            corner, direction = direction_id.rsplit('_', 1)
-            moves = moves_str.split()  # 空格分隔，与原代码一致
+        if verbose:
+            print(f"\n✅ Phase 1完成: {processed}谱, {joseki_count}定式串, {prefix_count}前缀")
+            print(f"   去重后着法串总数: {total_unique_sequences}")
+        
+        # ===== Phase 2: 逆向遍历 + 单链检测 + 小顶堆选top-k =====
+        if verbose:
+            print(f"🔄 Phase 2: 逆向遍历+单链检测，选取top-{top_k}...")
+        
+        heap = []  # 小顶堆
+        seen_hashes = {}  # 记录已处理的hash
+        
+        def _get_hash(prefix_parts):
+            return tuple(prefix_parts)
+        
+        def _get_child_hash(prefix_parts, seq_parts):
+            """获取子串hash（当前前缀+下一手）"""
+            if len(prefix_parts) >= len(seq_parts):
+                return None
+            child_parts = prefix_parts + [seq_parts[len(prefix_parts)]]
+            return tuple(child_parts)
+        
+        SINGLE_CHAIN_THRESHOLD = 0.05  # 单链检测阈值：5%
+        
+        processed_seq = 0
+        prefix_processed = 0
+        skipped_single_chain = 0
+        
+        with gzip.open(temp_path, 'rt', encoding='utf-8') as f_in:
+            for line in f_in:
+                line = line.strip()
+                if not line or '|' not in line:
+                    continue
+                
+                direction, joseki_str = line.split('|', 1)
+                seq_parts = joseki_str.split()
+                
+                if len(seq_parts) < min_moves:
+                    continue
+                
+                # 逆向遍历：从最长前缀到min_moves
+                last_count = float('inf')
+                
+                for end in range(len(seq_parts), min_moves - 1, -1):
+                    prefix_parts = seq_parts[:end]
+                    prefix = " ".join(prefix_parts)
+                    
+                    # CMS估算频率
+                    est_count = cms.estimate(prefix)
+                    
+                    # 过滤低频
+                    if est_count < min_freq:
+                        last_count = est_count
+                        continue
+                    
+                    prefix_hash = _get_hash(prefix_parts)
+                    
+                    # 单链检测：count和last_count相差<5%，且子串已处理
+                    if last_count != float('inf'):
+                        count_diff_ratio = abs(est_count - last_count) / max(est_count, last_count, 1)
+                        if count_diff_ratio < SINGLE_CHAIN_THRESHOLD:
+                            child_hash = _get_child_hash(prefix_parts, seq_parts)
+                            if child_hash and child_hash in seen_hashes:
+                                skipped_single_chain += 1
+                                seen_hashes[prefix_hash] = False
+                                last_count = est_count
+                                continue
+                    
+                    last_count = est_count
+                    
+                    # 已在堆中或被跳过
+                    if prefix_hash in seen_hashes:
+                        break
+                    
+                    # 尝试入堆
+                    if len(heap) < top_k:
+                        item = HeapItem(est_count, prefix, direction, prefix_hash)
+                        heapq.heappush(heap, item)
+                        seen_hashes[prefix_hash] = True
+                        prefix_processed += 1
+                    elif est_count > heap[0].count:
+                        old_item = heapq.heapreplace(heap, HeapItem(est_count, prefix, direction, prefix_hash))
+                        del seen_hashes[old_item.prefix_hash]
+                        seen_hashes[prefix_hash] = True
+                        prefix_processed += 1
+                
+                processed_seq += 1
+                if verbose and processed_seq % 10000 == 0:
+                    print(f"\r  处理: {processed_seq}定式/{prefix_processed}前缀, "
+                          f"堆大小: {len(heap)}, 单链跳过: {skipped_single_chain}", 
+                          end='', flush=True)
+        
+        if verbose:
+            print(f"\n  堆中候选: {len(heap)} 个")
+            print(f"  单链跳过: {skipped_single_chain} 个")
+        
+        # ===== Phase 3: 统一转ruld方向去重 =====
+        if verbose:
+            print("🔄 Phase 3: 统一转ruld方向去重...")
+        
+        seen_ruld = {}  # ruld_key -> (count, direction)
+        
+        for item in heap:
+            parts = item.prefix.split()
             
+            # 统一转换为ruld方向
+            if item.direction == 'ruld':
+                ruld_parts = parts
+            else:
+                ruld_parts = convert_to_ruld(parts)
+            
+            ruld_key = tuple(ruld_parts)
+            if ruld_key in seen_ruld:
+                # 保留count更大的
+                if item.count > seen_ruld[ruld_key][0]:
+                    seen_ruld[ruld_key] = (item.count, item.direction)
+            else:
+                seen_ruld[ruld_key] = (item.count, item.direction)
+        
+        candidates = []
+        for moves_tuple, (count, direction) in seen_ruld.items():
+            candidates.append({
+                'moves': list(moves_tuple),
+                'count': count,
+                'direction': direction,
+            })
+        
+        # 按字符串排序
+        candidates.sort(key=lambda x: " ".join(x['moves']))
+        
+        if verbose:
+            print(f"  去重后候选: {len(candidates)} 个")
+        
+        # 清理临时文件
+        temp_path.unlink()
+        
+        # ===== Phase 4: 转换为定式格式 =====
+        joseki_list = []
+        for i, cand in enumerate(candidates):
             joseki = {
                 "id": f"kj_{i+1:05d}",
                 "source": "katago",
-                "corner": corner,
-                "direction": direction,
-                "moves": moves,
-                "frequency": freq,
+                "moves": cand['moves'],
+                "frequency": cand['count'],
+                "direction": cand['direction'],
                 "created_at": datetime.now().isoformat()
             }
             joseki_list.append(joseki)
         
-        print(f"构建完成: {len(joseki_list)} 条定式")
+        if verbose:
+            print(f"✅ 构建完成: {len(joseki_list)} 条定式")
+        
         return joseki_list
     
     def save_to_db(self, joseki_list: List[dict], append: bool = False):
-        """
-        保存定式列表到数据库
-        
-        Args:
-            joseki_list: 定式列表
-            append: 是否追加（False则清空后写入）
-        """
+        """保存定式列表到数据库"""
         if not append:
             self.storage.clear()
         
@@ -257,27 +382,21 @@ def build_katago_joseki_db(
     top_k: int = 10000,
     max_games: int = None,
     first_n: int = 80,
-    distance_threshold: int = 4
+    distance_threshold: int = 4,
+    min_moves: int = 4
 ) -> int:
-    """
-    便捷函数：从KataGo棋谱构建定式库
-    
-    Returns:
-        入库的定式数量
-    """
+    """便捷函数：从KataGo棋谱构建定式库"""
     builder = KatagoJosekiBuilder(db_path)
     
-    # 构建定式
     joseki_list = builder.build_from_tar(
         tar_path=tar_path,
         min_freq=min_freq,
         top_k=top_k,
         max_games=max_games,
         first_n=first_n,
-        distance_threshold=distance_threshold
+        distance_threshold=distance_threshold,
+        min_moves=min_moves
     )
     
-    # 保存到数据库
     builder.save_to_db(joseki_list, append=False)
-    
     return len(joseki_list)
