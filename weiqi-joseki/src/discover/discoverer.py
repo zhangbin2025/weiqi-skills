@@ -22,6 +22,7 @@ class DiscoverResult:
     prefix_len: int          # 匹配的前缀长度
     total_moves: int         # 定式总手数
     source_corner: str       # 棋谱来源角 "tl"/"tr"/"bl"/"br"
+    direction: str           # 匹配方向 "ruld" 或 "rudl"
 
 
 class JosekiDiscoverer:
@@ -57,36 +58,40 @@ class JosekiDiscoverer:
         if not moves or len(moves) < 2:
             return []
         
-        # 转换到右上角视角
+        # 转换到右上角视角 (ruld方向)
         tr_moves = convert_to_top_right(moves, corner)
         
         results = []
         
-        # ruld方向匹配
+        # 先尝试ruld方向
         ruld_matches = self.matcher.match(tr_moves, top_k=1)
-        for match in ruld_matches:
-            prefix = " ".join(tr_moves[:match.prefix_len])
+        if ruld_matches:
+            ruld_match = ruld_matches[0]
+            ruld_prefix = " ".join(tr_moves[:ruld_match.prefix_len])
             results.append(DiscoverResult(
-                joseki_id=match.id,
-                name=match.name,
-                prefix=prefix,
-                prefix_len=match.prefix_len,
-                total_moves=match.total_moves,
-                source_corner=corner
+                joseki_id=ruld_match.id,
+                name=ruld_match.name,
+                prefix=ruld_prefix,
+                prefix_len=ruld_match.prefix_len,
+                total_moves=ruld_match.total_moves,
+                source_corner=corner,
+                direction="ruld"
             ))
         
-        # rudl方向匹配
+        # 再尝试rudl方向
         rudl_moves = convert_to_rudl(tr_moves)
         rudl_matches = self.matcher.match(rudl_moves, top_k=1)
-        for match in rudl_matches:
-            prefix = " ".join(rudl_moves[:match.prefix_len])
+        if rudl_matches:
+            rudl_match = rudl_matches[0]
+            rudl_prefix = " ".join(rudl_moves[:rudl_match.prefix_len])
             results.append(DiscoverResult(
-                joseki_id=match.id,
-                name=match.name,
-                prefix=prefix,
-                prefix_len=match.prefix_len,
-                total_moves=match.total_moves,
-                source_corner=corner
+                joseki_id=rudl_match.id,
+                name=rudl_match.name,
+                prefix=rudl_prefix,
+                prefix_len=rudl_match.prefix_len,
+                total_moves=rudl_match.total_moves,
+                source_corner=corner,
+                direction="rudl"
             ))
         
         return results

@@ -409,16 +409,18 @@ def cmd_discover(args):
             
             # 提取四角着法（用于输出）
             from ..extraction import extract_moves_all_corners, get_move_sequence
-            from ..core.coords import convert_to_top_right
+            from ..core.coords import convert_to_top_right, convert_to_rudl
             corner_moves_dict = extract_moves_all_corners(
                 sgf_data, first_n=args.first_n, distance_threshold=args.distance_threshold
             )
-            # 转换到右上角视角，与prefix方向一致
-            extracted_moves = {}
+            # 准备两个方向的着法串
+            extracted_moves_ruld = {}
+            extracted_moves_rudl = {}
             for corner, moves in corner_moves_dict.items():
                 coords = get_move_sequence(moves)
                 tr_coords = convert_to_top_right(coords, corner)
-                extracted_moves[corner] = " ".join(tr_coords)
+                extracted_moves_ruld[corner] = " ".join(tr_coords)
+                extracted_moves_rudl[corner] = " ".join(convert_to_rudl(tr_coords))
             
             results = discover_joseki(
                 sgf_data,
@@ -431,11 +433,17 @@ def cmd_discover(args):
             for corner, matches in results.items():
                 for m in matches:
                     joseki = storage.get(m.joseki_id)
+                    # 根据匹配方向选择对应的着法串
+                    if m.direction == "rudl":
+                        extracted = extracted_moves_rudl.get(m.source_corner, "")
+                    else:
+                        extracted = extracted_moves_ruld.get(m.source_corner, "")
+                    
                     all_matches.append({
                         "file": str(sgf_file),
                         "game_info": game_info,
                         "source_corner": m.source_corner,
-                        "extracted_moves": extracted_moves.get(m.source_corner, ""),
+                        "extracted_moves": extracted,
                         "joseki_id": m.joseki_id,
                         "prefix": m.prefix,
                         "prefix_len": m.prefix_len,
