@@ -409,7 +409,8 @@ def cmd_discover(args):
             
             # 提取四角着法（用于输出）
             from ..extraction import extract_moves_all_corners, get_move_sequence
-            from ..core.coords import convert_to_top_right, convert_to_rudl
+            from ..core.coords import convert_to_top_right
+            from ..builder import convert_to_rudl
             corner_moves_dict = extract_moves_all_corners(
                 sgf_data, first_n=args.first_n, distance_threshold=args.distance_threshold
             )
