@@ -107,7 +107,7 @@ def detect_corner(moves: List[str], corner_size: int = 9) -> Optional[str]:
     
     返回: 'tl', 'tr', 'bl', 'br' 或 None（无法判断）
     """
-    valid_coords = [m for m in moves if m and m != 'pass' and len(m) == 2]
+    valid_coords = [m for m in moves if m and m != 'pass' and m != 'tt' and len(m) == 2]
     if not valid_coords:
         return None
     
@@ -186,7 +186,7 @@ def convert_to_top_right(moves: List[str], source_corner: str) -> List[str]:
     
     converted = []
     for coord in moves:
-        if not coord or coord == 'pass':
+        if not coord or coord == 'pass' or coord == 'tt':
             converted.append(coord)
             continue
         try:
