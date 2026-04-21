@@ -104,7 +104,8 @@ def cmd_katago(args):
     import gzip
     import tempfile
     
-    cms = CountMinSketch(width=200000, depth=5)
+    # 使用高精度CMS（4194304x4, ~64MB, 误差~0.024%）
+    cms = CountMinSketch(width=4194304, depth=4)
     temp_file = tempfile.NamedTemporaryFile(mode='wb', suffix='.gz', delete=False)
     temp_path = Path(temp_file.name)
     

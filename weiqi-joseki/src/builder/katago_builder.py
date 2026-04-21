@@ -160,13 +160,14 @@ class KatagoJosekiBuilder:
             入库的定式列表
         """
         # ===== Phase 1: CMS统计 + 临时文件存储 =====
-        cms = CountMinSketch(width=self._cms_width, depth=self._cms_depth)
+        # 使用高精度CMS配置（width=4194304, depth=4, ~64MB, 误差~0.024%）
+        cms = CountMinSketch(width=4194304, depth=4)
         temp_file = tempfile.NamedTemporaryFile(mode='wb', suffix='.gz', delete=False)
         temp_path = Path(temp_file.name)
         
         if verbose:
-            print(f"📊 Phase 1: CMS统计前缀频率（CMS: {self._cms_width}x{self._cms_depth}）")
-            print(f"   内存占用: ~{self._cms_width * self._cms_depth * 4 / 1024 / 1024:.1f}MB")
+            print(f"📊 Phase 1: CMS统计前缀频率（CMS: 4194304x4）")
+            print(f"   内存占用: ~64MB, 误差~0.024%")
         
         processed = 0
         joseki_count = 0
@@ -294,7 +295,7 @@ class KatagoJosekiBuilder:
                             child_hash = _get_child_hash(prefix_parts, seq_parts)
                             if child_hash and child_hash in seen_hashes:
                                 skipped_single_chain += 1
-                                seen_hashes[prefix_hash] = False
+                                # 不存储跳过的前缀，节省内存
                                 last_count = est_count
                                 continue
                     
@@ -434,7 +435,7 @@ class KatagoJosekiBuilder:
                         if count_diff_ratio < SINGLE_CHAIN_THRESHOLD:
                             child_hash = _get_child_hash(prefix_parts, seq_parts)
                             if child_hash and child_hash in seen_hashes:
-                                seen_hashes[prefix_hash] = False
+                                # 不存储跳过的前缀，节省内存
                                 last_count = est_count
                                 continue
                     
