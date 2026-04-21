@@ -114,6 +114,8 @@ class KatagoJosekiBuilder:
         self._cms_width = width
         self._cms_depth = depth
     
+
+    
     def process_sgf(self, sgf_data: str, first_n: int = 80, 
                     distance_threshold: int = 4) -> Dict[str, List[str]]:
         """
@@ -379,6 +381,116 @@ class KatagoJosekiBuilder:
         
         if verbose:
             print(f"✅ 构建完成: {len(joseki_list)} 条定式")
+        
+        return joseki_list
+    
+    def _process_temp_file(self, temp_path: Path, cms, min_freq: int, top_k: int, min_moves: int) -> List[dict]:
+        """处理临时文件，执行逆向遍历+单链检测+去重"""
+        import heapq
+        from datetime import datetime
+        
+        heap = []
+        seen_hashes = {}
+        
+        def _get_hash(prefix_parts):
+            return tuple(prefix_parts)
+        
+        def _get_child_hash(prefix_parts, seq_parts):
+            if len(prefix_parts) >= len(seq_parts):
+                return None
+            child_parts = prefix_parts + [seq_parts[len(prefix_parts)]]
+            return tuple(child_parts)
+        
+        SINGLE_CHAIN_THRESHOLD = 0.05
+        
+        with gzip.open(temp_path, 'rt', encoding='utf-8') as f_in:
+            for line in f_in:
+                line = line.strip()
+                if not line or '|' not in line:
+                    continue
+                
+                direction, joseki_str = line.split('|', 1)
+                seq_parts = joseki_str.split()
+                
+                if len(seq_parts) < min_moves:
+                    continue
+                
+                last_count = float('inf')
+                
+                for end in range(len(seq_parts), min_moves - 1, -1):
+                    prefix_parts = seq_parts[:end]
+                    prefix = " ".join(prefix_parts)
+                    
+                    est_count = cms.estimate(prefix)
+                    
+                    if est_count < min_freq:
+                        last_count = est_count
+                        continue
+                    
+                    prefix_hash = _get_hash(prefix_parts)
+                    
+                    if last_count != float('inf'):
+                        count_diff_ratio = abs(est_count - last_count) / max(est_count, last_count, 1)
+                        if count_diff_ratio < SINGLE_CHAIN_THRESHOLD:
+                            child_hash = _get_child_hash(prefix_parts, seq_parts)
+                            if child_hash and child_hash in seen_hashes:
+                                seen_hashes[prefix_hash] = False
+                                last_count = est_count
+                                continue
+                    
+                    last_count = est_count
+                    
+                    if prefix_hash in seen_hashes:
+                        break
+                    
+                    if len(heap) < top_k:
+                        item = HeapItem(est_count, prefix, direction, prefix_hash)
+                        heapq.heappush(heap, item)
+                        seen_hashes[prefix_hash] = True
+                    elif est_count > heap[0].count:
+                        old_item = heapq.heapreplace(heap, HeapItem(est_count, prefix, direction, prefix_hash))
+                        del seen_hashes[old_item.prefix_hash]
+                        seen_hashes[prefix_hash] = True
+        
+        # 去重
+        seen_ruld = {}
+        for item in heap:
+            parts = item.prefix.split()
+            
+            if item.direction == 'ruld':
+                ruld_parts = parts
+            else:
+                ruld_parts = convert_to_ruld(parts)
+            
+            ruld_key = tuple(ruld_parts)
+            if ruld_key in seen_ruld:
+                if item.count > seen_ruld[ruld_key][0]:
+                    seen_ruld[ruld_key] = (item.count, item.direction)
+            else:
+                seen_ruld[ruld_key] = (item.count, item.direction)
+        
+        candidates = []
+        for moves_tuple, (count, direction) in seen_ruld.items():
+            candidates.append({
+                'moves': list(moves_tuple),
+                'count': count,
+                'direction': direction,
+            })
+        
+        candidates.sort(key=lambda x: " ".join(x['moves']))
+        
+        # 转换为定式格式
+        joseki_list = []
+        for i, cand in enumerate(candidates):
+            joseki = {
+                "id": f"kj_{i+1:05d}",
+                "source": "katago",
+                "moves": cand['moves'],
+                "frequency": cand['count'],
+                "direction": cand['direction'],
+                "created_at": datetime.now().isoformat()
+            }
+            joseki_list.append(joseki)
         
         return joseki_list
     

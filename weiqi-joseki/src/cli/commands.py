@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from ..storage import JsonStorage, DEFAULT_DB_PATH
-from ..builder import build_katago_joseki_db
+from ..builder import KatagoJosekiBuilder, convert_to_rudl
 from ..discover import discover_joseki
 from ..extraction import extract_moves_all_corners, convert_to_multigogm
 from ..matching import TrieMatcher
@@ -22,22 +22,190 @@ def cmd_init(args):
 
 
 def cmd_katago(args):
-    """从KataGo棋谱构建定式库"""
-    if not Path(args.tar).exists():
-        print(f"❌ 文件不存在: {args.tar}")
+    """从KataGo棋谱构建定式库（支持日期范围）"""
+    import signal
+    from datetime import datetime, timedelta
+    from ..extraction.katago_downloader import download_katago_games
+    
+    # 配置
+    CACHE_DIR = Path.home() / ".weiqi-joseki/katago-cache"
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # 解析日期
+    try:
+        start_date = datetime.strptime(args.start_date, "%Y-%m-%d")
+        end_date = datetime.strptime(args.end_date, "%Y-%m-%d")
+    except ValueError:
+        print("❌ 错误: 日期格式应为 YYYY-MM-DD")
+        sys.exit(1)
+    
+    if start_date > end_date:
+        print("❌ 错误: 起始日期不能晚于结束日期")
+        sys.exit(1)
+    
+    # 生成日期列表
+    dates = []
+    current = start_date
+    while current <= end_date:
+        dates.append(current.strftime("%Y-%m-%d"))
+        current += timedelta(days=1)
+    
+    print(f"📅 日期范围: {args.start_date} 至 {args.end_date}（共{len(dates)}天）")
+    print(f"💾 缓存目录: {CACHE_DIR}")
+    print(f"🗄️  数据库: {args.db}")
+    print()
+    
+    # 设置信号处理
+    stop_flag = [False]
+    
+    def signal_handler(sig, frame):
+        print("\n\n⚠️ 收到中断信号...")
+        stop_flag[0] = True
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    # 下载阶段
+    print(f"📥 开始下载/检查缓存...")
+    
+    downloaded_files, missing_dates = download_katago_games(
+        start_date=args.start_date,
+        end_date=args.end_date,
+        cache_dir=CACHE_DIR,
+        max_retries=3,
+        workers=3,
+        keep_cache=True
+    )
+    
+    print(f"✅ 文件准备完成: {len(downloaded_files)}/{len(dates)} 个")
+    if missing_dates:
+        print(f"⚠️  未找到: {len(missing_dates)} 个日期")
+    print()
+    
+    if not downloaded_files:
+        print("❌ 没有可处理的文件")
         return 1
     
-    count = build_katago_joseki_db(
-        tar_path=args.tar,
-        db_path=args.db,
+    if stop_flag[0]:
+        return 1
+    
+    # 构建定式库 - 统一处理所有文件
+    print(f"⏳ 开始构建定式库（前{args.first_n}手）...")
+    print(f"   参数: min-freq={args.min_freq}, top-k={args.top_k}")
+    print()
+    
+    builder = KatagoJosekiBuilder(args.db)
+    
+    # Phase 1: 统计所有文件的定式频率
+    print("📊 Phase 1: CMS统计前缀频率...")
+    
+    from ..utils import CountMinSketch
+    import gzip
+    import tempfile
+    
+    cms = CountMinSketch(width=200000, depth=5)
+    temp_file = tempfile.NamedTemporaryFile(mode='wb', suffix='.gz', delete=False)
+    temp_path = Path(temp_file.name)
+    
+    from ..extraction.katago_downloader import iter_sgf_from_tar
+    from ..extraction import get_move_sequence
+    from ..core.coords import convert_to_top_right
+    
+    CORNERS = ['tl', 'tr', 'bl', 'br']
+    min_moves = args.min_moves
+    first_n = args.first_n
+    distance_threshold = args.distance_threshold
+    
+    processed = 0
+    joseki_count = 0
+    prefix_count = 0
+    
+    with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
+        for tar_path in downloaded_files:
+            if stop_flag[0]:
+                break
+            
+            print(f"   处理: {tar_path.name}...")
+            
+            for sgf_data in iter_sgf_from_tar(tar_path):
+                if stop_flag[0]:
+                    break
+                
+                try:
+                    corner_moves_dict = extract_moves_all_corners(
+                        sgf_data, first_n=first_n, distance_threshold=distance_threshold
+                    )
+                    
+                    seen_sequences = set()
+                    
+                    for corner in CORNERS:
+                        moves = corner_moves_dict.get(corner)
+                        if not moves or len(moves) < min_moves:
+                            continue
+                        
+                        coords = get_move_sequence(moves)
+                        if len(coords) < min_moves:
+                            continue
+                        
+                        tr_coords = convert_to_top_right(coords, corner)
+                        
+                        # 生成两个方向
+                        ruld = " ".join(tr_coords)
+                        rudl_seq = " ".join(convert_to_rudl(tr_coords))
+                        
+                        for direction, seq in [('ruld', ruld), ('rudl', rudl_seq)]:
+                            if seq in seen_sequences:
+                                continue
+                            seen_sequences.add(seq)
+                            
+                            f_out.write(f"{direction}|{seq}\n")
+                            joseki_count += 1
+                            
+                            seq_parts = seq.split()
+                            for end in range(min_moves, len(seq_parts) + 1):
+                                prefix = " ".join(seq_parts[:end])
+                                cms.update(prefix)
+                                prefix_count += 1
+                    
+                    processed += 1
+                    
+                except Exception as e:
+                    continue
+            
+            print(f"      累计: {processed}谱, {joseki_count}定式串, {prefix_count}前缀")
+    
+    print(f"\n✅ Phase 1完成: {processed}谱, {joseki_count}定式串, {prefix_count}前缀")
+    print()
+    
+    if stop_flag[0]:
+        temp_path.unlink()
+        return 1
+    
+    # Phase 2 & 3: 逆向遍历 + 单链检测 + 去重
+    print(f"🔄 Phase 2-3: 逆向遍历+单链检测+去重...")
+    
+    joseki_list = builder._process_temp_file(
+        temp_path, cms, 
         min_freq=args.min_freq,
         top_k=args.top_k,
-        max_games=args.max_games,
-        first_n=args.first_n,
-        distance_threshold=args.distance_threshold,
-        min_moves=args.min_moves
+        min_moves=min_moves
     )
-    print(f"✅ 已构建定式库: {count} 条定式")
+    
+    # 清理临时文件
+    temp_path.unlink()
+    
+    print(f"✅ 构建完成: {len(joseki_list)} 条定式")
+    print()
+    
+    # Phase 4: 入库
+    print("🔄 Phase 4: 保存到数据库...")
+    builder.save_to_db(joseki_list, append=False)
+    
+    print()
+    print("=" * 50)
+    print(f"🎉 全部完成！共 {len(joseki_list)} 条定式")
+    print("=" * 50)
 
 
 def cmd_list(args):
@@ -279,9 +447,10 @@ def main():
     
     # katago
     p_katago = subparsers.add_parser("katago", help="从KataGo棋谱构建定式库")
-    p_katago.add_argument("tar", help="tar文件路径")
-    p_katago.add_argument("--min-freq", type=int, default=5, help="最小频率")
-    p_katago.add_argument("--top-k", type=int, default=10000, help="入库数量上限")
+    p_katago.add_argument("--start-date", required=True, help="起始日期 (YYYY-MM-DD)")
+    p_katago.add_argument("--end-date", required=True, help="结束日期 (YYYY-MM-DD)")
+    p_katago.add_argument("--min-freq", type=int, default=10, help="最小频率")
+    p_katago.add_argument("--top-k", type=int, default=100000, help="入库数量上限")
     p_katago.add_argument("--max-games", type=int, default=None, help="最大处理棋谱数")
     p_katago.add_argument("--first-n", type=int, default=80, help="提取前N手")
     p_katago.add_argument("--distance-threshold", type=int, default=4, help="连通块距离阈值")
