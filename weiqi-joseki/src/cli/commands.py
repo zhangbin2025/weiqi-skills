@@ -330,9 +330,9 @@ def cmd_extract(args):
             continue
         
         moves = result[corner]
-        coords = [c for _, c in moves if c != 'tt']
+        coords = [c for _, c in moves]
         
-        print(f"【{corner_names.get(corner, corner)}】{len(coords)}子")
+        print(f"【{corner_names.get(corner, corner)}】{len(coords)}手")
         
         if args.verbose:
             for i, (color, coord) in enumerate(moves):
