@@ -389,11 +389,16 @@ def cmd_discover(args):
             # 解析SGF元数据
             from ..extraction.sgf_parser import parse_sgf
             sgf_meta = parse_sgf(sgf_data)
+            # 优先取EV，没有则取GN
+            event = sgf_meta.get("EV", "")
+            if not event:
+                event = sgf_meta.get("GN", "")
+            
             game_info = {
                 "black": sgf_meta.get("PB", "未知"),
                 "white": sgf_meta.get("PW", "未知"),
                 "result": sgf_meta.get("RE", ""),
-                "event": sgf_meta.get("EV", ""),
+                "event": event,
                 "date": sgf_meta.get("DT", "")
             }
             
