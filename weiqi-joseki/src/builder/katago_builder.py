@@ -496,12 +496,13 @@ class KatagoJosekiBuilder:
         return joseki_list
     
     def save_to_db(self, joseki_list: List[dict], append: bool = False):
-        """保存定式列表到数据库"""
+        """批量保存定式列表到数据库（优化版）"""
         if not append:
-            self.storage.clear()
+            self.storage._data["joseki_list"] = []
         
-        for joseki in joseki_list:
-            self.storage.add(joseki)
+        # 批量添加到内存，最后统一写入
+        self.storage._data["joseki_list"].extend(joseki_list)
+        self.storage._save()
         
         print(f"已保存 {len(joseki_list)} 条定式到 {self.storage.db_path}")
 
