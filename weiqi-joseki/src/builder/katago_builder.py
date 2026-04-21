@@ -295,7 +295,7 @@ class KatagoJosekiBuilder:
                             child_hash = _get_child_hash(prefix_parts, seq_parts)
                             if child_hash and child_hash in seen_hashes:
                                 skipped_single_chain += 1
-                                seen_hashes[prefix_hash] = False
+                                # 不写入seen_hashes，减少内存（功能仍正确，只是效率略降）
                                 last_count = est_count
                                 continue
                     
@@ -435,7 +435,7 @@ class KatagoJosekiBuilder:
                         if count_diff_ratio < SINGLE_CHAIN_THRESHOLD:
                             child_hash = _get_child_hash(prefix_parts, seq_parts)
                             if child_hash and child_hash in seen_hashes:
-                                seen_hashes[prefix_hash] = False
+                                # 不写入seen_hashes，减少内存
                                 last_count = est_count
                                 continue
                     
