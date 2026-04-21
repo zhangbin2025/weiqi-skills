@@ -353,10 +353,8 @@ def cmd_extract(args):
 
 
 def cmd_discover(args):
-    """从SGF发现定式"""
-    if not Path(args.input).exists():
-        print(f"❌ 文件不存在: {args.input}")
-        return 1
+    """从SGF发现定式（支持批量目录和JSON输出）"""
+    import json
     
     storage = JsonStorage(args.db)
     joseki_list = storage.get_all()
@@ -365,38 +363,79 @@ def cmd_discover(args):
         print("❌ 数据库为空，请先使用katago命令构建定式库")
         return 1
     
-    sgf_data = Path(args.input).read_text(encoding='utf-8')
+    # 收集所有SGF文件
+    sgf_files = []
+    for path_str in args.paths:
+        path = Path(path_str)
+        if not path.exists():
+            print(f"⚠️  路径不存在: {path_str}")
+            continue
+        
+        if path.is_file() and path.suffix == '.sgf':
+            sgf_files.append(path)
+        elif path.is_dir():
+            sgf_files.extend(path.glob("*.sgf"))
     
-    results = discover_joseki(
-        sgf_data,
-        joseki_list,
-        first_n=args.first_n,
-        distance_threshold=args.distance_threshold
-    )
+    if not sgf_files:
+        print("❌ 未找到SGF文件")
+        return 1
     
-    if not results:
+    # 批量处理
+    all_results = []
+    for sgf_file in sgf_files:
+        try:
+            sgf_data = sgf_file.read_text(encoding='utf-8')
+            results = discover_joseki(
+                sgf_data,
+                joseki_list,
+                first_n=args.first_n,
+                distance_threshold=args.distance_threshold
+            )
+            
+            if results:
+                # 转换为可序列化格式
+                result_entry = {
+                    "file": str(sgf_file),
+                    "matches": {}
+                }
+                for corner, matches in results.items():
+                    result_entry["matches"][corner] = [
+                        {
+                            "joseki_id": m.joseki_id,
+                            "prefix_len": m.prefix_len,
+                            "total_moves": m.total_moves,
+                            "matched_direction": m.matched_direction,
+                            "source_corner": m.source_corner
+                        }
+                        for m in matches
+                    ]
+                all_results.append(result_entry)
+        except Exception as e:
+            print(f"⚠️  处理失败 {sgf_file}: {e}")
+            continue
+    
+    if not all_results:
         print("未发现定式")
         return
     
-    corner_names = {'tl': '左上', 'tr': '右上', 'bl': '左下', 'br': '右下'}
-    
-    print(f"发现定式:")
-    print()
-    
-    for corner in ['tl', 'tr', 'bl', 'br']:
-        if corner not in results:
-            continue
-        
-        print(f"【{corner_names.get(corner, corner)}】")
-        
-        for r in results[corner]:
-            print(f"  - {r.joseki_id}: 匹配{r.prefix_len}/{r.total_moves}手 ({r.matched_direction})")
-            if args.verbose:
-                joseki = storage.get(r.joseki_id)
-                if joseki:
-                    moves = joseki.get("moves", [])
-                    print(f"    定式: {' '.join(moves)}")
-        print()
+    # JSON输出
+    if args.json:
+        output = json.dumps(all_results, ensure_ascii=False, indent=2)
+        if args.output:
+            Path(args.output).write_text(output, encoding='utf-8')
+            print(f"✅ 已保存到: {args.output}")
+        else:
+            print(output)
+    else:
+        # 文本输出
+        corner_names = {'tl': '左上', 'tr': '右上', 'bl': '左下', 'br': '右下'}
+        for entry in all_results:
+            print(f"\n📄 {entry['file']}")
+            for corner, matches in entry['matches'].items():
+                if matches:
+                    print(f"  【{corner_names.get(corner, corner)}】")
+                    for m in matches:
+                        print(f"    - {m['joseki_id']}: 匹配{m['prefix_len']}/{m['total_moves']}手 ({m['matched_direction']})")
 
 
 def cmd_export(args):
@@ -478,9 +517,11 @@ def main():
     
     # discover
     p_discover = subparsers.add_parser("discover", help="从SGF发现定式")
-    p_discover.add_argument("input", help="SGF文件路径")
+    p_discover.add_argument("paths", nargs="+", help="SGF文件或目录路径")
     p_discover.add_argument("--first-n", type=int, default=80, help="提取前N手")
     p_discover.add_argument("--distance-threshold", type=int, default=4, help="连通块距离阈值")
+    p_discover.add_argument("--json", action="store_true", help="JSON格式输出")
+    p_discover.add_argument("--output", "-o", help="输出文件")
     p_discover.add_argument("--verbose", "-v", action="store_true", help="详细输出")
     
     # export
