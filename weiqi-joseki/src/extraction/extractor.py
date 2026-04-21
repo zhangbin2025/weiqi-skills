@@ -7,7 +7,6 @@
 from typing import List, Tuple, Dict, Optional
 from .sgf_parser import parse_sgf
 from .component_detector import extract_corner_moves
-from ..core.coords import CoordinateSystem, convert_to_top_right
 
 
 # 四角配置
@@ -45,7 +44,7 @@ def extract_main_branch(sgf_data: str, first_n: int = 80) -> List[Tuple[str, str
     return moves
 
 
-def extract_joseki(
+def extract_moves(
     sgf_data: str,
     corner: Optional[str] = None,
     first_n: int = 80,
@@ -92,28 +91,28 @@ def extract_joseki(
     return result
 
 
-def extract_joseki_all_corners(
+def extract_moves_all_corners(
     sgf_data: str,
     first_n: int = 80,
     distance_threshold: int = 4
 ) -> Dict[str, List[Tuple[str, str]]]:
     """
-    提取四角定式（便捷函数）
+    提取四角着法（便捷函数）
     """
-    return extract_joseki(sgf_data, corner=None, first_n=first_n, 
-                          distance_threshold=distance_threshold)
+    return extract_moves(sgf_data, corner=None, first_n=first_n, 
+                         distance_threshold=distance_threshold)
 
 
 def convert_to_multigogm(
-    corner_moves: Dict[str, List[Tuple[str, str]]],
-    convert_to_tr: bool = True
+    corner_moves: Dict[str, List[Tuple[str, str]]]
 ) -> str:
     """
-    将四角定式转换为MULTIGOGM格式SGF
+    将四角着法转换为MULTIGOGM格式SGF（仅用于CLI查看提取效果）
+    
+    注意：此函数保持原始SGF坐标，不做任何视角转换
     
     Args:
         corner_moves: {corner_key: [(color, coord), ...], ...}
-        convert_to_tr: 是否转换为右上角视角
     
     Returns:
         MULTIGOGM格式SGF字符串
@@ -125,16 +124,10 @@ def convert_to_multigogm(
         if not moves:
             continue
         
-        # 转换视角
-        if convert_to_tr and corner_key != 'tr':
-            coords = [coord for _, coord in moves]
-            converted_coords = convert_to_top_right(coords, corner_key)
-            moves = [(color, converted_coords[i]) for i, (color, _) in enumerate(moves)]
-        
-        # 生成SGF分支
+        # 生成SGF分支（保持原始坐标）
         comment = CORNER_NAMES.get(corner_key, corner_key)
         if moves[0][0] == 'W':
-            comment += " 白先→黑先"
+            comment += " 白先"
         else:
             comment += " 黑先"
         

@@ -10,8 +10,8 @@ from .katago_downloader import iter_sgf_from_tar
 # 新提取器
 from .extractor import (
     extract_main_branch,
-    extract_joseki,
-    extract_joseki_all_corners,
+    extract_moves,
+    extract_moves_all_corners,
     convert_to_multigogm,
     get_move_sequence,
 )
@@ -30,8 +30,8 @@ __all__ = [
     'iter_sgf_from_tar',
     # 新提取器
     'extract_main_branch',
-    'extract_joseki',
-    'extract_joseki_all_corners',
+    'extract_moves',
+    'extract_moves_all_corners',
     'convert_to_multigogm',
     'get_move_sequence',
     # 连通块检测
