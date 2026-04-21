@@ -288,16 +288,14 @@ class KatagoJosekiBuilder:
                     
                     prefix_hash = _get_hash(prefix_parts)
                     
-                    # 单链检测：count和last_count相差<5%，且子串已处理
+                    # 单链检测：count和last_count相差<5%，说明是单链，跳过
                     if last_count != float('inf'):
                         count_diff_ratio = abs(est_count - last_count) / max(est_count, last_count, 1)
                         if count_diff_ratio < SINGLE_CHAIN_THRESHOLD:
-                            child_hash = _get_child_hash(prefix_parts, seq_parts)
-                            if child_hash and child_hash in seen_hashes:
-                                skipped_single_chain += 1
-                                # 不写入seen_hashes，减少内存（功能仍正确，只是效率略降）
-                                last_count = est_count
-                                continue
+                            # 子串已处理（last_count来自子串），当前前缀被代表，跳过
+                            skipped_single_chain += 1
+                            last_count = est_count
+                            continue
                     
                     last_count = est_count
                     
@@ -433,11 +431,9 @@ class KatagoJosekiBuilder:
                     if last_count != float('inf'):
                         count_diff_ratio = abs(est_count - last_count) / max(est_count, last_count, 1)
                         if count_diff_ratio < SINGLE_CHAIN_THRESHOLD:
-                            child_hash = _get_child_hash(prefix_parts, seq_parts)
-                            if child_hash and child_hash in seen_hashes:
-                                # 不写入seen_hashes，减少内存
-                                last_count = est_count
-                                continue
+                            # 子串已处理（last_count来自子串），当前前缀被代表，跳过
+                            last_count = est_count
+                            continue
                     
                     last_count = est_count
                     
