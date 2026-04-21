@@ -114,6 +114,24 @@ class KatagoJosekiBuilder:
         self._cms_width = width
         self._cms_depth = depth
     
+    def process_sgf(self, sgf_data: str, first_n: int = 80, 
+                    distance_threshold: int = 4) -> Dict[str, List[str]]:
+        """
+        处理单个SGF，提取四角着法
+        
+        Returns:
+            {corner: [coord, ...], ...} 原始SGF坐标
+        """
+        corner_moves = extract_moves_all_corners(
+            sgf_data, 
+            first_n=first_n, 
+            distance_threshold=distance_threshold
+        )
+        
+        # 转换为纯坐标序列
+        return {corner: get_move_sequence(moves) 
+                for corner, moves in corner_moves.items()}
+    
     def build_from_tar(self, 
                        tar_path: str,
                        min_freq: int = 5,

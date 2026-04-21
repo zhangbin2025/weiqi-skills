@@ -308,6 +308,7 @@ def iter_sgf_from_tar(tar_path: Path) -> Iterator[str]:
     Yields:
         SGF字符串
     """
+    tar_path = Path(tar_path) if isinstance(tar_path, str) else tar_path
     if not tar_path.exists():
         return
     
