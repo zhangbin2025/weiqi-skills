@@ -190,7 +190,8 @@ def cmd_katago(args):
         temp_path, cms, 
         min_freq=args.min_freq,
         top_k=args.top_k,
-        min_moves=min_moves
+        min_moves=min_moves,
+        max_moves=args.max_moves
     )
     
     # 清理临时文件
@@ -219,12 +220,13 @@ def cmd_list(args):
         return
     
     # 排序
+    reverse = (args.order == "desc")
     if args.sort == "freq":
-        joseki_list.sort(key=lambda x: -x.get("frequency", 0))
+        joseki_list.sort(key=lambda x: x.get("frequency", 0), reverse=reverse)
     elif args.sort == "length":
-        joseki_list.sort(key=lambda x: -len(x.get("moves", [])))
+        joseki_list.sort(key=lambda x: len(x.get("moves", [])), reverse=reverse)
     else:  # id
-        joseki_list.sort(key=lambda x: x.get("id", ""))
+        joseki_list.sort(key=lambda x: x.get("id", ""), reverse=reverse)
     
     # 限制数量
     if args.limit:
@@ -452,15 +454,16 @@ def main():
     p_katago.add_argument("--end-date", required=True, help="结束日期 (YYYY-MM-DD)")
     p_katago.add_argument("--min-freq", type=int, default=10, help="最小频率")
     p_katago.add_argument("--top-k", type=int, default=100000, help="入库数量上限")
-    p_katago.add_argument("--max-games", type=int, default=None, help="最大处理棋谱数")
     p_katago.add_argument("--first-n", type=int, default=80, help="提取前N手")
     p_katago.add_argument("--distance-threshold", type=int, default=4, help="连通块距离阈值")
     p_katago.add_argument("--min-moves", type=int, default=4, help="最少手数")
+    p_katago.add_argument("--max-moves", type=int, default=50, help="最多手数")
     
     # list
     p_list = subparsers.add_parser("list", help="列出定式")
     p_list.add_argument("--limit", type=int, help="限制数量")
     p_list.add_argument("--sort", choices=["id", "freq", "length"], default="id", help="排序方式")
+    p_list.add_argument("--order", choices=["asc", "desc"], default="asc", help="排序方向")
     
     # stats
     p_stats = subparsers.add_parser("stats", help="统计信息")

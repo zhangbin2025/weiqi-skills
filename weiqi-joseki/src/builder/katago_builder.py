@@ -138,10 +138,10 @@ class KatagoJosekiBuilder:
                        tar_path: str,
                        min_freq: int = 5,
                        top_k: int = 10000,
-                       max_games: int = None,
                        first_n: int = 80,
                        distance_threshold: int = 4,
                        min_moves: int = 4,
+                       max_moves: int = 50,
                        verbose: bool = True) -> List[dict]:
         """
         从tar文件构建定式库（完整保留原代码算法）
@@ -150,10 +150,10 @@ class KatagoJosekiBuilder:
             tar_path: tar文件路径
             min_freq: 最小出现频率
             top_k: 入库定式数量上限
-            max_games: 最大处理棋谱数
             first_n: 提取前N手
             distance_threshold: 连通块距离阈值
             min_moves: 最少手数（前缀从此手数开始提取）
+            max_moves: 最多手数
             verbose: 详细输出
         
         Returns:
@@ -176,9 +176,6 @@ class KatagoJosekiBuilder:
         
         with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
             for sgf_data in iter_sgf_from_tar(tar_path):
-                if max_games and processed >= max_games:
-                    break
-                
                 try:
                     # 提取四角着法
                     corner_moves_dict = extract_moves_all_corners(
@@ -350,6 +347,9 @@ class KatagoJosekiBuilder:
         
         candidates = []
         for moves_tuple, (count, direction) in seen_ruld.items():
+            # 过滤超长定式
+            if len(moves_tuple) > max_moves:
+                continue
             candidates.append({
                 'moves': list(moves_tuple),
                 'count': count,
@@ -365,6 +365,9 @@ class KatagoJosekiBuilder:
         # 清理临时文件
         temp_path.unlink()
         
+        # 计算概率（频率 / 总定式串数）
+        total_sequences = max(total_unique_sequences, 1)
+        
         # ===== Phase 4: 转换为定式格式 =====
         joseki_list = []
         for i, cand in enumerate(candidates):
@@ -373,6 +376,7 @@ class KatagoJosekiBuilder:
                 "source": "katago",
                 "moves": cand['moves'],
                 "frequency": cand['count'],
+                "probability": round(cand['count'] / total_sequences, 6),
                 "direction": cand['direction'],
                 "created_at": datetime.now().isoformat()
             }
@@ -383,7 +387,7 @@ class KatagoJosekiBuilder:
         
         return joseki_list
     
-    def _process_temp_file(self, temp_path: Path, cms, min_freq: int, top_k: int, min_moves: int) -> List[dict]:
+    def _process_temp_file(self, temp_path: Path, cms, min_freq: int, top_k: int, min_moves: int, max_moves: int = 50) -> List[dict]:
         """处理临时文件，执行逆向遍历+单链检测+去重"""
         import heapq
         from datetime import datetime
@@ -468,6 +472,9 @@ class KatagoJosekiBuilder:
         
         candidates = []
         for moves_tuple, (count, direction) in seen_ruld.items():
+            # 过滤超长定式
+            if len(moves_tuple) > max_moves:
+                continue
             candidates.append({
                 'moves': list(moves_tuple),
                 'count': count,
@@ -476,7 +483,7 @@ class KatagoJosekiBuilder:
         
         candidates.sort(key=lambda x: " ".join(x['moves']))
         
-        # 转换为定式格式
+        # 转换为定式格式（概率暂时为0，需要外部传入total_sequences计算）
         joseki_list = []
         for i, cand in enumerate(candidates):
             joseki = {
@@ -484,6 +491,7 @@ class KatagoJosekiBuilder:
                 "source": "katago",
                 "moves": cand['moves'],
                 "frequency": cand['count'],
+                "probability": 0.0,  # 需要外部计算
                 "direction": cand['direction'],
                 "created_at": datetime.now().isoformat()
             }
@@ -508,10 +516,10 @@ def build_katago_joseki_db(
     db_path: Optional[str] = None,
     min_freq: int = 5,
     top_k: int = 10000,
-    max_games: int = None,
     first_n: int = 80,
     distance_threshold: int = 4,
-    min_moves: int = 4
+    min_moves: int = 4,
+    max_moves: int = 50
 ) -> int:
     """便捷函数：从KataGo棋谱构建定式库"""
     builder = KatagoJosekiBuilder(db_path)
@@ -520,10 +528,10 @@ def build_katago_joseki_db(
         tar_path=tar_path,
         min_freq=min_freq,
         top_k=top_k,
-        max_games=max_games,
         first_n=first_n,
         distance_threshold=distance_threshold,
-        min_moves=min_moves
+        min_moves=min_moves,
+        max_moves=max_moves
     )
     
     builder.save_to_db(joseki_list, append=False)
