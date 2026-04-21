@@ -385,6 +385,16 @@ def cmd_discover(args):
     for sgf_file in sgf_files:
         try:
             sgf_data = sgf_file.read_text(encoding='utf-8')
+            
+            # 提取四角着法（用于输出）
+            from ..extraction import extract_moves_all_corners, get_move_sequence
+            corner_moves_dict = extract_moves_all_corners(
+                sgf_data, first_n=args.first_n, distance_threshold=args.distance_threshold
+            )
+            extracted_moves = {}
+            for corner, moves in corner_moves_dict.items():
+                extracted_moves[corner] = " ".join(get_move_sequence(moves))
+            
             results = discover_joseki(
                 sgf_data,
                 joseki_list,
@@ -396,15 +406,16 @@ def cmd_discover(args):
                 # 转换为可序列化格式
                 result_entry = {
                     "file": str(sgf_file),
+                    "extracted_moves": extracted_moves,
                     "matches": {}
                 }
                 for corner, matches in results.items():
                     result_entry["matches"][corner] = [
                         {
                             "joseki_id": m.joseki_id,
+                            "prefix": m.prefix,
                             "prefix_len": m.prefix_len,
                             "total_moves": m.total_moves,
-                            "matched_direction": m.matched_direction,
                             "source_corner": m.source_corner
                         }
                         for m in matches

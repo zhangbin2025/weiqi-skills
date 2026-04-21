@@ -18,9 +18,9 @@ class DiscoverResult:
     """定式发现结果"""
     joseki_id: str           # 定式ID
     name: str                # 定式名称
+    prefix: str              # 匹配的前缀着法串
     prefix_len: int          # 匹配的前缀长度
     total_moves: int         # 定式总手数
-    matched_direction: str   # 匹配方向 "ruld" 或 "rudl"
     source_corner: str       # 棋谱来源角 "tl"/"tr"/"bl"/"br"
 
 
@@ -65,12 +65,13 @@ class JosekiDiscoverer:
         # ruld方向匹配
         ruld_matches = self.matcher.match(tr_moves, top_k=1)
         for match in ruld_matches:
+            prefix = " ".join(tr_moves[:match.prefix_len])
             results.append(DiscoverResult(
                 joseki_id=match.id,
                 name=match.name,
+                prefix=prefix,
                 prefix_len=match.prefix_len,
                 total_moves=match.total_moves,
-                matched_direction="ruld",
                 source_corner=corner
             ))
         
@@ -78,12 +79,13 @@ class JosekiDiscoverer:
         rudl_moves = convert_to_rudl(tr_moves)
         rudl_matches = self.matcher.match(rudl_moves, top_k=1)
         for match in rudl_matches:
+            prefix = " ".join(rudl_moves[:match.prefix_len])
             results.append(DiscoverResult(
                 joseki_id=match.id,
                 name=match.name,
+                prefix=prefix,
                 prefix_len=match.prefix_len,
                 total_moves=match.total_moves,
-                matched_direction="rudl",
                 source_corner=corner
             ))
         
