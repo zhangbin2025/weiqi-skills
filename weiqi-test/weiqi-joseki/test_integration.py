@@ -47,10 +47,10 @@ def test_katago_import():
                     db_path=str(db_path),
                     min_freq=3,  # 降低阈值以便测试
                     top_k=1000,
-                    max_games=500,  # 限制处理数量
                     first_n=80,
                     distance_threshold=4,
-                    min_moves=4
+                    min_moves=4,
+                    max_moves=50
                 )
                 total_count += count
                 print(f"✅ 导入 {count} 条定式")
@@ -111,10 +111,10 @@ def test_discover():
                 db_path=str(db_path),
                 min_freq=5,
                 top_k=500,
-                max_games=1000,
                 first_n=80,
                 distance_threshold=4,
-                min_moves=4
+                min_moves=4,
+                max_moves=50
             )
         
         storage = JsonStorage(str(db_path))
@@ -149,7 +149,7 @@ def test_discover():
                         top = matches[0]
                         print(f"      - {corner}: {top.joseki_id} "
                               f"(匹配{top.prefix_len}/{top.total_moves}手, "
-                              f"方向:{top.matched_direction}, 来源:{top.source_corner})")
+                              f"来源:{top.source_corner})")
                 
             except Exception as e:
                 print(f"      ⚠️  处理失败: {e}")
