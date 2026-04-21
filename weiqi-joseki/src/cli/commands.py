@@ -409,12 +409,16 @@ def cmd_discover(args):
             
             # 提取四角着法（用于输出）
             from ..extraction import extract_moves_all_corners, get_move_sequence
+            from ..core.coords import convert_to_top_right
             corner_moves_dict = extract_moves_all_corners(
                 sgf_data, first_n=args.first_n, distance_threshold=args.distance_threshold
             )
+            # 转换到右上角视角，与prefix方向一致
             extracted_moves = {}
             for corner, moves in corner_moves_dict.items():
-                extracted_moves[corner] = " ".join(get_move_sequence(moves))
+                coords = get_move_sequence(moves)
+                tr_coords = convert_to_top_right(coords, corner)
+                extracted_moves[corner] = " ".join(tr_coords)
             
             results = discover_joseki(
                 sgf_data,
