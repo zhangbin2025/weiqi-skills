@@ -386,6 +386,17 @@ def cmd_discover(args):
         try:
             sgf_data = sgf_file.read_text(encoding='utf-8')
             
+            # 解析SGF元数据
+            from ..extraction.sgf_parser import parse_sgf
+            sgf_meta = parse_sgf(sgf_data)
+            game_info = {
+                "black": sgf_meta.get("PB", "未知"),
+                "white": sgf_meta.get("PW", "未知"),
+                "result": sgf_meta.get("RE", ""),
+                "event": sgf_meta.get("EV", ""),
+                "date": sgf_meta.get("DT", "")
+            }
+            
             # 提取四角着法（用于输出）
             from ..extraction import extract_moves_all_corners, get_move_sequence
             corner_moves_dict = extract_moves_all_corners(
@@ -408,6 +419,7 @@ def cmd_discover(args):
                     joseki = storage.get(m.joseki_id)
                     all_matches.append({
                         "file": str(sgf_file),
+                        "game_info": game_info,
                         "source_corner": m.source_corner,
                         "extracted_moves": extracted_moves.get(m.source_corner, ""),
                         "joseki_id": m.joseki_id,
