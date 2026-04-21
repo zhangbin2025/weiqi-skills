@@ -388,18 +388,23 @@ def cmd_discover(args):
             
             # 解析SGF元数据
             from ..extraction.sgf_parser import parse_sgf
-            sgf_meta = parse_sgf(sgf_data)
+            sgf_result = parse_sgf(sgf_data)
+            sgf_game_info = sgf_result.get("game_info", {})
+            
             # 优先取EV，没有则取GN
-            event = sgf_meta.get("EV", "")
+            event = sgf_game_info.get("event", "")
             if not event:
-                event = sgf_meta.get("GN", "")
+                # 从原始properties获取GN
+                tree = sgf_result.get("tree", {})
+                props = tree.get("properties", {})
+                event = props.get("GN", "")
             
             game_info = {
-                "black": sgf_meta.get("PB", "未知"),
-                "white": sgf_meta.get("PW", "未知"),
-                "result": sgf_meta.get("RE", ""),
+                "black": sgf_game_info.get("black", "未知"),
+                "white": sgf_game_info.get("white", "未知"),
+                "result": sgf_game_info.get("result", ""),
                 "event": event,
-                "date": sgf_meta.get("DT", "")
+                "date": sgf_game_info.get("date", "")
             }
             
             # 提取四角着法（用于输出）
