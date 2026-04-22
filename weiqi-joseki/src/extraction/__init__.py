@@ -23,6 +23,7 @@ from .component_detector import (
     filter_nearest_component,
     extract_corner_moves,
     extract_corner_moves_9lu,
+    _extract_corner_moves_lu,
 )
 
 __all__ = [

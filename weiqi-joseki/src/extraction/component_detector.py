@@ -341,6 +341,98 @@ def _point_in_polygon(point: Tuple[int, int], polygon: List[Tuple[int, int]]) ->
     return inside
 
 
+def _extract_corner_moves_lu(
+    moves: List[Tuple[str, str]],
+    corner_key: str,
+    lu_size: int,
+    distance_threshold: int = 4
+) -> Tuple[List[Tuple[str, str]], Set[Tuple[int, int]], Set[Tuple[int, int]]]:
+    """
+    通用N路角提取（返回结果、核心位置、被剔除位置）
+    
+    Args:
+        moves: 着法序列
+        corner_key: 角标识
+        lu_size: 路数（9/11/13）
+        distance_threshold: 连通块阈值
+    
+    Returns:
+        (result_moves, core_positions, discarded_positions)
+    """
+    from ..core.coords import CoordinateSystem
+    
+    # N路范围配置
+    ranges = {
+        9: {
+            'tl': ((0, 8), (0, 8)),
+            'tr': ((10, 18), (0, 8)),
+            'bl': ((0, 8), (10, 18)),
+            'br': ((10, 18), (10, 18)),
+        },
+        11: {
+            'tl': ((0, 10), (0, 10)),
+            'tr': ((8, 18), (0, 10)),
+            'bl': ((0, 10), (8, 18)),
+            'br': ((8, 18), (8, 18)),
+        },
+        13: {
+            'tl': ((0, 12), (0, 12)),
+            'tr': ((6, 18), (0, 12)),
+            'bl': ((0, 12), (6, 18)),
+            'br': ((6, 18), (6, 18)),
+        }
+    }
+    
+    if lu_size not in ranges:
+        return [], set(), set()
+    
+    config = ranges[lu_size].get(corner_key)
+    if not config:
+        return [], set(), set()
+    
+    (col_min, col_max), (row_min, row_max) = config
+    
+    # 收集N路范围内的着法
+    corner_moves = []
+    for color, coord in moves:
+        if coord == 'tt' or not coord or len(coord) != 2:
+            continue
+        try:
+            col, row = CoordinateSystem.sgf_to_nums(coord)
+            if col_min <= col <= col_max and row_min <= row <= row_max:
+                corner_moves.append((color, coord))
+        except:
+            continue
+    
+    if not corner_moves:
+        return [], set(), set()
+    
+    # 收集所有位置
+    all_positions = set()
+    for color, coord in corner_moves:
+        col, row = CoordinateSystem.sgf_to_nums(coord)
+        all_positions.add((col, row))
+    
+    # 时序连通性分析
+    core_positions, discarded_positions = _find_temporal_core(
+        all_positions, corner_moves, max_distance=4
+    )
+    
+    # 构建结果
+    result = []
+    last_color = None
+    for color, coord in corner_moves:
+        col, row = CoordinateSystem.sgf_to_nums(coord)
+        if (col, row) in core_positions:
+            if last_color == color:
+                pass_color = 'W' if color == 'B' else 'B'
+                result.append((pass_color, 'tt'))
+            result.append((color, coord))
+            last_color = color
+    
+    return result, core_positions, discarded_positions
+
+
 def extract_corner_moves_9lu(
     moves: List[Tuple[str, str]],
     corner_key: str,
@@ -428,6 +520,18 @@ def extract_corner_moves_9lu(
     return result
 
 
+def extract_corner_moves_9lu(
+    moves: List[Tuple[str, str]],
+    corner_key: str,
+    distance_threshold: int = 4
+) -> List[Tuple[str, str]]:
+    """
+    提取指定角的着法（9路范围，最终回退方案）
+    """
+    result, _, _ = _extract_corner_moves_lu(moves, corner_key, 9, distance_threshold)
+    return result
+
+
 def extract_corner_moves(
     moves: List[Tuple[str, str]], 
     corner_key: str,
@@ -484,40 +588,40 @@ def extract_corner_moves(
     if not valid_positions:
         return []
     
-    # 行棋时序连通性分析：确定核心定式区域（不删除着法）
-    core_positions, discarded_positions = _find_temporal_core(
-        valid_positions, moves, max_distance=4
+    # 多级回退策略：13路 → 11路 → 9路
+    # 1. 先尝试13路
+    result_13, core_13, discarded_13 = _extract_corner_moves_lu(
+        moves, corner_key, 13, distance_threshold
     )
-
-    # 智能回退：如果被剔除的着法落入 core 凸包范围内
-    # 计算 core 的凸包，检查 discarded 是否在凸包内
-    if discarded_positions and core_positions:
-        hull = _convex_hull(list(core_positions))
-        for disc_pos in discarded_positions:
-            if _point_in_polygon(disc_pos, hull):
-                # 被剔除的着法实际在 core 区域内，回退9路
-                return extract_corner_moves_9lu(moves, corner_key, distance_threshold)
-
-    # 重新遍历着法，只保留在核心区域内的着法
-    # 同时检测脱先（连续同色）
-    result = []
-    last_color = None
-
-    for color, coord in moves:
-        if coord == 'tt' or not coord or len(coord) != 2:
-            continue
-
-        try:
-            col, row = CoordinateSystem.sgf_to_nums(coord)
-            if (col, row) in core_positions:
-                # 检测脱先
-                if last_color == color:
-                    # 插入对方脱先标记
-                    pass_color = 'W' if color == 'B' else 'B'
-                    result.append((pass_color, 'tt'))
-                result.append((color, coord))
-                last_color = color
-        except:
-            continue
-
-    return result
+    
+    # 检查13路是否需要回退（被剔除的着法在凸包内）
+    should_fallback_13 = False
+    if discarded_13 and core_13:
+        hull_13 = _convex_hull(list(core_13))
+        for disc_pos in discarded_13:
+            if _point_in_polygon(disc_pos, hull_13):
+                should_fallback_13 = True
+                break
+    
+    if not should_fallback_13:
+        return result_13
+    
+    # 2. 回退到11路
+    result_11, core_11, discarded_11 = _extract_corner_moves_lu(
+        moves, corner_key, 11, distance_threshold
+    )
+    
+    # 检查11路是否需要回退
+    should_fallback_11 = False
+    if discarded_11 and core_11:
+        hull_11 = _convex_hull(list(core_11))
+        for disc_pos in discarded_11:
+            if _point_in_polygon(disc_pos, hull_11):
+                should_fallback_11 = True
+                break
+    
+    if not should_fallback_11:
+        return result_11
+    
+    # 3. 最终回退到9路
+    return extract_corner_moves_9lu(moves, corner_key, distance_threshold)
