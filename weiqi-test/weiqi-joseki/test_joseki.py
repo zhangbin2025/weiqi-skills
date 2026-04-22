@@ -158,14 +158,15 @@ class TestDiscover(unittest.TestCase):
             {"id": "kj_00001", "moves": ["pd", "qf", "nc", "rd"]},
         ]
         discoverer = JosekiDiscoverer(joseki_list)
-        
-        # 使用右上角坐标
+
         moves = ["pd", "qf", "nc", "rd"]
-        results = discoverer.discover_corner(moves, corner="tr")
-        
-        self.assertGreater(len(results), 0)
-        self.assertEqual(results[0].joseki_id, "kj_00001")
-        self.assertEqual(results[0].source_corner, "tr")
+        result = discoverer.discover_corner(moves, corner="tr")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.joseki_id, "kj_00001")
+        self.assertEqual(result.source_corner, "tr")
+        self.assertIsInstance(result.moves, str)
+        self.assertEqual(result.total_moves, 4)
     
     def test_discover_no_match(self):
         """测试无匹配情况"""
@@ -173,13 +174,11 @@ class TestDiscover(unittest.TestCase):
             {"id": "kj_00001", "moves": ["pd", "qf", "nc"]},
         ]
         discoverer = JosekiDiscoverer(joseki_list)
-        
-        # 完全不相关的着法
+
         moves = ["aa", "bb", "cc"]
-        results = discoverer.discover_corner(moves, corner="tl")
-        
-        # 可能没有匹配
-        self.assertIsInstance(results, list)
+        result = discoverer.discover_corner(moves, corner="tl")
+
+        self.assertIsNone(result)
     
     def test_discover_full_sgf(self):
         """测试完整SGF发现"""
@@ -188,11 +187,14 @@ class TestDiscover(unittest.TestCase):
             {"id": "kj_00002", "moves": ["dd", "fc", "df"]},
         ]
         discoverer = JosekiDiscoverer(joseki_list)
-        
+
         sgf = "(;SZ[19];B[pd];W[qf];B[nc])"
         results = discoverer.discover(sgf, first_n=10, distance_threshold=4)
-        
+
         self.assertIsInstance(results, dict)
+        for corner, match in results.items():
+            self.assertIsInstance(match.joseki_id, str)
+            self.assertIsInstance(match.moves, str)
 
 
 class TestStorage(unittest.TestCase):
@@ -280,7 +282,9 @@ class TestIntegration(unittest.TestCase):
         
         # 4. 验证发现结果
         if 'tr' in results:
-            self.assertGreater(len(results['tr']), 0)
+            match = results['tr']
+            self.assertIsNotNone(match)
+            self.assertEqual(match.joseki_id, "kj_00001")
 
 
 class TestCoordinateConversion(unittest.TestCase):
