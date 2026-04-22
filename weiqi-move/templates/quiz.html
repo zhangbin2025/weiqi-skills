@@ -2094,8 +2094,8 @@
                     }
                 }
                 
-                // 如果没有点击选项，进入试下模式
-                if (!clickedOption) {
+                // 如果没有点击选项，且当前显示到题目最后一步，才允许进入试下模式
+                if (!clickedOption && currentMove === currentProblem.position.length) {
                     startTryPlay(bx, by);
                 }
             }
