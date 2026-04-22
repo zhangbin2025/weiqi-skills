@@ -11,4 +11,4 @@ weiqi-joseki 重构版 - 围棋定式数据库
 - utils: 工具函数
 """
 
-__version__ = "2.0.0-refactor"
+__version__ = "2.0.0"
