@@ -22,6 +22,7 @@ from .component_detector import (
     find_connected_components,
     filter_nearest_component,
     extract_corner_moves,
+    extract_corner_moves_9lu,
 )
 
 __all__ = [
@@ -39,4 +40,5 @@ __all__ = [
     'find_connected_components',
     'filter_nearest_component',
     'extract_corner_moves',
+    'extract_corner_moves_9lu',
 ]
