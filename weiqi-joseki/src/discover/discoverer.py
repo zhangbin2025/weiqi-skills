@@ -16,13 +16,12 @@ from ..builder import convert_to_rudl
 @dataclass
 class DiscoverResult:
     """定式发现结果"""
-    joseki_id: str           # 定式ID
-    name: str                # 定式名称
-    prefix: str              # 匹配的前缀着法串
-    prefix_len: int          # 匹配的前缀长度
-    total_moves: int         # 定式总手数
-    source_corner: str       # 棋谱来源角 "tl"/"tr"/"bl"/"br"
-    direction: str           # 匹配方向 "ruld" 或 "rudl"
+    joseki_id: str      # 定式ID
+    moves: str          # 完整着法串
+    prefix: str         # 匹配的前缀着法串
+    prefix_len: int     # 匹配的前缀长度
+    total_moves: int    # 着法串长度
+    source_corner: str  # 棋谱来源角 "tl"/"tr"/"bl"/"br"
 
 
 class JosekiDiscoverer:
@@ -38,66 +37,55 @@ class JosekiDiscoverer:
         self.matcher = TrieMatcher()
         self.matcher.build(joseki_list)
     
-    def discover_corner(self, moves: List[str], corner: str) -> List[DiscoverResult]:
+    def discover_corner(self, moves: List[str], corner: str) -> Optional[DiscoverResult]:
         """
         发现单个角的定式
-        
-        流程：
-        1. 转换到右上角视角
-        2. 生成 ruld 和 rudl 两个方向
-        3. 用 Trie 树匹配最长前缀
-        4. 收集结果
         
         Args:
             moves: 着法坐标列表（原始SGF坐标）
             corner: 来源角 "tl"/"tr"/"bl"/"br"
         
         Returns:
-            DiscoverResult列表
+            最佳匹配的DiscoverResult，无匹配返回None
         """
         if not moves or len(moves) < 2:
-            return []
+            return None
         
-        # 转换到右上角视角 (ruld方向)
         tr_moves = convert_to_top_right(moves, corner)
         
-        results = []
+        # 尝试ruld方向
+        ruld_match = self.matcher.match(tr_moves, top_k=1)
+        ruld_len = ruld_match[0].prefix_len if ruld_match else 0
         
-        # 先尝试ruld方向
-        ruld_matches = self.matcher.match(tr_moves, top_k=1)
-        if ruld_matches:
-            ruld_match = ruld_matches[0]
-            ruld_prefix = " ".join(tr_moves[:ruld_match.prefix_len])
-            results.append(DiscoverResult(
-                joseki_id=ruld_match.id,
-                name=ruld_match.name,
-                prefix=ruld_prefix,
-                prefix_len=ruld_match.prefix_len,
-                total_moves=ruld_match.total_moves,
-                source_corner=corner,
-                direction="ruld"
-            ))
-        
-        # 再尝试rudl方向
+        # 尝试rudl方向
         rudl_moves = convert_to_rudl(tr_moves)
-        rudl_matches = self.matcher.match(rudl_moves, top_k=1)
-        if rudl_matches:
-            rudl_match = rudl_matches[0]
-            rudl_prefix = " ".join(rudl_moves[:rudl_match.prefix_len])
-            results.append(DiscoverResult(
-                joseki_id=rudl_match.id,
-                name=rudl_match.name,
-                prefix=rudl_prefix,
-                prefix_len=rudl_match.prefix_len,
-                total_moves=rudl_match.total_moves,
-                source_corner=corner,
-                direction="rudl"
-            ))
+        rudl_match = self.matcher.match(rudl_moves, top_k=1)
+        rudl_len = rudl_match[0].prefix_len if rudl_match else 0
         
-        return results
+        # 取匹配最长的返回
+        if ruld_len >= rudl_len and ruld_len > 0:
+            return DiscoverResult(
+                joseki_id=ruld_match[0].id,
+                moves=" ".join(tr_moves),
+                prefix=" ".join(tr_moves[:ruld_len]),
+                prefix_len=ruld_len,
+                total_moves=len(tr_moves),
+                source_corner=corner,
+            )
+        elif rudl_len > 0:
+            return DiscoverResult(
+                joseki_id=rudl_match[0].id,
+                moves=" ".join(rudl_moves),
+                prefix=" ".join(rudl_moves[:rudl_len]),
+                prefix_len=rudl_len,
+                total_moves=len(rudl_moves),
+                source_corner=corner,
+            )
+        
+        return None
     
-    def discover(self, sgf_data: str, first_n: int = 80, 
-                 distance_threshold: int = 4) -> Dict[str, List[DiscoverResult]]:
+    def discover(self, sgf_data: str, first_n: int = 80,
+                 distance_threshold: int = 4) -> Dict[str, DiscoverResult]:
         """
         从SGF发现定式
         
@@ -107,7 +95,7 @@ class JosekiDiscoverer:
             distance_threshold: 连通块距离阈值
         
         Returns:
-            {corner: [DiscoverResult, ...], ...}
+            {corner: DiscoverResult, ...}
             corner: "tl"/"tr"/"bl"/"br"
         """
         # 使用新提取接口提取四角着法
@@ -125,10 +113,9 @@ class JosekiDiscoverer:
                 continue
             
             coords = get_move_sequence(moves)
-            corner_results = self.discover_corner(coords, corner)
-            
-            if corner_results:
-                results[corner] = corner_results
+            match = self.discover_corner(coords, corner)
+            if match:
+                results[corner] = match
         
         return results
 
@@ -138,7 +125,7 @@ def discover_joseki(
     joseki_list: List[dict],
     first_n: int = 80,
     distance_threshold: int = 4
-) -> Dict[str, List[DiscoverResult]]:
+) -> Dict[str, DiscoverResult]:
     """
     便捷函数：从SGF发现定式
     
@@ -149,7 +136,7 @@ def discover_joseki(
         distance_threshold: 连通块距离阈值
     
     Returns:
-        {corner: [DiscoverResult, ...], ...}
+        {corner: DiscoverResult, ...}
     """
     discoverer = JosekiDiscoverer(joseki_list)
     return discoverer.discover(sgf_data, first_n, distance_threshold)

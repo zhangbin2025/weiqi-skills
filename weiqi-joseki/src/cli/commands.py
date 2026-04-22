@@ -11,7 +11,6 @@ from ..storage import JsonStorage, DEFAULT_DB_PATH
 from ..builder import KatagoJosekiBuilder, convert_to_rudl
 from ..discover import discover_joseki
 from ..extraction import extract_moves_all_corners, convert_to_multigogm
-from ..matching import TrieMatcher
 
 
 def cmd_init(args):
@@ -414,14 +413,12 @@ def cmd_discover(args):
             corner_moves_dict = extract_moves_all_corners(
                 sgf_data, first_n=args.first_n, distance_threshold=args.distance_threshold
             )
-            # 准备两个方向的着法串
-            extracted_moves_ruld = {}
-            extracted_moves_rudl = {}
+            # 准备着法串（用于输出）
+            extracted_moves = {}
             for corner, moves in corner_moves_dict.items():
                 coords = get_move_sequence(moves)
                 tr_coords = convert_to_top_right(coords, corner)
-                extracted_moves_ruld[corner] = " ".join(tr_coords)
-                extracted_moves_rudl[corner] = " ".join(convert_to_rudl(tr_coords))
+                extracted_moves[corner] = " ".join(tr_coords)
             
             results = discover_joseki(
                 sgf_data,
@@ -431,27 +428,20 @@ def cmd_discover(args):
             )
             
             # 每条定式一条记录
-            for corner, matches in results.items():
-                for m in matches:
-                    joseki = storage.get(m.joseki_id)
-                    # 根据匹配方向选择对应的着法串
-                    if m.direction == "rudl":
-                        extracted = extracted_moves_rudl.get(m.source_corner, "")
-                    else:
-                        extracted = extracted_moves_ruld.get(m.source_corner, "")
-                    
-                    all_matches.append({
-                        "file": str(sgf_file),
-                        "game_info": game_info,
-                        "source_corner": m.source_corner,
-                        "extracted_moves": extracted,
-                        "joseki_id": m.joseki_id,
-                        "prefix": m.prefix,
-                        "prefix_len": m.prefix_len,
-                        "total_moves": m.total_moves,
-                        "frequency": joseki.get("frequency", 0) if joseki else 0,
-                        "probability": joseki.get("probability", 0.0) if joseki else 0.0
-                    })
+            for corner, m in results.items():
+                joseki = storage.get(m.joseki_id)
+                all_matches.append({
+                    "file": str(sgf_file),
+                    "game_info": game_info,
+                    "source_corner": m.source_corner,
+                    "extracted_moves": m.moves,
+                    "joseki_id": m.joseki_id,
+                    "prefix": m.prefix,
+                    "prefix_len": m.prefix_len,
+                    "total_moves": m.total_moves,
+                    "frequency": joseki.get("frequency", 0) if joseki else 0,
+                    "probability": joseki.get("probability", 0.0) if joseki else 0.0
+                })
         except Exception as e:
             print(f"⚠️  处理失败 {sgf_file}: {e}")
             continue
