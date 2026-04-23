@@ -263,27 +263,15 @@ class TrieMatcher:
         return root
     
     def _tree_to_sgf(self, tree, depth, main_branch=None, main_depth=0, prefix_str='all'):
-        """使用 sgfmill 生成 SGF 字符串"""
-        from sgfmill import sgf
+        """生成 SGF 字符串（手动拼接，确保分支格式正确）"""
         
-        # 创建游戏树
-        game = sgf.Sgf_game(19)
-        root = game.get_root()
-        root.set('AP', ('WeiqiJoseki', '1.0'))
-        root.set('C', f'定式树: {prefix_str}')
+        def coord_to_sgf(move):
+            """坐标已经是 SGF 格式，直接返回"""
+            return move
         
-        # 转换为 sgfmill 坐标
-        def to_sgfmill(move):
-            if move == 'tt':
-                return None
-            col = ord(move[0]) - ord('a')
-            row = ord(move[1]) - ord('a')
-            return (18 - row, col)
-        
-        # 构建树结构
-        def build_tree(tree, depth, main_branch, main_depth, parent_node):
+        def build_sgf(tree, depth, main_branch, main_depth):
             if not tree and not (main_branch and main_depth < len(main_branch)):
-                return
+                return ""
             
             # 确定当前节点
             current_move = None
@@ -301,27 +289,27 @@ class TrieMatcher:
             if current_node is None:
                 # 输出剩余主分支
                 if main_branch and main_depth < len(main_branch):
-                    node = parent_node
+                    parts = []
                     for i in range(main_depth, len(main_branch)):
-                        color = 'b' if i % 2 == 0 else 'w'
-                        new_node = node.new_child()
-                        new_node.set_move(color, to_sgfmill(main_branch[i]))
-                        node = new_node
-                return
+                        color = 'B' if i % 2 == 0 else 'W'
+                        parts.append(f";{color}[{coord_to_sgf(main_branch[i])}]")
+                    return "".join(parts)
+                return ""
             
-            # 添加当前节点
-            color = 'b' if depth % 2 == 0 else 'w'
-            new_node = parent_node.new_child()
-            new_node.set_move(color, to_sgfmill(current_move))
-            
-            # 添加频率注释
+            # 输出当前节点
+            color = 'B' if depth % 2 == 0 else 'W'
             freq = current_node.get('freq', 0)
             ids = current_node.get('ids', [])
-            if ids and freq > 0:
-                new_node.set('C', f'出现次数:{freq}')
             
-            # 处理子节点
+            if ids and freq > 0:
+                node_sgf = f";{color}[{coord_to_sgf(current_move)}]C[出现次数:{freq}]"
+            else:
+                node_sgf = f";{color}[{coord_to_sgf(current_move)}]"
+            
+            # 获取子树
             next_tree = current_node.get('next', {})
+            
+            # 确定主分支下一手
             main_next = None
             has_main_remaining = main_branch and main_depth + 1 < len(main_branch)
             if has_main_remaining:
@@ -336,50 +324,38 @@ class TrieMatcher:
             # 排序：主分支优先，然后按频率
             all_children.sort(key=lambda x: (-x[2], -x[1].get('freq', 0)))
             
-            # 添加所有子节点为分支
+            # 生成子节点SGF
+            child_parts = []
             for i, (child_move, child_node, is_main) in enumerate(all_children):
                 if i == 0:
                     # 第一个子节点作为主延续
-                    build_tree({child_move: child_node}, depth + 1, 
-                              main_branch if is_main else None,
-                              main_depth + 1 if is_main else 0,
-                              new_node)
+                    child_sgf = build_sgf({child_move: child_node}, depth + 1,
+                                         main_branch if is_main else None,
+                                         main_depth + 1 if is_main else 0)
+                    child_parts.append(child_sgf)
                 else:
-                    # 其他作为分支
-                    branch_node = new_node.new_child()
-                    color = 'b' if (depth + 1) % 2 == 0 else 'w'
-                    branch_node.set_move(color, to_sgfmill(child_move))
-                    
+                    # 其他作为分支（用括号包裹）
+                    branch_color = 'B' if (depth + 1) % 2 == 0 else 'W'
                     child_freq = child_node.get('freq', 0)
                     child_ids = child_node.get('ids', [])
-                    if child_ids and child_freq > 0:
-                        branch_node.set('C', f'出现次数:{child_freq}')
                     
-                    # 递归构建分支
-                    build_tree(child_node.get('next', {}), depth + 2, None, 0, branch_node)
+                    if child_ids and child_freq > 0:
+                        branch_start = f"(;{branch_color}[{coord_to_sgf(child_move)}]C[出现次数:{child_freq}]"
+                    else:
+                        branch_start = f"(;{branch_color}[{coord_to_sgf(child_move)}]"
+                    
+                    # 递归生成分支的后续
+                    branch_cont = build_sgf(child_node.get('next', {}), depth + 2, None, 0)
+                    child_parts.append(branch_start + branch_cont + ")")
             
             # 如果子树为空但主分支还有剩余
             if not all_children and has_main_remaining:
-                node = new_node
                 for i in range(main_depth + 1, len(main_branch)):
-                    color = 'b' if i % 2 == 0 else 'w'
-                    new_child = node.new_child()
-                    new_child.set_move(color, to_sgfmill(main_branch[i]))
-                    node = new_child
-        
-        # 从根开始构建
-        if tree:
-            first_move = list(tree.keys())[0]
-            first_node = tree[first_move]
-            color = 'b' if depth % 2 == 0 else 'w'
-            node = game.extend_main_sequence()
-            node.set_move(color, to_sgfmill(first_move))
+                    color = 'B' if i % 2 == 0 else 'W'
+                    child_parts.append(f";{color}[{coord_to_sgf(main_branch[i])}]")
             
-            freq = first_node.get('freq', 0)
-            ids = first_node.get('ids', [])
-            if ids and freq > 0:
-                node.set('C', f'出现次数:{freq}')
-            
-            build_tree(first_node.get('next', {}), depth + 1, main_branch, main_depth + 1, node)
+            return node_sgf + "".join(child_parts)
         
-        return game.serialise().decode('utf-8')
+        # 生成完整SGF
+        body = build_sgf(tree, depth, main_branch, main_depth)
+        return f"(;FF[4]AP[WeiqiJoseki:1.0]C[定式树: {prefix_str}]CA[UTF-8]GM[1]SZ[19]{body})"
