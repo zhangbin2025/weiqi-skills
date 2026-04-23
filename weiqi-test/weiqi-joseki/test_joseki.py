@@ -165,7 +165,10 @@ class TestDiscover(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result.joseki_id, "kj_00001")
         self.assertEqual(result.source_corner, "tr")
+        # moves 现在返回 tree SGF 字符串
         self.assertIsInstance(result.moves, str)
+        self.assertIn("定式树", result.moves)
+        # total_moves 保持为着法串长度
         self.assertEqual(result.total_moves, 4)
     
     def test_discover_no_match(self):

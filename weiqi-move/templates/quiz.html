@@ -126,9 +126,11 @@
         .tag-phase-layout { background: #4CAF50; color: white; }
         .tag-phase-middle { background: #2196F3; color: white; }
         .tag-phase-endgame { background: #FF9800; color: white; }
-        .tag-difficulty-easy { background: #81C784; color: white; }
-        .tag-difficulty-medium { background: #FFB74D; color: white; }
-        .tag-difficulty-hard { background: #E57373; color: white; }
+        /* 等级标签样式 - 三级：职业/高段/普通 */
+        .tag-level { color: white; font-weight: bold; }
+        .tag-level[data-level="职业"] { background: #1a237e; }
+        .tag-level[data-level="高段"] { background: #4527a0; }
+        .tag-level[data-level="普通"] { background: #2e7d32; }
         .tag-blunder { background: #F44336; color: white; }
         .board-container {
             display: flex;
@@ -547,7 +549,7 @@
             </div>
             <div class="problem-info" id="problemInfo">
                 <span class="tag tag-phase-middle" id="phaseTag">中盘</span>
-                <span class="tag tag-difficulty-medium" id="difficultyTag">中等</span>
+                <span class="tag tag-level" id="levelTag" data-level="未知">未知</span>
                 <span style="flex: 1;"></span>
                 <span class="turn-indicator-tag" id="turnIndicatorTag">
                     <span class="turn-dot black" id="turnDot"></span>
@@ -1929,7 +1931,7 @@
             sgf += `EV[${gameTitle}]`;
             
             // 添加题目信息
-            sgf += `C[第${currentProblemIndex + 1}题 - ${currentProblem.phase || '中盘'} ${currentProblem.difficulty || '中等'}]`;
+            sgf += `C[第${currentProblemIndex + 1}题 - ${currentProblem.phase || '中盘'} ${currentProblem.gameLevel || '未知'}]`;
 
             // 添加让子（如果有）
             if (handicapStones && handicapStones.length > 0) {
@@ -2022,13 +2024,14 @@
             
             // 更新标签
             const phaseTag = document.getElementById('phaseTag');
-            const difficultyTag = document.getElementById('difficultyTag');
+            const levelTag = document.getElementById('levelTag');
             const phaseNames = { layout: '布局', middle: '中盘', endgame: '官子' };
-            const difficultyNames = { easy: '简单', medium: '中等', hard: '困难' };
             phaseTag.textContent = phaseNames[currentProblem.phase] || currentProblem.phase;
             phaseTag.className = `tag tag-phase-${currentProblem.phase}`;
-            difficultyTag.textContent = difficultyNames[currentProblem.difficulty] || currentProblem.difficulty;
-            difficultyTag.className = `tag tag-difficulty-${currentProblem.difficulty}`;
+            // 显示等级
+            const gameLevel = currentProblem.gameLevel || '未知';
+            levelTag.textContent = gameLevel;
+            levelTag.setAttribute('data-level', gameLevel);
             
             // 恶手题标签 - 插入到弹性空间之前（即中间位置）
             const problemInfo = document.getElementById('problemInfo');

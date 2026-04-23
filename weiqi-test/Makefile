@@ -1,15 +1,16 @@
 # weiqi-test Makefile
 # 为各个围棋技能包运行测试
 
-.PHONY: all db fetcher foxwq joseki player sgf yunbisai help
+.PHONY: all move db fetcher foxwq joseki player sgf yunbisai help
 
 # 默认运行所有测试
-all: db fetcher foxwq joseki player sgf yunbisai
+all: db fetcher foxwq joseki player sgf yunbisai move
 
 help:
 	@echo "围棋技能包测试"
 	@echo ""
 	@echo "可用目标:"
+	@echo "  make move       - 运行 weiqi-move 技能包测试"
 	@echo "  make db         - 运行 weiqi-db 技能包测试"
 	@echo "  make fetcher    - 运行 weiqi-fetcher 技能包测试"
 	@echo "  make foxwq      - 运行 weiqi-foxwq 技能包测试"
@@ -53,3 +54,8 @@ sgf:
 yunbisai:
 	@echo "🧪 运行 weiqi-yunbisai 测试..."
 	cd weiqi-yunbisai && python3 -m pytest . -v --tb=short
+
+# weiqi-move 测试
+move:
+	@echo "🧪 运行 weiqi-move 测试..."
+	cd weiqi-move && python3 -m pytest . -v --tb=short
