@@ -76,11 +76,20 @@ class JosekiDiscoverer:
         
         # 生成 tree SGF
         prefix = matched_moves[:prefix_len]
-        tree_sgf = self.matcher.export_tree(
-            prefix=prefix,
-            main_branch=matched_moves,
-            limit=3
-        )
+        # 如果实战着法完全匹配定式（没有超出），不显示变化分支
+        if len(matched_moves) == prefix_len:
+            # 只显示主分支，不显示其他分支
+            tree_sgf = self.matcher.export_tree(
+                prefix=prefix,
+                main_branch=matched_moves,
+                limit=0  # limit=0 表示只显示主分支
+            )
+        else:
+            tree_sgf = self.matcher.export_tree(
+                prefix=prefix,
+                main_branch=matched_moves,
+                limit=3
+            )
         
         return DiscoverResult(
             joseki_id=joseki_id,

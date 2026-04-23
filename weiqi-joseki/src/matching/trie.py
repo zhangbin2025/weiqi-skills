@@ -329,27 +329,37 @@ class TrieMatcher:
             # 排序：主分支优先，然后按频率
             all_children.sort(key=lambda x: (-x[2], -x[1].get('freq', 0)))
             
-            # 生成子节点SGF - 所有子节点都用括号包裹（树状格式）
+            # 生成子节点SGF
+            # 如果只有一个子节点且是主分支，直接延续（不包裹括号）
+            # 否则所有子节点都用括号包裹（树状格式）
             child_parts = []
+            single_main_child = (len(all_children) == 1 and all_children[0][2])
+            
             for i, (child_move, child_node, is_main) in enumerate(all_children):
-                # 所有子节点都用括号包裹
                 branch_color = 'B' if (depth + 1) % 2 == 0 else 'W'
                 child_freq = child_node.get('freq', 0)
                 child_ids = child_node.get('ids', [])
                 
-                if child_ids and child_freq > 0:
-                    branch_start = f"(;{branch_color}[{coord_to_sgf(child_move)}]C[出现次数:{child_freq}]"
-                else:
-                    branch_start = f"(;{branch_color}[{coord_to_sgf(child_move)}]"
-                
-                # 递归生成分支的后续（传递主分支信息）
+                # 递归生成分支的后续
                 if is_main and has_main_remaining:
                     branch_cont = build_sgf(child_node.get('next', {}), depth + 2, 
                                            main_branch, main_depth + 2)
                 else:
                     branch_cont = build_sgf(child_node.get('next', {}), depth + 2, None, 0)
                 
-                child_parts.append(branch_start + branch_cont + ")")
+                if single_main_child:
+                    # 只有一个主分支子节点，直接延续不包裹括号
+                    if child_ids and child_freq > 0:
+                        child_parts.append(f";{branch_color}[{coord_to_sgf(child_move)}]C[出现次数:{child_freq}]" + branch_cont)
+                    else:
+                        child_parts.append(f";{branch_color}[{coord_to_sgf(child_move)}]" + branch_cont)
+                else:
+                    # 多个子节点，用括号包裹
+                    if child_ids and child_freq > 0:
+                        branch_start = f"(;{branch_color}[{coord_to_sgf(child_move)}]C[出现次数:{child_freq}]"
+                    else:
+                        branch_start = f"(;{branch_color}[{coord_to_sgf(child_move)}]"
+                    child_parts.append(branch_start + branch_cont + ")")
             
             # 如果子树为空但主分支还有剩余
             if not all_children and has_main_remaining:
