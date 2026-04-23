@@ -484,13 +484,22 @@ def cmd_export(args):
         print("数据库为空")
         return
     
+    # 前缀过滤
+    if args.prefix:
+        prefix = args.prefix.split()
+        joseki_list = [j for j in joseki_list if j.get("moves", [])[:len(prefix)] == prefix]
+    
+    # limit 限制
+    if args.limit:
+        joseki_list = joseki_list[:args.limit]
+    
     if args.format == "json":
         import json
         output = json.dumps(joseki_list, ensure_ascii=False, indent=2)
     elif args.format == "sgf":
-        # 简单SGF格式
+        # 平面SGF格式
         lines = ["(;CA[utf-8]FF[4]AP[JosekiExport]SZ[19]GM[1]"]
-        for j in joseki_list[:args.limit or 100]:
+        for j in joseki_list:
             moves = j.get("moves", [])
             if moves:
                 lines.append(f"(;C[{j.get('id')} freq={j.get('frequency',0)}]")
@@ -501,6 +510,13 @@ def cmd_export(args):
                 lines.append(")")
         lines.append(")")
         output = "".join(lines)
+    elif args.format == "tree":
+        # 树状SGF格式
+        from ..matching import TrieMatcher
+        matcher = TrieMatcher()
+        matcher.build(joseki_list)
+        prefix = args.prefix.split() if args.prefix else None
+        output = matcher.export_tree(prefix=prefix, limit=args.limit or 100)
     else:
         print(f"❌ 不支持的格式: {args.format}")
         return 1
@@ -563,9 +579,10 @@ def main():
     
     # export
     p_export = subparsers.add_parser("export", help="导出定式")
-    p_export.add_argument("--format", choices=["json", "sgf"], default="json", help="导出格式")
+    p_export.add_argument("--format", choices=["json", "sgf", "tree"], default="tree", help="导出格式（默认: tree）")
     p_export.add_argument("--output", "-o", help="输出文件")
     p_export.add_argument("--limit", type=int, help="限制导出数量")
+    p_export.add_argument("--prefix", help="指定前缀，只导出包含此前缀的定式")
     
     args = parser.parse_args()
     

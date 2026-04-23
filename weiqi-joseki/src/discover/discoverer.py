@@ -17,10 +17,10 @@ from ..builder import convert_to_rudl
 class DiscoverResult:
     """定式发现结果"""
     joseki_id: str      # 定式ID
-    moves: str          # 完整着法串
+    moves: str          # 树状SGF（替代原来的完整着法串）
     prefix: str         # 匹配的前缀着法串
     prefix_len: int     # 匹配的前缀长度
-    total_moves: int    # 着法串长度
+    total_moves: int    # 着法串长度（还原）
     source_corner: str  # 棋谱来源角 "tl"/"tr"/"bl"/"br"
 
 
@@ -39,7 +39,7 @@ class JosekiDiscoverer:
     
     def discover_corner(self, moves: List[str], corner: str) -> Optional[DiscoverResult]:
         """
-        发现单个角的定式
+        发现单个角的定式，moves返回tree SGF
         
         Args:
             moves: 着法坐标列表（原始SGF坐标）
@@ -62,27 +62,34 @@ class JosekiDiscoverer:
         rudl_match = self.matcher.match(rudl_moves, top_k=1)
         rudl_len = rudl_match[0].prefix_len if rudl_match else 0
         
-        # 取匹配最长的返回
+        # 取匹配最长的
         if ruld_len >= rudl_len and ruld_len > 0:
-            return DiscoverResult(
-                joseki_id=ruld_match[0].id,
-                moves=" ".join(tr_moves),
-                prefix=" ".join(tr_moves[:ruld_len]),
-                prefix_len=ruld_len,
-                total_moves=len(tr_moves),
-                source_corner=corner,
-            )
+            matched_moves = tr_moves
+            prefix_len = ruld_len
+            joseki_id = ruld_match[0].id
         elif rudl_len > 0:
-            return DiscoverResult(
-                joseki_id=rudl_match[0].id,
-                moves=" ".join(rudl_moves),
-                prefix=" ".join(rudl_moves[:rudl_len]),
-                prefix_len=rudl_len,
-                total_moves=len(rudl_moves),
-                source_corner=corner,
-            )
+            matched_moves = rudl_moves
+            prefix_len = rudl_len
+            joseki_id = rudl_match[0].id
+        else:
+            return None
         
-        return None
+        # 生成 tree SGF
+        prefix = matched_moves[:prefix_len]
+        tree_sgf = self.matcher.export_tree(
+            prefix=prefix,
+            main_branch=matched_moves,
+            limit=3
+        )
+        
+        return DiscoverResult(
+            joseki_id=joseki_id,
+            moves=tree_sgf,  # tree SGF
+            prefix=" ".join(matched_moves[:prefix_len]),
+            prefix_len=prefix_len,
+            total_moves=len(matched_moves),  # 还原为长度
+            source_corner=corner,
+        )
     
     def discover(self, sgf_data: str, first_n: int = 80,
                  distance_threshold: int = 4) -> Dict[str, DiscoverResult]:

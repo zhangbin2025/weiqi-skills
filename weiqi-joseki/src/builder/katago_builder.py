@@ -322,42 +322,36 @@ class KatagoJosekiBuilder:
             print(f"\n  堆中候选: {len(heap)} 个")
             print(f"  单链跳过: {skipped_single_chain} 个")
         
-        # ===== Phase 3: 统一转ruld方向去重 =====
+        # ===== Phase 3: 排序去重 =====
         if verbose:
-            print("🔄 Phase 3: 统一转ruld方向去重...")
+            print("🔄 Phase 3: 排序去重...")
         
-        seen_ruld = {}  # ruld_key -> (count, direction)
+        # 1. 收集 (着法串, count)
+        temp_list = [(item.prefix, item.count) for item in heap]
         
-        for item in heap:
-            parts = item.prefix.split()
-            
-            # 统一转换为ruld方向
-            if item.direction == 'ruld':
-                ruld_parts = parts
-            else:
-                ruld_parts = convert_to_ruld(parts)
-            
-            ruld_key = tuple(ruld_parts)
-            if ruld_key in seen_ruld:
-                # 保留count更大的
-                if item.count > seen_ruld[ruld_key][0]:
-                    seen_ruld[ruld_key] = (item.count, item.direction)
-            else:
-                seen_ruld[ruld_key] = (item.count, item.direction)
+        # 2. 排序
+        temp_list.sort(key=lambda x: x[0])
         
+        # 3. 遍历去重：保留前面的，把它的 rudl 方向加入 discard
+        discard = set()  # 存放要舍弃的 rudl 着法串
         candidates = []
-        for moves_tuple, (count, direction) in seen_ruld.items():
+        
+        for move_str, count in temp_list:
+            if move_str in discard:
+                continue  # 舍弃（对称方向已存在）
             # 过滤超长定式
-            if len(moves_tuple) > max_moves:
+            if len(move_str.split()) > max_moves:
                 continue
             candidates.append({
-                'moves': list(moves_tuple),
+                'moves': move_str.split(),
                 'count': count,
-                'direction': direction,
             })
+            # 将 rudl 方向标记为舍弃
+            rudl_str = " ".join(convert_to_rudl(move_str.split()))
+            discard.add(rudl_str)
         
-        # 按字符串排序
-        candidates.sort(key=lambda x: " ".join(x['moves']))
+        if verbose:
+            print(f"  去重前: {len(temp_list)}  去重后: {len(candidates)}")
         
         if verbose:
             print(f"  去重后候选: {len(candidates)} 个")
@@ -377,7 +371,6 @@ class KatagoJosekiBuilder:
                 "moves": cand['moves'],
                 "frequency": cand['count'],
                 "probability": round(cand['count'] / total_sequences, 6),
-                "direction": cand['direction'],
                 "created_at": datetime.now().isoformat()
             }
             joseki_list.append(joseki)
@@ -453,35 +446,24 @@ class KatagoJosekiBuilder:
                         del seen_hashes[old_item.prefix_hash]
                         seen_hashes[prefix_hash] = True
         
-        # 去重
-        seen_ruld = {}
-        for item in heap:
-            parts = item.prefix.split()
-            
-            if item.direction == 'ruld':
-                ruld_parts = parts
-            else:
-                ruld_parts = convert_to_ruld(parts)
-            
-            ruld_key = tuple(ruld_parts)
-            if ruld_key in seen_ruld:
-                if item.count > seen_ruld[ruld_key][0]:
-                    seen_ruld[ruld_key] = (item.count, item.direction)
-            else:
-                seen_ruld[ruld_key] = (item.count, item.direction)
+        # 排序去重
+        temp_list = [(item.prefix, item.count) for item in heap]
+        temp_list.sort(key=lambda x: x[0])
         
+        discard = set()
         candidates = []
-        for moves_tuple, (count, direction) in seen_ruld.items():
-            # 过滤超长定式
-            if len(moves_tuple) > max_moves:
+        
+        for move_str, count in temp_list:
+            if move_str in discard:
+                continue
+            if len(move_str.split()) > max_moves:
                 continue
             candidates.append({
-                'moves': list(moves_tuple),
+                'moves': move_str.split(),
                 'count': count,
-                'direction': direction,
             })
-        
-        candidates.sort(key=lambda x: " ".join(x['moves']))
+            rudl_str = " ".join(convert_to_rudl(move_str.split()))
+            discard.add(rudl_str)
         
         # 转换为定式格式（概率暂时为0，需要外部传入total_sequences计算）
         joseki_list = []
@@ -491,8 +473,7 @@ class KatagoJosekiBuilder:
                 "source": "katago",
                 "moves": cand['moves'],
                 "frequency": cand['count'],
-                "probability": 0.0,  # 需要外部计算
-                "direction": cand['direction'],
+                "probability": 0.0,
                 "created_at": datetime.now().isoformat()
             }
             joseki_list.append(joseki)
