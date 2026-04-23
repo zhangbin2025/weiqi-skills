@@ -79,7 +79,7 @@ class JosekiDiscoverer:
         tree_sgf = self.matcher.export_tree(
             prefix=prefix,
             main_branch=matched_moves,
-            limit=100
+            limit=3
         )
         
         return DiscoverResult(
