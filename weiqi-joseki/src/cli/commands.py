@@ -22,7 +22,6 @@ def cmd_init(args):
 
 def cmd_katago(args):
     """从KataGo棋谱构建定式库（支持日期范围）"""
-    import signal
     from datetime import datetime, timedelta
     from ..extraction.katago_downloader import download_katago_games
     
@@ -54,17 +53,6 @@ def cmd_katago(args):
     print(f"🗄️  数据库: {args.db}")
     print()
     
-    # 设置信号处理
-    stop_flag = [False]
-    
-    def signal_handler(sig, frame):
-        print("\n\n⚠️ 收到中断信号...")
-        stop_flag[0] = True
-        sys.exit(0)
-    
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    
     # 下载阶段
     print(f"📥 开始下载/检查缓存...")
     
@@ -86,122 +74,26 @@ def cmd_katago(args):
         print("❌ 没有可处理的文件")
         return 1
     
-    if stop_flag[0]:
-        return 1
-    
-    # 构建定式库 - 统一处理所有文件
-    print(f"⏳ 开始构建定式库（前{args.first_n}手）...")
-    print(f"   参数: min-freq={args.min_freq}, top-k={args.top_k}")
+    # 构建定式库
+    print(f"⏳ 开始构建定式库...")
+    print(f"   参数: first-n={args.first_n}, min-freq={args.min_freq}, top-k={args.top_k}")
     print()
     
     builder = KatagoJosekiBuilder(args.db)
     
-    # Phase 1: 统计所有文件的定式频率
-    print("📊 Phase 1: CMS统计前缀频率...")
-    
-    from ..utils import CountMinSketch
-    import gzip
-    import tempfile
-    
-    # 使用高精度CMS（4194304x4, ~64MB, 误差~0.024%）
-    cms = CountMinSketch(width=4194304, depth=4)
-    temp_file = tempfile.NamedTemporaryFile(mode='wb', suffix='.gz', delete=False)
-    temp_path = Path(temp_file.name)
-    
-    from ..extraction.katago_downloader import iter_sgf_from_tar
-    from ..extraction import get_move_sequence
-    from ..core.coords import convert_to_top_right
-    
-    CORNERS = ['tl', 'tr', 'bl', 'br']
-    min_moves = args.min_moves
-    first_n = args.first_n
-    distance_threshold = args.distance_threshold
-    
-    processed = 0
-    joseki_count = 0
-    prefix_count = 0
-    
-    with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
-        for tar_path in downloaded_files:
-            if stop_flag[0]:
-                break
-            
-            print(f"   处理: {tar_path.name}...")
-            
-            for sgf_data in iter_sgf_from_tar(tar_path):
-                if stop_flag[0]:
-                    break
-                
-                try:
-                    corner_moves_dict = extract_moves_all_corners(
-                        sgf_data, first_n=first_n, distance_threshold=distance_threshold
-                    )
-                    
-                    seen_sequences = set()
-                    
-                    for corner in CORNERS:
-                        moves = corner_moves_dict.get(corner)
-                        if not moves or len(moves) < min_moves:
-                            continue
-                        
-                        coords = get_move_sequence(moves)
-                        if len(coords) < min_moves:
-                            continue
-                        
-                        tr_coords = convert_to_top_right(coords, corner)
-                        
-                        # 生成两个方向
-                        ruld = " ".join(tr_coords)
-                        rudl_seq = " ".join(convert_to_rudl(tr_coords))
-                        
-                        for direction, seq in [('ruld', ruld), ('rudl', rudl_seq)]:
-                            if seq in seen_sequences:
-                                continue
-                            seen_sequences.add(seq)
-                            
-                            f_out.write(f"{direction}|{seq}\n")
-                            joseki_count += 1
-                            
-                            seq_parts = seq.split()
-                            for end in range(min_moves, len(seq_parts) + 1):
-                                prefix = " ".join(seq_parts[:end])
-                                cms.update(prefix)
-                                prefix_count += 1
-                    
-                    processed += 1
-                    
-                except Exception as e:
-                    continue
-            
-            print(f"      累计: {processed}谱, {joseki_count}定式串, {prefix_count}前缀")
-    
-    print(f"\n✅ Phase 1完成: {processed}谱, {joseki_count}定式串, {prefix_count}前缀")
-    print()
-    
-    if stop_flag[0]:
-        temp_path.unlink()
-        return 1
-    
-    # Phase 2 & 3: 逆向遍历 + 单链检测 + 去重
-    print(f"🔄 Phase 2-3: 逆向遍历+单链检测+去重...")
-    
-    joseki_list = builder._process_temp_file(
-        temp_path, cms, 
+    joseki_list = builder.build_from_files(
+        downloaded_files,
         min_freq=args.min_freq,
         top_k=args.top_k,
-        min_moves=min_moves,
+        first_n=args.first_n,
+        distance_threshold=args.distance_threshold,
+        min_moves=args.min_moves,
         max_moves=args.max_moves,
-        total_sequences=joseki_count
+        verbose=True
     )
     
-    # 清理临时文件
-    temp_path.unlink()
-    
-    print(f"✅ 构建完成: {len(joseki_list)} 条定式")
-    print()
-    
-    # Phase 4: 入库
-    print("🔄 Phase 4: 保存到数据库...")
+    # 保存到数据库
+    print("\n🔄 保存到数据库...")
     builder.save_to_db(joseki_list, append=False)
     
     print()

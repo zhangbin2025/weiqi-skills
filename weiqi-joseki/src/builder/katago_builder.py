@@ -134,40 +134,41 @@ class KatagoJosekiBuilder:
         return {corner: get_move_sequence(moves) 
                 for corner, moves in corner_moves.items()}
     
-    def build_from_tar(self, 
-                       tar_path: str,
-                       min_freq: int = 5,
-                       top_k: int = 10000,
-                       first_n: int = 80,
-                       distance_threshold: int = 4,
-                       min_moves: int = 4,
-                       max_moves: int = 50,
-                       verbose: bool = True) -> List[dict]:
+
+    def build_from_files(
+        self,
+        tar_paths: List[Path],
+        min_freq: int = 5,
+        top_k: int = 10000,
+        first_n: int = 80,
+        distance_threshold: int = 4,
+        min_moves: int = 4,
+        max_moves: int = 50,
+        verbose: bool = True
+    ) -> List[dict]:
         """
-        从tar文件构建定式库（完整保留原代码算法）
+        从已下载的 tar 文件构建定式库（完整流程）
         
         Args:
-            tar_path: tar文件路径
+            tar_paths: tar文件路径列表
             min_freq: 最小出现频率
             top_k: 入库定式数量上限
             first_n: 提取前N手
             distance_threshold: 连通块距离阈值
-            min_moves: 最少手数（前缀从此手数开始提取）
+            min_moves: 最少手数
             max_moves: 最多手数
             verbose: 详细输出
         
         Returns:
-            入库的定式列表
+            定式列表
         """
         # ===== Phase 1: CMS统计 + 临时文件存储 =====
-        # 使用高精度CMS配置（width=4194304, depth=4, ~64MB, 误差~0.024%）
         cms = CountMinSketch(width=4194304, depth=4)
         temp_file = tempfile.NamedTemporaryFile(mode='wb', suffix='.gz', delete=False)
         temp_path = Path(temp_file.name)
         
         if verbose:
-            print(f"📊 Phase 1: CMS统计前缀频率（CMS: 4194304x4）")
-            print(f"   内存占用: ~64MB, 误差~0.024%")
+            print(f"📊 Phase 1: CMS统计前缀频率")
         
         processed = 0
         joseki_count = 0
@@ -175,82 +176,83 @@ class KatagoJosekiBuilder:
         total_unique_sequences = 0
         
         with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
-            for sgf_data in iter_sgf_from_tar(tar_path):
-                try:
-                    # 提取四角着法
-                    corner_moves_dict = extract_moves_all_corners(
-                        sgf_data, first_n=first_n, distance_threshold=distance_threshold
-                    )
-                    
-                    # 每谱的着法串去重集合
-                    seen_sequences = set()
-                    
-                    # 生成8个方向（四角 × 2方向）
-                    for corner in CORNERS:
-                        moves = corner_moves_dict.get(corner)
-                        if not moves or len(moves) < min_moves:
-                            continue
-                        
-                        # 转换为纯坐标序列
-                        coords = get_move_sequence(moves)
-                        if len(coords) < min_moves:
-                            continue
-                        
-                        # 转换到右上角视角
-                        tr_coords = convert_to_top_right(coords, corner)
-                        
-                        # 生成ruld和rudl两个方向
-                        ruld = " ".join(tr_coords)
-                        rudl = " ".join(convert_to_rudl(tr_coords))
-                        
-                        for direction, seq in [('ruld', ruld), ('rudl', rudl)]:
-                            if seq in seen_sequences:
-                                continue
-                            seen_sequences.add(seq)
-                            
-                            # 写入临时文件
-                            f_out.write(f"{direction}|{seq}\n")
-                            joseki_count += 1
-                            
-                            # 展开所有前缀并更新CMS
-                            seq_parts = seq.split()
-                            for end in range(min_moves, len(seq_parts) + 1):
-                                prefix = " ".join(seq_parts[:end])
-                                cms.update(prefix)
-                                prefix_count += 1
-                    
-                    total_unique_sequences += len(seen_sequences)
-                    processed += 1
-                    
-                    if verbose and processed % 1000 == 0:
-                        print(f"\r  已处理: {processed}谱, {joseki_count}定式串, {prefix_count}前缀", 
-                              end='', flush=True)
+            for tar_path in tar_paths:
+                if verbose:
+                    print(f"   处理: {tar_path.name}...")
                 
-                except Exception as e:
-                    continue
+                for sgf_data in iter_sgf_from_tar(str(tar_path)):
+                    try:
+                        corner_moves_dict = extract_moves_all_corners(
+                            sgf_data, first_n=first_n, distance_threshold=distance_threshold
+                        )
+                        
+                        seen_sequences = set()
+                        
+                        for corner in CORNERS:
+                            moves = corner_moves_dict.get(corner)
+                            if not moves or len(moves) < min_moves:
+                                continue
+                            
+                            coords = get_move_sequence(moves)
+                            if len(coords) < min_moves:
+                                continue
+                            
+                            tr_coords = convert_to_top_right(coords, corner)
+                            ruld = " ".join(tr_coords)
+                            rudl = " ".join(convert_to_rudl(tr_coords))
+                            
+                            for direction, seq in [('ruld', ruld), ('rudl', rudl)]:
+                                if seq in seen_sequences:
+                                    continue
+                                seen_sequences.add(seq)
+                                
+                                f_out.write(f"{direction}|{seq}\n")
+                                joseki_count += 1
+                                
+                                seq_parts = seq.split()
+                                for end in range(min_moves, len(seq_parts) + 1):
+                                    prefix = " ".join(seq_parts[:end])
+                                    cms.update(prefix)
+                                    prefix_count += 1
+                        
+                        total_unique_sequences += len(seen_sequences)
+                        processed += 1
+                        
+                    except Exception as e:
+                        continue
+                
+                if verbose:
+                    print(f"      累计: {processed}谱, {joseki_count}定式串, {prefix_count}前缀")
         
         if verbose:
-            print(f"\n✅ Phase 1完成: {processed}谱, {joseki_count}定式串, {prefix_count}前缀")
+            print(f"\n✅ Phase 1完成: {processed}谱, {joseki_count}定式串")
             print(f"   去重后着法串总数: {total_unique_sequences}")
         
-        # ===== Phase 2: 逆向遍历 + 单链检测 + 小顶堆选top-k =====
+        # ===== Phase 2-4: 逆向遍历 + 单链检测 + 去重 + 概率计算 =====
+        joseki_list = self._build_from_cms_and_temp(
+            temp_path, cms, min_freq, top_k, min_moves, max_moves,
+            total_unique_sequences, verbose
+        )
+        
+        # 清理临时文件
+        temp_path.unlink()
+        
+        return joseki_list
+    
+    def _build_from_cms_and_temp(
+        self, temp_path: Path, cms, min_freq: int, top_k: int,
+        min_moves: int, max_moves: int, total_sequences: int, verbose: bool
+    ) -> List[dict]:
+        """从CMS和临时文件构建定式（Phase 2-4）"""
+        import heapq
+        from datetime import datetime
+        
         if verbose:
             print(f"🔄 Phase 2: 逆向遍历+单链检测，选取top-{top_k}...")
         
-        heap = []  # 小顶堆
-        seen_hashes = {}  # 记录已处理的hash
-        
-        def _get_hash(prefix_parts):
-            return tuple(prefix_parts)
-        
-        def _get_child_hash(prefix_parts, seq_parts):
-            """获取子串hash（当前前缀+下一手）"""
-            if len(prefix_parts) >= len(seq_parts):
-                return None
-            child_parts = prefix_parts + [seq_parts[len(prefix_parts)]]
-            return tuple(child_parts)
-        
-        SINGLE_CHAIN_THRESHOLD = 0.05  # 单链检测阈值：5%
+        heap = []
+        seen_hashes = {}
+        SINGLE_CHAIN_THRESHOLD = 0.05
         
         processed_seq = 0
         prefix_processed = 0
@@ -268,39 +270,31 @@ class KatagoJosekiBuilder:
                 if len(seq_parts) < min_moves:
                     continue
                 
-                # 逆向遍历：从最长前缀到min_moves
                 last_count = float('inf')
                 
                 for end in range(len(seq_parts), min_moves - 1, -1):
                     prefix_parts = seq_parts[:end]
                     prefix = " ".join(prefix_parts)
-                    
-                    # CMS估算频率
                     est_count = cms.estimate(prefix)
                     
-                    # 过滤低频
                     if est_count < min_freq:
                         last_count = est_count
                         continue
                     
-                    prefix_hash = _get_hash(prefix_parts)
+                    prefix_hash = tuple(prefix_parts)
                     
-                    # 单链检测：count和last_count相差<5%，说明是单链，跳过
                     if last_count != float('inf'):
                         count_diff_ratio = abs(est_count - last_count) / max(est_count, last_count, 1)
                         if count_diff_ratio < SINGLE_CHAIN_THRESHOLD:
-                            # 子串已处理（last_count来自子串），当前前缀被代表，跳过
                             skipped_single_chain += 1
                             last_count = est_count
                             continue
                     
                     last_count = est_count
                     
-                    # 已在堆中或被跳过
                     if prefix_hash in seen_hashes:
                         break
                     
-                    # 尝试入堆
                     if len(heap) < top_k:
                         item = HeapItem(est_count, prefix, direction, prefix_hash)
                         heapq.heappush(heap, item)
@@ -319,134 +313,12 @@ class KatagoJosekiBuilder:
                           end='', flush=True)
         
         if verbose:
-            print(f"\n  堆中候选: {len(heap)} 个")
-            print(f"  单链跳过: {skipped_single_chain} 个")
+            print(f"\n  堆中候选: {len(heap)} 个, 单链跳过: {skipped_single_chain} 个")
         
-        # ===== Phase 3: 排序去重 =====
+        # Phase 3: 排序去重
         if verbose:
             print("🔄 Phase 3: 排序去重...")
         
-        # 1. 收集 (着法串, count)
-        temp_list = [(item.prefix, item.count) for item in heap]
-        
-        # 2. 排序
-        temp_list.sort(key=lambda x: x[0])
-        
-        # 3. 遍历去重：保留前面的，把它的 rudl 方向加入 discard
-        discard = set()  # 存放要舍弃的 rudl 着法串
-        candidates = []
-        
-        for move_str, count in temp_list:
-            if move_str in discard:
-                continue  # 舍弃（对称方向已存在）
-            # 过滤超长定式
-            if len(move_str.split()) > max_moves:
-                continue
-            candidates.append({
-                'moves': move_str.split(),
-                'count': count,
-            })
-            # 将 rudl 方向标记为舍弃
-            rudl_str = " ".join(convert_to_rudl(move_str.split()))
-            discard.add(rudl_str)
-        
-        if verbose:
-            print(f"  去重前: {len(temp_list)}  去重后: {len(candidates)}")
-        
-        if verbose:
-            print(f"  去重后候选: {len(candidates)} 个")
-        
-        # 清理临时文件
-        temp_path.unlink()
-        
-        # 计算概率（频率 / 总定式串数）
-        total_sequences = max(total_unique_sequences, 1)
-        
-        # ===== Phase 4: 转换为定式格式 =====
-        joseki_list = []
-        for i, cand in enumerate(candidates):
-            joseki = {
-                "id": f"kj_{i+1:05d}",
-                "source": "katago",
-                "moves": cand['moves'],
-                "frequency": cand['count'],
-                "probability": round(cand['count'] / total_sequences, 6),
-                "created_at": datetime.now().isoformat()
-            }
-            joseki_list.append(joseki)
-        
-        if verbose:
-            print(f"✅ 构建完成: {len(joseki_list)} 条定式")
-        
-        return joseki_list
-    
-    def _process_temp_file(self, temp_path: Path, cms, min_freq: int, top_k: int, min_moves: int, max_moves: int = 50, total_sequences: int = 1) -> List[dict]:
-        """处理临时文件，执行逆向遍历+单链检测+去重"""
-        import heapq
-        from datetime import datetime
-        
-        heap = []
-        seen_hashes = {}
-        
-        def _get_hash(prefix_parts):
-            return tuple(prefix_parts)
-        
-        def _get_child_hash(prefix_parts, seq_parts):
-            if len(prefix_parts) >= len(seq_parts):
-                return None
-            child_parts = prefix_parts + [seq_parts[len(prefix_parts)]]
-            return tuple(child_parts)
-        
-        SINGLE_CHAIN_THRESHOLD = 0.05
-        
-        with gzip.open(temp_path, 'rt', encoding='utf-8') as f_in:
-            for line in f_in:
-                line = line.strip()
-                if not line or '|' not in line:
-                    continue
-                
-                direction, joseki_str = line.split('|', 1)
-                seq_parts = joseki_str.split()
-                
-                if len(seq_parts) < min_moves:
-                    continue
-                
-                last_count = float('inf')
-                
-                for end in range(len(seq_parts), min_moves - 1, -1):
-                    prefix_parts = seq_parts[:end]
-                    prefix = " ".join(prefix_parts)
-                    
-                    est_count = cms.estimate(prefix)
-                    
-                    if est_count < min_freq:
-                        last_count = est_count
-                        continue
-                    
-                    prefix_hash = _get_hash(prefix_parts)
-                    
-                    if last_count != float('inf'):
-                        count_diff_ratio = abs(est_count - last_count) / max(est_count, last_count, 1)
-                        if count_diff_ratio < SINGLE_CHAIN_THRESHOLD:
-                            # 子串已处理（last_count来自子串），当前前缀被代表，跳过
-                            last_count = est_count
-                            continue
-                    
-                    last_count = est_count
-                    
-                    if prefix_hash in seen_hashes:
-                        break
-                    
-                    if len(heap) < top_k:
-                        item = HeapItem(est_count, prefix, direction, prefix_hash)
-                        heapq.heappush(heap, item)
-                        seen_hashes[prefix_hash] = True
-                    elif est_count > heap[0].count:
-                        old_item = heapq.heapreplace(heap, HeapItem(est_count, prefix, direction, prefix_hash))
-                        del seen_hashes[old_item.prefix_hash]
-                        seen_hashes[prefix_hash] = True
-        
-        # 排序去重
         temp_list = [(item.prefix, item.count) for item in heap]
         temp_list.sort(key=lambda x: x[0])
         
@@ -465,7 +337,10 @@ class KatagoJosekiBuilder:
             rudl_str = " ".join(convert_to_rudl(move_str.split()))
             discard.add(rudl_str)
         
-        # 转换为定式格式，计算概率
+        if verbose:
+            print(f"  去重前: {len(temp_list)}  去重后: {len(candidates)}")
+        
+        # Phase 4: 转换为定式格式
         total_seq = max(total_sequences, 1)
         joseki_list = []
         for i, cand in enumerate(candidates):
@@ -479,7 +354,32 @@ class KatagoJosekiBuilder:
             }
             joseki_list.append(joseki)
         
+        if verbose:
+            print(f"✅ 构建完成: {len(joseki_list)} 条定式")
+        
         return joseki_list
+
+    def build_from_tar(self, 
+                       tar_path: str,
+                       min_freq: int = 5,
+                       top_k: int = 10000,
+                       first_n: int = 80,
+                       distance_threshold: int = 4,
+                       min_moves: int = 4,
+                       max_moves: int = 50,
+                       verbose: bool = True) -> List[dict]:
+        """从单个 tar 文件构建定式库（便捷方法）"""
+        return self.build_from_files(
+            [Path(tar_path)],
+            min_freq=min_freq,
+            top_k=top_k,
+            first_n=first_n,
+            distance_threshold=distance_threshold,
+            min_moves=min_moves,
+            max_moves=max_moves,
+            verbose=verbose
+        )
+    
     
     def save_to_db(self, joseki_list: List[dict], append: bool = False):
         """批量保存定式列表到数据库（优化版）"""
