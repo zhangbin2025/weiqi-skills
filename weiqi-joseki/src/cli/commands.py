@@ -190,7 +190,8 @@ def cmd_katago(args):
         min_freq=args.min_freq,
         top_k=args.top_k,
         min_moves=min_moves,
-        max_moves=args.max_moves
+        max_moves=args.max_moves,
+        total_sequences=joseki_count
     )
     
     # 清理临时文件
@@ -222,6 +223,10 @@ def cmd_list(args):
     reverse = (args.order == "desc")
     if args.sort == "freq":
         joseki_list.sort(key=lambda x: x.get("frequency", 0), reverse=reverse)
+    elif args.sort == "probability":
+        joseki_list.sort(key=lambda x: x.get("probability", 0), reverse=reverse)
+    elif args.sort == "moves":
+        joseki_list.sort(key=lambda x: x.get("moves", []), reverse=reverse)
     elif args.sort == "length":
         joseki_list.sort(key=lambda x: len(x.get("moves", [])), reverse=reverse)
     else:  # id
@@ -233,17 +238,18 @@ def cmd_list(args):
     
     print(f"共 {len(storage.get_all())} 条定式")
     print()
-    print(f"{'ID':<12} {'手数':>4} {'频率':>8} {'着法串'}")
-    print("-" * 60)
+    print(f"{'ID':<12} {'手数':>4} {'频率':>8} {'概率':>8} {'着法串'}")
+    print("-" * 70)
     
     for j in joseki_list:
         jid = j.get("id", "-")
         moves = j.get("moves", [])
         freq = j.get("frequency", 0)
+        prob = j.get("probability", 0.0)
         moves_str = " ".join(moves[:8])
         if len(moves) > 8:
             moves_str += "..."
-        print(f"{jid:<12} {len(moves):>4} {freq:>8} {moves_str}")
+        print(f"{jid:<12} {len(moves):>4} {freq:>8} {prob:>8.4%} {moves_str}")
 
 
 def cmd_stats(args):
@@ -554,7 +560,7 @@ def main():
     # list
     p_list = subparsers.add_parser("list", help="列出定式")
     p_list.add_argument("--limit", type=int, help="限制数量")
-    p_list.add_argument("--sort", choices=["id", "freq", "length"], default="id", help="排序方式")
+    p_list.add_argument("--sort", choices=["id", "freq", "probability", "moves", "length"], default="id", help="排序方式")
     p_list.add_argument("--order", choices=["asc", "desc"], default="asc", help="排序方向")
     
     # stats

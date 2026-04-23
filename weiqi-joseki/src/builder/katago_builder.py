@@ -380,7 +380,7 @@ class KatagoJosekiBuilder:
         
         return joseki_list
     
-    def _process_temp_file(self, temp_path: Path, cms, min_freq: int, top_k: int, min_moves: int, max_moves: int = 50) -> List[dict]:
+    def _process_temp_file(self, temp_path: Path, cms, min_freq: int, top_k: int, min_moves: int, max_moves: int = 50, total_sequences: int = 1) -> List[dict]:
         """处理临时文件，执行逆向遍历+单链检测+去重"""
         import heapq
         from datetime import datetime
@@ -465,7 +465,8 @@ class KatagoJosekiBuilder:
             rudl_str = " ".join(convert_to_rudl(move_str.split()))
             discard.add(rudl_str)
         
-        # 转换为定式格式（概率暂时为0，需要外部传入total_sequences计算）
+        # 转换为定式格式，计算概率
+        total_seq = max(total_sequences, 1)
         joseki_list = []
         for i, cand in enumerate(candidates):
             joseki = {
@@ -473,7 +474,7 @@ class KatagoJosekiBuilder:
                 "source": "katago",
                 "moves": cand['moves'],
                 "frequency": cand['count'],
-                "probability": 0.0,
+                "probability": round(cand['count'] / total_seq, 6),
                 "created_at": datetime.now().isoformat()
             }
             joseki_list.append(joseki)
