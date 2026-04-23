@@ -183,28 +183,33 @@ class TrieMatcher:
         # 收集包含前缀的定式终点
         paths = self._collect_joseki_endpoints(prefix or [])
         
-        # 按频率排序，取limit
-        paths.sort(key=lambda x: -x[1])
-        selected = paths[:limit]
-        
         # 构建路径到ids的映射
         ids_map = {tuple(p[0]): p[2] for p in paths}
         
-        # 主分支放第一个（使用完整路径以正确合并前缀）
+        # 分离主分支和其他路径
+        other_paths = []
+        main_tuple = None
+        
         if main_branch:
-            # 如果主分支匹配某个定式，保留该定式的频率
             main_path_tuple = tuple(main_branch)
+            # 检查主分支是否在定式库中
             if main_path_tuple in ids_map:
-                # 主分支是定式路径，保留频率
                 main_freq = next(p[1] for p in paths if p[0] == main_branch)
                 main_tuple = (main_branch, main_freq, ids_map[main_path_tuple])
             else:
-                # 主分支不是定式路径
                 main_tuple = (main_branch, 0, [])
-            # 移除已存在的相同路径
-            selected = [p for p in selected if p[0] != main_branch]
+            # 其他路径排除主分支
+            other_paths = [p for p in paths if p[0] != main_branch]
+        else:
+            other_paths = paths
+        
+        # 其他路径按频率排序，取limit
+        other_paths.sort(key=lambda x: -x[1])
+        selected = other_paths[:limit]
+        
+        # 主分支放第一个（不占用limit名额）
+        if main_tuple:
             selected.insert(0, main_tuple)
-            selected = selected[:limit]
         
         # 构建树（传递主分支用于标记）
         tree = self._build_tree_from_paths(selected, main_branch)
