@@ -33,22 +33,39 @@ def convert_to_rudl(moves: List[str]) -> List[str]:
     """
     将ruld方向的着法序列转换为rudl方向
     
-    ruld: 右上(左→下) - 原点是sa(18,0)
-    rudl: 右上(下→左) - 原点是ss(18,18)
+    使用 COORDINATE_SYSTEMS 中定义的坐标系进行转换：
+    - ruld: 右上(左→下) - 原点是tr, x往左, y往下
+    - rudl: 右上(下→左) - 原点是tr, x往下, y往左
+    
+    转换步骤：
+    1. 用 ruld 坐标系将 SGF 坐标转为局部坐标 (x, y)
+    2. 用 rudl 坐标系将局部坐标 (x, y) 转回 SGF 坐标
     """
+    from ..core.coords import COORDINATE_SYSTEMS
+    
+    ruld_sys = COORDINATE_SYSTEMS['ruld']  # 源坐标系
+    rudl_sys = COORDINATE_SYSTEMS['rudl']  # 目标坐标系
+    
     rudl_moves = []
     for sgf in moves:
         if not sgf or sgf == 'pass' or sgf == 'tt':
             rudl_moves.append(sgf)
-        else:
-            c = ord(sgf[0]) - ord('a')
-            r = ord(sgf[1]) - ord('a')
-            x = 18 - c
-            y = r
-            new_col = 18 - y
-            new_row = 18 - x
-            new_sgf = chr(ord('a') + new_col) + chr(ord('a') + new_row)
-            rudl_moves.append(new_sgf)
+            continue
+        
+        # ruld SGF -> 局部坐标
+        local = ruld_sys._to_local_cache.get(sgf)
+        if local is None:
+            rudl_moves.append(sgf)
+            continue
+        
+        # 局部坐标 -> rudl SGF
+        new_sgf = rudl_sys._to_sgf_cache.get(local)
+        if new_sgf is None:
+            rudl_moves.append(sgf)
+            continue
+        
+        rudl_moves.append(new_sgf)
+    
     return rudl_moves
 
 
@@ -56,24 +73,34 @@ def convert_to_ruld(moves: List[str]) -> List[str]:
     """
     将rudl方向的着法序列转换回ruld方向
     （convert_to_rudl的逆操作）
+    
+    使用 COORDINATE_SYSTEMS 中定义的坐标系进行转换
     """
+    from ..core.coords import COORDINATE_SYSTEMS
+    
+    rudl_sys = COORDINATE_SYSTEMS['rudl']  # 源坐标系
+    ruld_sys = COORDINATE_SYSTEMS['ruld']  # 目标坐标系
+    
     ruld_moves = []
     for sgf in moves:
         if not sgf or sgf == 'pass' or sgf == 'tt':
             ruld_moves.append(sgf)
-        else:
-            # rudl SGF坐标 → 局部坐标
-            c = ord(sgf[0]) - ord('a')
-            r = ord(sgf[1]) - ord('a')
-            # rudl局部坐标: x = 18-c, y = 18-r
-            x = 18 - c
-            y = 18 - r
-            # ruld局部坐标: x' = y, y' = x
-            # ruld SGF: col = 18-y', row = x'
-            new_col = 18 - y
-            new_row = x
-            new_sgf = chr(ord('a') + new_col) + chr(ord('a') + new_row)
-            ruld_moves.append(new_sgf)
+            continue
+        
+        # rudl SGF -> 局部坐标
+        local = rudl_sys._to_local_cache.get(sgf)
+        if local is None:
+            ruld_moves.append(sgf)
+            continue
+        
+        # 局部坐标 -> ruld SGF
+        new_sgf = ruld_sys._to_sgf_cache.get(local)
+        if new_sgf is None:
+            ruld_moves.append(sgf)
+            continue
+        
+        ruld_moves.append(new_sgf)
+    
     return ruld_moves
 
 
