@@ -5,6 +5,7 @@ KataGo 棋谱下载模块
 """
 
 import gc
+import re
 import time
 import signal
 import tarfile
@@ -331,6 +332,37 @@ def iter_sgf_from_tar(tar_path: Path) -> Iterator[str]:
         return
 
 
+def fetch_available_dates() -> List[str]:
+    """
+    从KataGo Archive列表页面获取所有可下载的日期
+    
+    Returns:
+        可下载的日期列表 (YYYY-MM-DD格式)
+    """
+    index_url = f"{KATAGO_BASE_URL}index.html"
+    
+    try:
+        req = urllib.request.Request(index_url, headers={
+            'User-Agent': 'Mozilla/5.0 (compatible; WeiqiJoseki/1.0)'
+        })
+        
+        with urllib.request.urlopen(req, timeout=30) as response:
+            html = response.read().decode('utf-8', errors='ignore')
+        
+        # 提取所有 YYYY-MM-DD rating.tar.bz2 链接
+        # 匹配模式如: 2024-01-15rating.tar.bz2
+        pattern = r'(\d{4}-\d{2}-\d{2})rating\.tar\.bz2'
+        matches = re.findall(pattern, html)
+        
+        # 去重并排序
+        available_dates = sorted(set(matches))
+        return available_dates
+        
+    except Exception as e:
+        print(f"⚠️  获取可用日期列表失败: {e}")
+        return []
+
+
 def download_katago_games(
     start_date: str,
     end_date: str,
@@ -361,16 +393,35 @@ def download_katago_games(
     """
     from pathlib import Path
     
+    # 获取服务器上可用的日期列表
+    print("📋 正在获取可用日期列表...")
+    available_dates = fetch_available_dates()
+    if not available_dates:
+        print("⚠️  无法获取可用日期列表，将尝试所有日期")
+        available_dates = []
+    else:
+        print(f"✅ 服务器共有 {len(available_dates)} 个日期的棋谱")
+    
     # 解析日期
     start = datetime.strptime(start_date, "%Y-%m-%d")
     end = datetime.strptime(end_date, "%Y-%m-%d")
     
     # 生成日期列表
-    dates = []
+    all_dates = []
     current = start
     while current <= end:
-        dates.append(current.strftime("%Y-%m-%d"))
+        all_dates.append(current.strftime("%Y-%m-%d"))
         current += timedelta(days=1)
+    
+    # 与可用日期取交集
+    if available_dates:
+        available_set = set(available_dates)
+        dates = [d for d in all_dates if d in available_set]
+        skipped_dates = [d for d in all_dates if d not in available_set]
+        if skipped_dates:
+            print(f"⏭️  跳过 {len(skipped_dates)} 个服务器不存在的日期")
+    else:
+        dates = all_dates
     
     # 设置默认缓存目录
     if cache_dir is None:
