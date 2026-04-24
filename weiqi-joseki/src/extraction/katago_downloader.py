@@ -189,9 +189,13 @@ class DownloadManager:
             
             try:
                 self._current_file = f"{date_str}.tar.bz2"
-                # 下载
+                # 下载（使用完整浏览器请求头）
                 req = urllib.request.Request(url, headers={
-                    'User-Agent': 'Mozilla/5.0 (compatible; WeiqiJoseki/1.0)'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Referer': 'https://katagoarchive.org/kata1/ratinggames/',
+                    'Connection': 'keep-alive',
                 })
                 
                 with urllib.request.urlopen(req, timeout=60) as response:
@@ -207,12 +211,12 @@ class DownloadManager:
                 with self._lock:
                     self._completed += 1
                 # 下载成功后延迟，避免触发服务器频率限制
-                time.sleep(10)
+                time.sleep(30)
                 return date_str, output_path, None, False
                 
             except Exception as e:
                 if attempt < self.max_retries - 1:
-                    time.sleep(2 ** attempt)  # 指数退避
+                    time.sleep(5 * (2 ** attempt))  # 指数退避，基础5秒
                 else:
                     with self._lock:
                         self._completed += 1
@@ -323,7 +327,11 @@ def fetch_available_dates() -> List[str]:
     
     try:
         req = urllib.request.Request(index_url, headers={
-            'User-Agent': 'Mozilla/5.0 (compatible; WeiqiJoseki/1.0)'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://katagoarchive.org/',
+            'Connection': 'keep-alive',
         })
         
         with urllib.request.urlopen(req, timeout=30) as response:
