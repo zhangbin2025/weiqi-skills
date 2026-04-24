@@ -46,15 +46,15 @@
 
 | 技能包 | 功能 | 版本 |
 |--------|------|------|
-| [weiqi-move](weiqi-move/) | 实战选点练习（棋力提升利器） | 1.0.0 |
-| [weiqi-db](weiqi-db/) | 围棋棋谱数据库 | 1.0.1 |
+| [weiqi-move](weiqi-move/) | 实战选点练习（棋力提升利器） | 1.1.0 |
+| [weiqi-db](weiqi-db/) | 围棋棋谱数据库 | 1.0.6 |
 | [weiqi-fetcher](weiqi-fetcher/) | 分享棋谱下载器 | 1.1.1 |
-| [weiqi-foxwq](weiqi-foxwq/) | 野狐棋谱下载 | 1.1.1 |
-| [weiqi-joseki](weiqi-joseki/) | 围棋定式数据库 | 1.1.0 |
+| [weiqi-foxwq](weiqi-foxwq/) | 野狐棋谱下载 | 1.2.0 |
+| [weiqi-joseki](weiqi-joseki/) | 围棋定式数据库 | 2.0.0 |
 | [weiqi-player](weiqi-player/) | 棋手等级分/段位查询 | 1.0.9 |
 | [weiqi-recorder](weiqi-recorder/) | 网页记谱工具 | 1.0.6 |
-| [weiqi-sgf](weiqi-sgf/) | SGF转HTML打谱网页 | 1.2.2 |
-| [weiqi-yunbisai](weiqi-yunbisai/) | 云比赛网比赛查询 | 1.1.2 |
+| [weiqi-sgf](weiqi-sgf/) | SGF转HTML打谱网页 | 2.0.2 |
+| [weiqi-yunbisai](weiqi-yunbisai/) | 云比赛网比赛查询 | 1.2.0 |
 
 ## 快速开始
 
@@ -213,12 +213,12 @@ clawhub install weiqi-yunbisai
 - 按日期批量下载野狐围棋棋谱
 - 支持从分享链接实时提取棋谱（WebSocket协议解析）
 - 支持进行中/已结束对局
+- 支持通过昵称查找用户并下载其公开棋谱
 
 ### 📚 weiqi-joseki - 围棋定式数据库
-- 定式录入与管理，支持8向对称变化自动生成
-- 从棋谱批量提取定式，自动检测脱先（PASS）定式
-- KataGo Archive 自动导入，支持断点续传和内存保护
-- 定式冲突检测与棋谱定式匹配识别
+- 从KataGo Archive棋谱自动构建定式库（时序连通性算法）
+- 支持定式发现（discover）和棋谱匹配
+- 支持导出为JSON/SGF格式
 - 数据存储于 `~/.weiqi-joseki/database.json`
 
 ### 🔍 weiqi-player - 棋手查询
@@ -232,14 +232,15 @@ clawhub install weiqi-yunbisai
 - 无需安装，浏览器直接打开使用
 
 ### 🎮 weiqi-sgf - SGF打谱工具
-- 将SGF棋谱转换为交互式HTML网页
-- 支持播放/暂停/手数跳转
-- 支持让子棋
+- 将SGF棋谱转换为交互式HTML打谱网页
+- 支持多级嵌套变化分支浏览
+- 支持试下功能（落子、提子）
+- 内置音效系统（落子、提子音效）
 
 ### 🏆 weiqi-yunbisai - 比赛查询
 - 查询云比赛网围棋比赛列表
 - 获取分组信息和选手名单
-- 计算完整排名（积分/对手分/累进分）
+- 计算完整排名（积分/对手分/累进分/对手分逆减）
 
 ## 依赖
 
