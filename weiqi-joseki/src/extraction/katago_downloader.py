@@ -124,7 +124,7 @@ class ProgressManager:
 
 class DownloadManager:
     """下载管理器（支持重试、进度显示、404检测）"""
-    def __init__(self, cache_dir: Path, max_retries: int = 3, workers: int = 3, keep_cache: bool = True):
+    def __init__(self, cache_dir: Path, max_retries: int = 3, workers: int = 1, keep_cache: bool = True):
         self.cache_dir = cache_dir
         self.max_retries = max_retries
         self.workers = workers
@@ -348,7 +348,7 @@ def download_katago_games(
     end_date: str,
     cache_dir: Optional[Path] = None,
     max_retries: int = 3,
-    workers: int = 3,
+    workers: int = 1,
     keep_cache: bool = True,
     resume: bool = False,
     on_progress: Optional[Callable[[str, int, int], None]] = None
