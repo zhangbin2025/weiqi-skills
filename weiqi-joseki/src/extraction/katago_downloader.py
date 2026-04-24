@@ -393,6 +393,9 @@ def download_katago_games(
     else:
         dates = all_dates
     
+    # 确保日期按升序排列
+    dates = sorted(dates)
+    
     # 设置默认缓存目录
     if cache_dir is None:
         cache_dir = Path.home() / ".weiqi-joseki" / "katago-cache"
