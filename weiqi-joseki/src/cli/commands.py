@@ -61,8 +61,9 @@ def cmd_katago(args):
         end_date=args.end_date,
         cache_dir=CACHE_DIR,
         max_retries=3,
-        workers=3,
-        keep_cache=True
+        workers=1,
+        keep_cache=True,
+        delay=args.delay
     )
     
     print(f"✅ 文件准备完成: {len(downloaded_files)}/{len(dates)} 个")
@@ -454,6 +455,7 @@ def main():
     p_katago.add_argument("--min-moves", type=int, default=4, help="最少手数")
     p_katago.add_argument("--max-moves", type=int, default=50, help="最多手数")
     p_katago.add_argument("--download-only", action="store_true", help="仅下载棋谱到缓存，不构建定式库")
+    p_katago.add_argument("--delay", type=int, default=10, help="下载间隔延迟（秒），默认10秒")
     
     # list
     p_list = subparsers.add_parser("list", help="列出定式")

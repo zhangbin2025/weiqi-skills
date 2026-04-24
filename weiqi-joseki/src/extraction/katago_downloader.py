@@ -124,11 +124,12 @@ class ProgressManager:
 
 class DownloadManager:
     """下载管理器（支持重试、进度显示、404检测）"""
-    def __init__(self, cache_dir: Path, max_retries: int = 3, workers: int = 1, keep_cache: bool = True):
+    def __init__(self, cache_dir: Path, max_retries: int = 3, workers: int = 1, keep_cache: bool = True, delay: int = 10):
         self.cache_dir = cache_dir
         self.max_retries = max_retries
         self.workers = workers
         self.keep_cache = keep_cache
+        self.delay = delay
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
@@ -211,7 +212,7 @@ class DownloadManager:
                 with self._lock:
                     self._completed += 1
                 # 下载成功后延迟，避免触发服务器频率限制
-                time.sleep(60)
+                time.sleep(self.delay)
                 return date_str, output_path, None, False
                 
             except Exception as e:
@@ -359,6 +360,7 @@ def download_katago_games(
     workers: int = 1,
     keep_cache: bool = True,
     resume: bool = False,
+    delay: int = 10,
     on_progress: Optional[Callable[[str, int, int], None]] = None
 ) -> Tuple[List[Path], List[str]]:
     """
@@ -372,6 +374,7 @@ def download_katago_games(
         workers: 并行下载线程数
         keep_cache: 是否保留缓存文件
         resume: 是否断点续传
+        delay: 下载间隔延迟（秒）
         on_progress: 进度回调函数(date_str, current, total)
     
     返回:
@@ -423,7 +426,8 @@ def download_katago_games(
         cache_dir=cache_dir,
         max_retries=max_retries,
         workers=workers,
-        keep_cache=keep_cache
+        keep_cache=keep_cache,
+        delay=delay
     )
     
     # 断点续传：加载进度文件
