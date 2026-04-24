@@ -164,13 +164,14 @@ class DownloadManager:
         else:
             return f"{int(seconds/3600)}h{int((seconds%3600)/60)}m"
     
-    def download_single(self, date_str: str) -> Tuple[str, Optional[Path], Optional[str]]:
+    def download_single(self, date_str: str) -> Tuple[str, Optional[Path], Optional[str], bool]:
         """
         下载单个日期文件
         
         返回:
-            (date_str, file_path, error)
+            (date_str, file_path, error, from_cache)
             error为None表示成功，为"404"表示文件不存在（也算成功但不下载），其他为错误信息
+            from_cache为True表示从缓存读取，False表示新下载
         """
         url = f"{KATAGO_BASE_URL}{date_str}rating.tar.bz2"
         output_path = self.cache_dir / f"{date_str}rating.tar.bz2"
@@ -179,7 +180,7 @@ class DownloadManager:
         if output_path.exists() and output_path.stat().st_size > 1000:
             with self._lock:
                 self._completed += 1
-            return date_str, output_path, None
+            return date_str, output_path, None, True
         
         # 执行下载（已通过fetch_available_dates确认文件存在）
         for attempt in range(self.max_retries):
@@ -207,7 +208,7 @@ class DownloadManager:
                     self._completed += 1
                 # 下载成功后延迟，避免触发服务器频率限制
                 time.sleep(10)
-                return date_str, output_path, None
+                return date_str, output_path, None, False
                 
             except Exception as e:
                 if attempt < self.max_retries - 1:
@@ -215,22 +216,23 @@ class DownloadManager:
                 else:
                     with self._lock:
                         self._completed += 1
-                    return date_str, None, str(e)
+                    return date_str, None, str(e), False
         
-        return date_str, None, "max retries exceeded"
+        return date_str, None, "max retries exceeded", False
     
-    def download(self, dates: List[str], on_progress: Optional[Callable[[str, int, int], None]] = None) -> Tuple[Dict[str, Path], Dict[str, str]]:
+    def download(self, dates: List[str], on_progress: Optional[Callable[[str, int, int], None]] = None) -> Tuple[Dict[str, Path], Dict[str, str], int]:
         """
-        批量下载，返回成功下载的文件映射和失败信息
+        批量下载，返回成功下载的文件映射、失败信息和缓存命中数
         
         Args:
             dates: 日期列表
             on_progress: 进度回调函数(date_str, current, total)
         
         返回:
-            (success_map, error_map)
+            (success_map, error_map, cache_hits)
             success_map: {date_str: file_path, ...}
             error_map: {date_str: error_message, ...}
+            cache_hits: 缓存命中数
         """
         self._total = len(dates)
         self._completed = 0
@@ -238,9 +240,10 @@ class DownloadManager:
         
         success_map = {}
         error_map = {}
+        cache_hits = 0
         completed_count = 0
         
-        def download_single_wrapped(date_str: str) -> Tuple[str, Optional[Path], Optional[str]]:
+        def download_single_wrapped(date_str: str) -> Tuple[str, Optional[Path], Optional[str], bool]:
             return self.download_single(date_str)
         
         # 使用线程池并行下载
@@ -250,16 +253,18 @@ class DownloadManager:
             for future in as_completed(futures):
                 if self._stop_event.is_set():
                     break
-                date_str, path, error = future.result()
+                date_str, path, error, from_cache = future.result()
                 completed_count += 1
                 if on_progress:
                     on_progress(date_str, completed_count, self._total)
                 if path:
                     success_map[date_str] = path
+                    if from_cache:
+                        cache_hits += 1
                 elif error:
                     error_map[date_str] = error
         
-        return success_map, error_map
+        return success_map, error_map, cache_hits
     
     def print_progress(self):
         """打印当前进度"""
@@ -426,15 +431,30 @@ def download_katago_games(
             pass
     
     # 下载
-    downloaded_map, error_map = manager.download(dates, on_progress=on_progress)
+    downloaded_map, error_map, cache_hits = manager.download(dates, on_progress=on_progress)
     
     # 分类结果
     downloaded_files = list(downloaded_map.values())
     missing_dates = [d for d in dates if d not in downloaded_map]
     
+    # 计算统计信息
+    total_to_download = len(dates)
+    new_downloads = len(downloaded_map) - cache_hits
+    failed_downloads = len(error_map)
+    
+    # 显示下载统计
+    print(f"\n📊 下载统计:")
+    print(f"  - 总计需要: {total_to_download} 个")
+    print(f"  - 缓存命中: {cache_hits} 个 ({cache_hits/total_to_download*100:.1f}%)")
+    print(f"  - 新下载成功: {new_downloads} 个")
+    if new_downloads > 0:
+        success_rate = new_downloads / (new_downloads + failed_downloads) * 100 if (new_downloads + failed_downloads) > 0 else 0
+        print(f"  - 新下载失败: {failed_downloads} 个")
+        print(f"  - 新下载成功率: {success_rate:.1f}%")
+    
     # 显示下载失败原因
     if error_map:
-        print(f"\n⚠️  下载失败 {len(error_map)} 个文件:")
+        print(f"\n⚠️  下载失败详情:")
         # 按错误类型统计
         error_counts = {}
         for date_str, error in error_map.items():
