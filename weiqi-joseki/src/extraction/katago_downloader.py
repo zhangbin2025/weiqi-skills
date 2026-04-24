@@ -211,7 +211,7 @@ class DownloadManager:
                 with self._lock:
                     self._completed += 1
                 # 下载成功后延迟，避免触发服务器频率限制
-                time.sleep(30)
+                time.sleep(60)
                 return date_str, output_path, None, False
                 
             except Exception as e:
