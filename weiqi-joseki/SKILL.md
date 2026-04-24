@@ -170,7 +170,7 @@ python3 -m src.cli.commands init
 
 ### 从KataGo构建定式库 ⭐
 
-从 [KataGo Archive](https://katagoarchive.org/kata1/ratinggames/) 下载棋谱并构建定式库。
+从 [KataGo Archive](https://katagoarchive.org/kata1/ratinggames/index.html) 下载棋谱并构建定式库。
 
 **基本用法：**
 ```bash
