@@ -74,6 +74,11 @@ def cmd_katago(args):
         print("❌ 没有可处理的文件")
         return 1
     
+    # 仅下载模式
+    if args.download_only:
+        print("✅ 下载完成，跳过定式库构建")
+        return 0
+    
     # 构建定式库
     print(f"⏳ 开始构建定式库...")
     print(f"   参数: first-n={args.first_n}, min-freq={args.min_freq}, top-k={args.top_k}")
@@ -448,6 +453,7 @@ def main():
     p_katago.add_argument("--distance-threshold", type=int, default=4, help="连通块距离阈值")
     p_katago.add_argument("--min-moves", type=int, default=4, help="最少手数")
     p_katago.add_argument("--max-moves", type=int, default=50, help="最多手数")
+    p_katago.add_argument("--download-only", action="store_true", help="仅下载棋谱到缓存，不构建定式库")
     
     # list
     p_list = subparsers.add_parser("list", help="列出定式")
