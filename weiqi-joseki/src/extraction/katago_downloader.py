@@ -219,22 +219,25 @@ class DownloadManager:
         
         return date_str, None, "max retries exceeded"
     
-    def download(self, dates: List[str], on_progress: Optional[Callable[[str, int, int], None]] = None) -> Dict[str, Path]:
+    def download(self, dates: List[str], on_progress: Optional[Callable[[str, int, int], None]] = None) -> Tuple[Dict[str, Path], Dict[str, str]]:
         """
-        批量下载，返回成功下载的文件映射
+        批量下载，返回成功下载的文件映射和失败信息
         
         Args:
             dates: 日期列表
             on_progress: 进度回调函数(date_str, current, total)
         
         返回:
-            {date_str: file_path, ...}
+            (success_map, error_map)
+            success_map: {date_str: file_path, ...}
+            error_map: {date_str: error_message, ...}
         """
         self._total = len(dates)
         self._completed = 0
         self._start_time = time.time()
         
-        results = {}
+        success_map = {}
+        error_map = {}
         completed_count = 0
         
         def download_single_wrapped(date_str: str) -> Tuple[str, Optional[Path], Optional[str]]:
@@ -252,9 +255,11 @@ class DownloadManager:
                 if on_progress:
                     on_progress(date_str, completed_count, self._total)
                 if path:
-                    results[date_str] = path
+                    success_map[date_str] = path
+                elif error:
+                    error_map[date_str] = error
         
-        return results
+        return success_map, error_map
     
     def print_progress(self):
         """打印当前进度"""
@@ -421,10 +426,29 @@ def download_katago_games(
             pass
     
     # 下载
-    downloaded_map = manager.download(dates, on_progress=on_progress)
+    downloaded_map, error_map = manager.download(dates, on_progress=on_progress)
     
     # 分类结果
     downloaded_files = list(downloaded_map.values())
     missing_dates = [d for d in dates if d not in downloaded_map]
+    
+    # 显示下载失败原因
+    if error_map:
+        print(f"\n⚠️  下载失败 {len(error_map)} 个文件:")
+        # 按错误类型统计
+        error_counts = {}
+        for date_str, error in error_map.items():
+            # 简化错误信息
+            short_error = error.split(':')[0] if ':' in error else error
+            error_counts[short_error] = error_counts.get(short_error, 0) + 1
+        
+        for error_type, count in sorted(error_counts.items(), key=lambda x: -x[1]):
+            print(f"  - {error_type}: {count} 个")
+        
+        # 显示前10个具体失败案例
+        if len(error_map) > 0:
+            print(f"\n  前10个失败示例:")
+            for i, (date_str, error) in enumerate(list(error_map.items())[:10]):
+                print(f"    {date_str}: {error[:80]}")
     
     return downloaded_files, missing_dates
