@@ -164,27 +164,6 @@ class DownloadManager:
         else:
             return f"{int(seconds/3600)}h{int((seconds%3600)/60)}m"
     
-    def check_file_exists(self, url: str) -> Tuple[bool, Optional[str]]:
-        """
-        检查远程文件是否存在
-        
-        返回:
-            (exists, error)
-            exists: True表示存在，False表示404或其他错误
-        """
-        try:
-            req = urllib.request.Request(url, method='HEAD', headers={
-                'User-Agent': 'Mozilla/5.0 (compatible; WeiqiJoseki/1.0)'
-            })
-            with urllib.request.urlopen(req, timeout=30) as response:
-                return True, None
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                return False, None  # 文件不存在，不算错误
-            return False, str(e)
-        except Exception as e:
-            return False, str(e)
-    
     def download_single(self, date_str: str) -> Tuple[str, Optional[Path], Optional[str]]:
         """
         下载单个日期文件
@@ -202,16 +181,7 @@ class DownloadManager:
                 self._completed += 1
             return date_str, output_path, None
         
-        # 先检查文件是否存在
-        exists, error = self.check_file_exists(url)
-        if not exists:
-            if error is None:
-                # 404，文件不存在，算成功但不下载
-                return date_str, None, "404"
-            else:
-                return date_str, None, error
-        
-        # 文件存在，执行下载
+        # 执行下载（已通过fetch_available_dates确认文件存在）
         for attempt in range(self.max_retries):
             if self._stop_event.is_set():
                 return date_str, None, "stopped"
