@@ -200,6 +200,39 @@ class KatagoJosekiBuilder:
         
         return processed, joseki_count, prefix_count, total_unique_sequences
     
+    def process_sgf(self, sgf_data: str, first_n: int = 80, distance_threshold: int = 4) -> dict:
+        """处理单个SGF数据，返回四角着法信息
+        
+        Args:
+            sgf_data: SGF格式的棋谱数据
+            first_n: 提取前N手
+            distance_threshold: 连通块距离阈值
+            
+        Returns:
+            四角着法信息字典，key为角部名称
+        """
+        if not sgf_data:
+            return {}
+        
+        try:
+            corner_moves = extract_moves_all_corners(
+                sgf_data, first_n=first_n, distance_threshold=distance_threshold
+            )
+            
+            result = {}
+            for corner in CORNERS:
+                moves = corner_moves.get(corner, [])
+                if moves:
+                    coords = get_move_sequence(moves)
+                    result[corner] = {
+                        'moves': coords,
+                        'move_count': len(coords)
+                    }
+            
+            return result
+        except Exception as e:
+            return {}
+    
     def _iter_temp_files(self, temp_paths):
         """流式迭代多个temp文件的内容
         
