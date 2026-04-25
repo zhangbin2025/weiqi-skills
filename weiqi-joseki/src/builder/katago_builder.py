@@ -360,19 +360,20 @@ class KatagoJosekiBuilder:
                 'original_direction': item.direction
             })
         
-        # 去重
-        seen = {}
-        discard = set()
+        # 去重：保留频率最高的
+        seen = {}  # key: moves_tuple, value: (item, count)
         
         for item in temp_list:
             moves_tuple = tuple(item['moves'])
             if moves_tuple in seen:
-                discard.add(moves_tuple)
+                # 保留频率更高的
+                if item['count'] > seen[moves_tuple]['count']:
+                    seen[moves_tuple] = item
             else:
                 seen[moves_tuple] = item
         
         # 按频率排序
-        candidates = [item for key, item in seen.items() if key not in discard]
+        candidates = list(seen.values())
         candidates.sort(key=lambda x: -x['count'])
         
         # 最终去重（使用rudl作为key）
