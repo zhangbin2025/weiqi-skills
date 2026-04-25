@@ -49,11 +49,18 @@ def _cmd_katago_auto(args):
         print(f"   CMS更新至: {state.progress['cms_updated_to'] or '未更新'}")
         print(f"   最后重建: {state.progress['last_rebuild'] or '未重建'}")
     
-    # 2. 创建 Builder
-    builder = KatagoJosekiBuilder(db_path=args.db)
-    
-    # 3. 执行自动流程
+    # 2. 下载新日期
     cache_dir = Path.home() / ".weiqi-joseki" / "katago-cache"
+    print("\n【步骤0】检查并下载新棋谱...")
+    new_dates = download_auto(state, cache_dir, max_retries=3, delay=args.delay)
+    if new_dates:
+        print(f"   ✅ 新下载 {len(new_dates)} 个日期: {', '.join(new_dates[:5])}{'...' if len(new_dates) > 5 else ''}")
+    else:
+        print("   ℹ️  没有新日期需要下载")
+    
+    # 3. 创建 Builder 并执行自动流程
+    print()
+    builder = KatagoJosekiBuilder(db_path=args.db)
     
     result = builder.run_auto(state, cache_dir)
     
