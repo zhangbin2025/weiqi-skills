@@ -18,11 +18,13 @@ from typing import List, Dict, Tuple, Optional
 from collections import Counter
 from datetime import datetime
 
-from ..extraction import extract_moves_all_corners, get_move_sequence
-from ..extraction.katago_downloader import iter_sgf_from_tar
-from ..core.coords import convert_to_top_right
-from ..storage.json_storage import JsonStorage, DEFAULT_DB_PATH
-from ..utils import CountMinSketch
+from extraction import extract_moves_all_corners, get_move_sequence
+from extraction.katago_downloader import iter_sgf_from_tar
+from core.coords import convert_to_top_right
+from storage.json_storage import JsonStorage, DEFAULT_DB_PATH
+from utils import CountMinSketch
+
+from auto import AutoState, get_adaptive_cms_config
 
 
 # 四角配置
@@ -41,7 +43,7 @@ def convert_to_rudl(moves: List[str]) -> List[str]:
     1. 用 ruld 坐标系将 SGF 坐标转为局部坐标 (x, y)
     2. 用 rudl 坐标系将局部坐标 (x, y) 转回 SGF 坐标
     """
-    from ..core.coords import COORDINATE_SYSTEMS
+    from core.coords import COORDINATE_SYSTEMS
     
     ruld_sys = COORDINATE_SYSTEMS['ruld']  # 源坐标系
     rudl_sys = COORDINATE_SYSTEMS['rudl']  # 目标坐标系
@@ -76,7 +78,7 @@ def convert_to_ruld(moves: List[str]) -> List[str]:
     
     使用 COORDINATE_SYSTEMS 中定义的坐标系进行转换
     """
-    from ..core.coords import COORDINATE_SYSTEMS
+    from core.coords import COORDINATE_SYSTEMS
     
     rudl_sys = COORDINATE_SYSTEMS['rudl']  # 源坐标系
     ruld_sys = COORDINATE_SYSTEMS['ruld']  # 目标坐标系
@@ -141,6 +143,86 @@ class KatagoJosekiBuilder:
         self._cms_width = width
         self._cms_depth = depth
     
+    def _extract_from_tar_to_temp(
+        self,
+        tar_path: Path,
+        temp_f_out,
+        cms: CountMinSketch,
+        config: dict,
+        verbose: bool = False
+    ) -> tuple:
+        """从单个tar文件提取四角着法到temp文件，同时更新CMS
+        
+        这是一个可复用的核心函数，供自定义构建和自动构建共用。
+        
+        Args:
+            tar_path: tar文件路径
+            temp_f_out: 临时文件写入句柄（gzip.open后的文件对象）
+            cms: CountMinSketch实例
+            config: 配置字典，包含 first_n, distance_threshold, min_moves
+            verbose: 是否打印进度
+            
+        Returns:
+            (processed_sgf, joseki_count, prefix_count, unique_sequences)
+        """
+        first_n = config.get('first_n', 80)
+        distance_threshold = config.get('distance_threshold', 4)
+        min_moves = config.get('min_moves', 4)
+        
+        processed = 0
+        joseki_count = 0
+        prefix_count = 0
+        total_unique_sequences = 0
+        
+        for sgf_data in iter_sgf_from_tar(str(tar_path)):
+            try:
+                corner_moves_dict = extract_moves_all_corners(
+                    sgf_data, first_n=first_n, distance_threshold=distance_threshold
+                )
+                
+                seen_sequences = set()
+                
+                for corner in CORNERS:
+                    moves = corner_moves_dict.get(corner)
+                    if not moves or len(moves) < min_moves:
+                        continue
+                    
+                    coords = get_move_sequence(moves)
+                    if len(coords) < min_moves:
+                        continue
+                    
+                    tr_coords = convert_to_top_right(coords, corner)
+                    ruld = " ".join(tr_coords)
+                    rudl = " ".join(convert_to_rudl(tr_coords))
+                    
+                    for direction, seq in [('ruld', ruld), ('rudl', rudl)]:
+                        if seq in seen_sequences:
+                            continue
+                        seen_sequences.add(seq)
+                        
+                        temp_f_out.write(f"{direction}|{seq}\n")
+                        joseki_count += 1
+                        
+                        seq_parts = seq.split()
+                        for end in range(min_moves, len(seq_parts) + 1):
+                            prefix = " ".join(seq_parts[:end])
+                            cms.update(prefix)
+                            prefix_count += 1
+                
+                total_unique_sequences += len(seen_sequences)
+                processed += 1
+                
+            except Exception:
+                continue
+            
+            if verbose and processed % 1000 == 0:
+                print(f"\r  已处理: {processed}谱", end='', flush=True)
+        
+        if verbose:
+            print(f"\r  完成: {processed}谱, {joseki_count}定式串, {prefix_count}前缀")
+        
+        return processed, joseki_count, prefix_count, total_unique_sequences
+    
 
     
     def process_sgf(self, sgf_data: str, first_n: int = 80, 
@@ -197,6 +279,12 @@ class KatagoJosekiBuilder:
         if verbose:
             print(f"📊 Phase 1: CMS统计前缀频率")
         
+        config = {
+            'first_n': first_n,
+            'distance_threshold': distance_threshold,
+            'min_moves': min_moves
+        }
+        
         processed = 0
         joseki_count = 0
         prefix_count = 0
@@ -207,46 +295,13 @@ class KatagoJosekiBuilder:
                 if verbose:
                     print(f"   处理: {tar_path.name}...")
                 
-                for sgf_data in iter_sgf_from_tar(str(tar_path)):
-                    try:
-                        corner_moves_dict = extract_moves_all_corners(
-                            sgf_data, first_n=first_n, distance_threshold=distance_threshold
-                        )
-                        
-                        seen_sequences = set()
-                        
-                        for corner in CORNERS:
-                            moves = corner_moves_dict.get(corner)
-                            if not moves or len(moves) < min_moves:
-                                continue
-                            
-                            coords = get_move_sequence(moves)
-                            if len(coords) < min_moves:
-                                continue
-                            
-                            tr_coords = convert_to_top_right(coords, corner)
-                            ruld = " ".join(tr_coords)
-                            rudl = " ".join(convert_to_rudl(tr_coords))
-                            
-                            for direction, seq in [('ruld', ruld), ('rudl', rudl)]:
-                                if seq in seen_sequences:
-                                    continue
-                                seen_sequences.add(seq)
-                                
-                                f_out.write(f"{direction}|{seq}\n")
-                                joseki_count += 1
-                                
-                                seq_parts = seq.split()
-                                for end in range(min_moves, len(seq_parts) + 1):
-                                    prefix = " ".join(seq_parts[:end])
-                                    cms.update(prefix)
-                                    prefix_count += 1
-                        
-                        total_unique_sequences += len(seen_sequences)
-                        processed += 1
-                        
-                    except Exception as e:
-                        continue
+                p, j, pr, u = self._extract_from_tar_to_temp(
+                    tar_path, f_out, cms, config, verbose=False
+                )
+                processed += p
+                joseki_count += j
+                prefix_count += pr
+                total_unique_sequences += u
                 
                 if verbose:
                     print(f"      累计: {processed}谱, {joseki_count}定式串, {prefix_count}前缀")
@@ -266,11 +321,36 @@ class KatagoJosekiBuilder:
         
         return joseki_list
     
+    def _iter_temp_files(self, temp_paths):
+        """流式迭代多个temp文件的内容
+        
+        Args:
+            temp_paths: temp文件路径列表
+            
+        Yields:
+            每行的内容 (str)
+        """
+        for temp_path in temp_paths:
+            with gzip.open(temp_path, 'rt', encoding='utf-8') as f_in:
+                for line in f_in:
+                    yield line
+    
     def _build_from_cms_and_temp(
-        self, temp_path: Path, cms, min_freq: int, top_k: int,
-        min_moves: int, max_moves: int, total_sequences: int, verbose: bool
+        self, 
+        temp_source,  # Path or List[Path]
+        cms, 
+        min_freq: int, 
+        top_k: int,
+        min_moves: int, 
+        max_moves: int, 
+        total_sequences: int, 
+        verbose: bool
     ) -> List[dict]:
-        """从CMS和临时文件构建定式（Phase 2-4）"""
+        """从CMS和临时文件构建定式（Phase 2-4）
+        
+        Args:
+            temp_source: 单个Path或Path列表（支持多文件流式读取）
+        """
         import heapq
         from datetime import datetime
         
@@ -285,8 +365,14 @@ class KatagoJosekiBuilder:
         prefix_processed = 0
         skipped_single_chain = 0
         
-        with gzip.open(temp_path, 'rt', encoding='utf-8') as f_in:
-            for line in f_in:
+        # 根据temp_source类型选择迭代方式
+        if isinstance(temp_source, list):
+            line_iter = self._iter_temp_files(temp_source)
+        else:
+            line_iter = gzip.open(temp_source, 'rt', encoding='utf-8')
+        
+        try:
+            for line in line_iter:
                 line = line.strip()
                 if not line or '|' not in line:
                     continue
@@ -338,6 +424,10 @@ class KatagoJosekiBuilder:
                     print(f"\r  处理: {processed_seq}定式/{prefix_processed}前缀, "
                           f"堆大小: {len(heap)}, 单链跳过: {skipped_single_chain}", 
                           end='', flush=True)
+        finally:
+            # 如果是单文件模式，需要关闭文件
+            if not isinstance(temp_source, list) and hasattr(line_iter, 'close'):
+                line_iter.close()
         
         if verbose:
             print(f"\n  堆中候选: {len(heap)} 个, 单链跳过: {skipped_single_chain} 个")
@@ -445,3 +535,228 @@ def build_katago_joseki_db(
     
     builder.save_to_db(joseki_list, append=False)
     return len(joseki_list)
+
+
+# ========== 自动增量构建方法 ==========
+
+def _ensure_auto_dirs(auto_dir: Path):
+    """确保自动构建目录存在"""
+    (auto_dir / "temp").mkdir(parents=True, exist_ok=True)
+
+
+class KatagoJosekiBuilderAutoMixin:
+    """自动构建功能混入类
+    
+    通过多重继承或monkey patch方式添加到KatagoJosekiBuilder
+    """
+    
+    def _auto_extract(self, state: AutoState, cache_dir: Path) -> List[str]:
+        """步骤1: 增量提取新下载的tar文件
+        
+        Args:
+            state: 状态管理器
+            cache_dir: tar文件缓存目录
+            
+        Returns:
+            成功提取的日期列表
+        """
+        _ensure_auto_dirs(state.auto_dir)
+        
+        pending = state.get_pending_extractions()
+        if not pending:
+            print("✅ 所有已下载日期已提取，无需增量提取")
+            return []
+        
+        print(f"📊 需要提取 {len(pending)} 个新日期")
+        
+        config = {
+            'first_n': state.config.get('first_n', 80),
+            'distance_threshold': state.config.get('distance_threshold', 4),
+            'min_moves': state.config.get('min_moves', 4)
+        }
+        
+        success_dates = []
+        
+        for date_str in pending:
+            tar_path = cache_dir / f"{date_str}rating.tar.bz2"
+            if not tar_path.exists():
+                print(f"⚠️  文件不存在，跳过: {tar_path.name}")
+                continue
+            
+            temp_path = state.auto_dir / "temp" / f"{date_str}.txt.gz"
+            
+            print(f"   提取: {date_str}...")
+            
+            # 每个日期独立的CMS（仅用于提取，不保存）
+            cms = CountMinSketch(width=1000, depth=2)
+            
+            with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
+                processed, joseki_count, prefix_count, _ = self._extract_from_tar_to_temp(
+                    tar_path, f_out, cms, config, verbose=False
+                )
+            
+            print(f"      完成: {processed}谱, {joseki_count}定式串")
+            
+            state.mark_extracted(date_str)
+            success_dates.append(date_str)
+        
+        return success_dates
+    
+    def _auto_update_cms(self, state: AutoState, dates: List[str]):
+        """步骤2: 增量更新CMS
+        
+        Args:
+            state: 状态管理器
+            dates: 新提取的日期列表
+        """
+        print("📊 增量更新CMS统计...")
+        
+        # 加载或创建CMS
+        cms_file = state.auto_dir / "cms.pkl"
+        if cms_file.exists():
+            cms = CountMinSketch.load_from_file(cms_file)
+            print(f"   加载现有CMS: width={cms.width}, depth={cms.depth}")
+        else:
+            cms_config = get_adaptive_cms_config(state.stats.get('total_sgf', 100000))
+            cms = CountMinSketch(width=cms_config['width'], depth=cms_config['depth'])
+            print(f"   创建新CMS: width={cms.width}, depth={cms.depth}")
+        
+        config = {
+            'first_n': state.config.get('first_n', 80),
+            'distance_threshold': state.config.get('distance_threshold', 4),
+            'min_moves': state.config.get('min_freq', 5)  # 使用min_freq作为min_moves
+        }
+        
+        total_prefixes = 0
+        
+        for date_str in dates:
+            temp_path = state.auto_dir / "temp" / f"{date_str}.txt.gz"
+            if not temp_path.exists():
+                continue
+            
+            with gzip.open(temp_path, 'rt', encoding='utf-8') as f_in:
+                for line in f_in:
+                    line = line.strip()
+                    if not line or '|' not in line:
+                        continue
+                    
+                    direction, seq = line.split('|', 1)
+                    seq_parts = seq.split()
+                    min_moves = config['min_moves']
+                    
+                    for end in range(min_moves, len(seq_parts) + 1):
+                        prefix = " ".join(seq_parts[:end])
+                        cms.update(prefix)
+                        total_prefixes += 1
+            
+            state.mark_cms_updated(date_str)
+        
+        # 保存CMS
+        cms.save_to_file(cms_file)
+        print(f"   CMS更新完成，新增前缀统计: {total_prefixes}")
+    
+    def _auto_rebuild(self, state: AutoState) -> List[dict]:
+        """步骤4: 全量重建定式库
+        
+        Args:
+            state: 状态管理器
+            
+        Returns:
+            定式列表
+        """
+        print("🔄 全量重建定式库...")
+        
+        # 收集所有temp文件
+        extracted_dates = state.progress.get('extracted', [])
+        temp_files = []
+        
+        for date_str in extracted_dates:
+            temp_path = state.auto_dir / "temp" / f"{date_str}.txt.gz"
+            if temp_path.exists():
+                temp_files.append(temp_path)
+        
+        if not temp_files:
+            print("⚠️  没有可用的temp文件")
+            return []
+        
+        print(f"   共 {len(temp_files)} 个temp文件")
+        
+        # 加载CMS
+        cms_file = state.auto_dir / "cms.pkl"
+        cms = CountMinSketch.load_from_file(cms_file)
+        
+        # 计算总序列数（估算）
+        total_sequences = state.stats.get('total_sequences', len(temp_files) * 200)
+        
+        # 调用改造后的构建函数（多文件模式）
+        joseki_list = self._build_from_cms_and_temp(
+            temp_files,  # 列表模式
+            cms,
+            min_freq=state.config.get('min_freq', 5),
+            top_k=state.config.get('global_top_k', 10000),
+            min_moves=state.config.get('min_moves', 4),
+            max_moves=state.config.get('max_moves', 50),
+            total_sequences=total_sequences,
+            verbose=True
+        )
+        
+        # 整库替换
+        self.save_to_db(joseki_list, append=False)
+        
+        # 更新状态
+        state.mark_rebuild(
+            joseki_count=len(joseki_list),
+            sequence_count=total_sequences
+        )
+        
+        print(f"✅ 重建完成，共 {len(joseki_list)} 条定式")
+        return joseki_list
+    
+    def run_auto(self, state: AutoState, cache_dir: Path) -> Optional[List[dict]]:
+        """自动增量构建主入口
+        
+        完整流程:
+        1. 增量提取新下载的tar文件
+        2. 增量更新CMS
+        3. 判断是否需要重建，如需要则执行
+        
+        Args:
+            state: 状态管理器
+            cache_dir: tar文件缓存目录
+            
+        Returns:
+            如执行了重建，返回定式列表；否则返回None
+        """
+        print("=" * 60)
+        print("🚀 Katago 自动增量构建")
+        print("=" * 60)
+        
+        # 步骤1: 增量提取
+        print("\n【步骤1】增量提取...")
+        new_dates = self._auto_extract(state, cache_dir)
+        
+        # 步骤2: CMS更新
+        if new_dates:
+            print("\n【步骤2】CMS增量更新...")
+            self._auto_update_cms(state, new_dates)
+        
+        # 步骤3: 判断并执行重建
+        print("\n【步骤3】检查重建条件...")
+        if state.should_rebuild():
+            print("   需要重建，执行步骤4...")
+            return self._auto_rebuild(state)
+        else:
+            last = state.progress.get('last_rebuild')
+            cms_to = state.progress.get('cms_updated_to')
+            print(f"   未达到重建阈值")
+            print(f"   最后重建: {last or '从未'}")
+            print(f"   CMS更新至: {cms_to or '从未'}")
+            print("   跳过重建")
+            return None
+
+
+# 将自动构建方法混入KatagoJosekiBuilder
+KatagoJosekiBuilder._auto_extract = KatagoJosekiBuilderAutoMixin._auto_extract
+KatagoJosekiBuilder._auto_update_cms = KatagoJosekiBuilderAutoMixin._auto_update_cms
+KatagoJosekiBuilder._auto_rebuild = KatagoJosekiBuilderAutoMixin._auto_rebuild
+KatagoJosekiBuilder.run_auto = KatagoJosekiBuilderAutoMixin.run_auto
