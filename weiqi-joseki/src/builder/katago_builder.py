@@ -12,6 +12,7 @@ KataGo定式库构建器
 
 import gzip
 import heapq
+import os
 import tempfile
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
@@ -45,30 +46,22 @@ def convert_to_rudl(moves: List[str]) -> List[str]:
     """
     from core.coords import COORDINATE_SYSTEMS
     
-    ruld_sys = COORDINATE_SYSTEMS['ruld']  # 源坐标系
-    rudl_sys = COORDINATE_SYSTEMS['rudl']  # 目标坐标系
+    if not moves:
+        return []
     
-    rudl_moves = []
-    for sgf in moves:
-        if not sgf or sgf == 'pass' or sgf == 'tt':
-            rudl_moves.append(sgf)
-            continue
-        
-        # ruld SGF -> 局部坐标
-        local = ruld_sys._to_local_cache.get(sgf)
-        if local is None:
-            rudl_moves.append(sgf)
-            continue
-        
-        # 局部坐标 -> rudl SGF
-        new_sgf = rudl_sys._to_sgf_cache.get(local)
-        if new_sgf is None:
-            rudl_moves.append(sgf)
-            continue
-        
-        rudl_moves.append(new_sgf)
+    # 获取坐标系转换器
+    ruld_system = COORDINATE_SYSTEMS['ruld']
+    rudl_system = COORDINATE_SYSTEMS['rudl']
     
-    return rudl_moves
+    result = []
+    for coord in moves:
+        # ruld -> 局部坐标 (col, row)
+        local_x, local_y = ruld_system._sgf_to_local(coord)
+        # 局部坐标 -> rudl
+        rudl_coord = rudl_system._local_to_sgf(local_x, local_y)
+        result.append(rudl_coord)
+    
+    return result
 
 
 def convert_to_ruld(moves: List[str]) -> List[str]:
@@ -80,68 +73,52 @@ def convert_to_ruld(moves: List[str]) -> List[str]:
     """
     from core.coords import COORDINATE_SYSTEMS
     
-    rudl_sys = COORDINATE_SYSTEMS['rudl']  # 源坐标系
-    ruld_sys = COORDINATE_SYSTEMS['ruld']  # 目标坐标系
+    if not moves:
+        return []
     
-    ruld_moves = []
-    for sgf in moves:
-        if not sgf or sgf == 'pass' or sgf == 'tt':
-            ruld_moves.append(sgf)
-            continue
-        
-        # rudl SGF -> 局部坐标
-        local = rudl_sys._to_local_cache.get(sgf)
-        if local is None:
-            ruld_moves.append(sgf)
-            continue
-        
-        # 局部坐标 -> ruld SGF
-        new_sgf = ruld_sys._to_sgf_cache.get(local)
-        if new_sgf is None:
-            ruld_moves.append(sgf)
-            continue
-        
-        ruld_moves.append(new_sgf)
+    # 获取坐标系转换器
+    ruld_system = COORDINATE_SYSTEMS['ruld']
+    rudl_system = COORDINATE_SYSTEMS['rudl']
     
-    return ruld_moves
+    result = []
+    for coord in moves:
+        # rudl -> 局部坐标 (col, row)
+        local_x, local_y = rudl_system._sgf_to_local(coord)
+        # 局部坐标 -> ruld
+        ruld_coord = ruld_system._local_to_sgf(local_x, local_y)
+        result.append(ruld_coord)
+    
+    return result
 
 
 class HeapItem:
-    """堆项 - 用于小顶堆选top-k"""
-    __slots__ = ['count', 'prefix', 'direction', 'prefix_hash']
-    
-    def __init__(self, count, prefix, direction, prefix_hash):
+    """小顶堆元素，用于top-k选择"""
+    def __init__(self, count: int, prefix: str, direction: str, prefix_hash: tuple):
         self.count = count
         self.prefix = prefix
         self.direction = direction
         self.prefix_hash = prefix_hash
     
     def __lt__(self, other):
+        # 小顶堆：计数小的在前
         return self.count < other.count
+    
+    def __eq__(self, other):
+        return self.count == other.count and self.prefix_hash == other.prefix_hash
+    
+    def __hash__(self):
+        return hash((self.count, self.prefix_hash))
 
 
 class KatagoJosekiBuilder:
-    """
-    KataGo定式库构建器
-    
-    保留原代码核心算法：
-    - CMS频率估算
-    - 临时文件存储
-    - 逆向遍历
-    - 单链检测
-    - 小顶堆选top-k
-    """
+    """KataGo定式库构建器"""
     
     def __init__(self, db_path: Optional[str] = None):
+        """
+        Args:
+            db_path: 数据库路径，默认使用 ~/.weiqi-joseki/database.json
+        """
         self.storage = JsonStorage(db_path)
-        # CMS配置（与原代码一致）
-        self._cms_width = 200000
-        self._cms_depth = 5
-    
-    def set_cms_config(self, width: int = 200000, depth: int = 5):
-        """设置CMS配置（与原代码一致）"""
-        self._cms_width = width
-        self._cms_depth = depth
     
     def _extract_from_tar_to_temp(
         self,
@@ -223,104 +200,6 @@ class KatagoJosekiBuilder:
         
         return processed, joseki_count, prefix_count, total_unique_sequences
     
-
-    
-    def process_sgf(self, sgf_data: str, first_n: int = 80, 
-                    distance_threshold: int = 4) -> Dict[str, List[str]]:
-        """
-        处理单个SGF，提取四角着法
-        
-        Returns:
-            {corner: [coord, ...], ...} 原始SGF坐标
-        """
-        corner_moves = extract_moves_all_corners(
-            sgf_data, 
-            first_n=first_n, 
-            distance_threshold=distance_threshold
-        )
-        
-        # 转换为纯坐标序列
-        return {corner: get_move_sequence(moves) 
-                for corner, moves in corner_moves.items()}
-    
-
-    def build_from_files(
-        self,
-        tar_paths: List[Path],
-        min_freq: int = 5,
-        top_k: int = 10000,
-        first_n: int = 80,
-        distance_threshold: int = 4,
-        min_moves: int = 4,
-        max_moves: int = 50,
-        verbose: bool = True
-    ) -> List[dict]:
-        """
-        从已下载的 tar 文件构建定式库（完整流程）
-        
-        Args:
-            tar_paths: tar文件路径列表
-            min_freq: 最小出现频率
-            top_k: 入库定式数量上限
-            first_n: 提取前N手
-            distance_threshold: 连通块距离阈值
-            min_moves: 最少手数
-            max_moves: 最多手数
-            verbose: 详细输出
-        
-        Returns:
-            定式列表
-        """
-        # ===== Phase 1: CMS统计 + 临时文件存储 =====
-        cms = CountMinSketch(width=4194304, depth=4)
-        temp_file = tempfile.NamedTemporaryFile(mode='wb', suffix='.gz', delete=False)
-        temp_path = Path(temp_file.name)
-        
-        if verbose:
-            print(f"📊 Phase 1: CMS统计前缀频率")
-        
-        config = {
-            'first_n': first_n,
-            'distance_threshold': distance_threshold,
-            'min_moves': min_moves
-        }
-        
-        processed = 0
-        joseki_count = 0
-        prefix_count = 0
-        total_unique_sequences = 0
-        
-        with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
-            for tar_path in tar_paths:
-                if verbose:
-                    print(f"   处理: {tar_path.name}...")
-                
-                p, j, pr, u = self._extract_from_tar_to_temp(
-                    tar_path, f_out, cms, config, verbose=False
-                )
-                processed += p
-                joseki_count += j
-                prefix_count += pr
-                total_unique_sequences += u
-                
-                if verbose:
-                    print(f"      累计: {processed}谱, {joseki_count}定式串, {prefix_count}前缀")
-        
-        if verbose:
-            print(f"\n✅ Phase 1完成: {processed}谱, {joseki_count}定式串")
-            print(f"   去重后着法串总数: {total_unique_sequences}")
-        
-        # ===== Phase 2-4: 逆向遍历 + 单链检测 + 去重 + 概率计算 =====
-        joseki_list = self._build_from_cms_and_temp(
-            temp_path, cms, min_freq, top_k, min_moves, max_moves,
-            total_unique_sequences, verbose
-        )
-        
-        # 清理临时文件
-        temp_path.unlink()
-        
-        return joseki_list
-    
     def _iter_temp_files(self, temp_paths):
         """流式迭代多个temp文件的内容
         
@@ -351,9 +230,6 @@ class KatagoJosekiBuilder:
         Args:
             temp_source: 单个Path或Path列表（支持多文件流式读取）
         """
-        import heapq
-        from datetime import datetime
-        
         if verbose:
             print(f"🔄 Phase 2: 逆向遍历+单链检测，选取top-{top_k}...")
         
@@ -430,29 +306,50 @@ class KatagoJosekiBuilder:
                 line_iter.close()
         
         if verbose:
-            print(f"\n  堆中候选: {len(heap)} 个, 单链跳过: {skipped_single_chain} 个")
+            print(f"\n✅ Phase 2完成: {processed_seq}定式串/{prefix_processed}前缀候选, "
+                  f"堆大小: {len(heap)}, 单链跳过: {skipped_single_chain}")
         
-        # Phase 3: 排序去重
+        # Phase 3: 统一转ruld方向并去重
         if verbose:
-            print("🔄 Phase 3: 排序去重...")
+            print(f"🔄 Phase 3: 统一转ruld方向并去重...")
         
-        temp_list = [(item.prefix, item.count) for item in heap]
-        temp_list.sort(key=lambda x: x[0])
-        
-        discard = set()
-        candidates = []
-        
-        for move_str, count in temp_list:
-            if move_str in discard:
-                continue
-            if len(move_str.split()) > max_moves:
-                continue
-            candidates.append({
-                'moves': move_str.split(),
-                'count': count,
+        temp_list = []
+        for item in heap:
+            moves = item.prefix.split()
+            
+            # 统一转ruld方向
+            if item.direction == 'rudl':
+                moves = convert_to_ruld(moves)
+            
+            temp_list.append({
+                'moves': moves,
+                'count': item.count,
+                'original_direction': item.direction
             })
-            rudl_str = " ".join(convert_to_rudl(move_str.split()))
-            discard.add(rudl_str)
+        
+        # 去重
+        seen = {}
+        discard = set()
+        
+        for item in temp_list:
+            moves_tuple = tuple(item['moves'])
+            if moves_tuple in seen:
+                discard.add(moves_tuple)
+            else:
+                seen[moves_tuple] = item
+        
+        # 按频率排序
+        candidates = [item for key, item in seen.items() if key not in discard]
+        candidates.sort(key=lambda x: -x['count'])
+        
+        # 最终去重（使用rudl作为key）
+        final_discard = set()
+        for item in candidates:
+            rudl_moves = tuple(convert_to_rudl(item['moves']))
+            rudl_str = ' '.join(rudl_moves)
+            if rudl_str in final_discard:
+                continue
+            final_discard.add(rudl_str)
         
         if verbose:
             print(f"  去重前: {len(temp_list)}  去重后: {len(candidates)}")
@@ -510,6 +407,181 @@ class KatagoJosekiBuilder:
         print(f"已保存 {len(joseki_list)} 条定式到 {self.storage.db_path}")
 
 
+# ========== 自动增量构建方法 ==========
+
+def _ensure_auto_dirs(auto_dir: Path):
+    """确保自动构建目录存在"""
+    (auto_dir / "temp").mkdir(parents=True, exist_ok=True)
+
+
+class KatagoJosekiBuilderAutoMixin:
+    """自动构建功能混入类（简化版）
+    
+    核心思想：状态即文件系统，不依赖复杂的进度跟踪。
+    通过多重继承或monkey patch方式添加到KatagoJosekiBuilder。
+    """
+    
+    def run_auto(self, state: AutoState, cache_dir: Path) -> Optional[List[dict]]:
+        """自动增量构建主入口（批量保存优化版）
+        
+        优化：每30天保存一次CMS，减少写入次数
+        
+        Args:
+            state: 状态管理器（只使用config）
+            cache_dir: tar文件缓存目录
+            
+        Returns:
+            重建后的定式列表
+        """
+        print("=" * 60)
+        print("🚀 Katago 自动增量构建")
+        print("=" * 60)
+        
+        # 确保目录存在
+        _ensure_auto_dirs(state.auto_dir)
+        
+        # 获取所有tar文件（按日期升序）
+        tar_files = sorted(cache_dir.glob("*rating.tar.bz2"))
+        
+        if not tar_files:
+            print("⚠️  缓存目录中没有tar文件")
+            return None
+        
+        # 检查断点（读取cms文件的修改时间）
+        cms_path = state.auto_dir / "cms.pkl"
+        last_date = None
+        if cms_path.exists():
+            mtime = cms_path.stat().st_mtime
+            last_date = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+            print(f"📍 断点恢复：上次处理到 {last_date}")
+        
+        # 过滤tar文件（从断点下一个开始）
+        if last_date:
+            tar_files = [f for f in tar_files 
+                         if f.name.replace("rating.tar.bz2", "") > last_date]
+            if not tar_files:
+                print("✅ 所有日期已处理，无需增量")
+        
+        # 加载或创建CMS
+        cms_config = get_adaptive_cms_config(state.config.get('global_top_k', 100000) * 20)
+        if cms_path.exists():
+            cms = CountMinSketch.load_from_file(cms_path)
+            print(f"📊 加载CMS: width={cms.width}, depth={cms.depth}")
+        else:
+            cms = CountMinSketch(width=cms_config['width'], depth=cms_config['depth'])
+            print(f"📊 创建CMS: width={cms.width}, depth={cms.depth}")
+        
+        config = {
+            'first_n': state.config.get('first_n', 80),
+            'distance_threshold': state.config.get('distance_threshold', 4),
+            'min_moves': state.config.get('min_moves', 4)
+        }
+        
+        # 步骤1&2: 提取并批量更新CMS
+        print("\n【步骤1/2】提取棋谱并更新CMS...")
+        
+        BATCH_SIZE = 30  # 每30天保存一次
+        processed_count = 0
+        batch_count = 0
+        
+        for idx, tar_path in enumerate(tar_files, 1):
+            date_str = tar_path.name.replace("rating.tar.bz2", "")
+            temp_path = state.auto_dir / "temp" / f"{date_str}.txt.gz"
+            
+            # 如果temp已存在且有效，跳过（已处理过）
+            if temp_path.exists() and temp_path.stat().st_size > 100:
+                continue
+            
+            print(f"   处理: {date_str}...")
+            
+            # 提取到temp
+            with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
+                dummy_cms = CountMinSketch(width=1000, depth=2)
+                processed, joseki_count, _, _ = self._extract_from_tar_to_temp(
+                    tar_path, f_out, dummy_cms, config, verbose=False
+                )
+            
+            if processed == 0:
+                print(f"      ⚠️  未提取到有效棋谱")
+                continue
+            
+            # 更新CMS
+            with gzip.open(temp_path, 'rt', encoding='utf-8') as f_in:
+                for line in f_in:
+                    line = line.strip()
+                    if not line or '|' not in line:
+                        continue
+                    
+                    direction, seq = line.split('|', 1)
+                    seq_parts = seq.split()
+                    min_moves = config['min_moves']
+                    
+                    for end in range(min_moves, len(seq_parts) + 1):
+                        prefix = " ".join(seq_parts[:end])
+                        cms.update(prefix)
+            
+            processed_count += 1
+            print(f"      ✅ 提取: {processed}谱, {joseki_count}定式串")
+            
+            # 每30天或最后一个保存一次
+            if processed_count % BATCH_SIZE == 0 or idx == len(tar_files):
+                cms.save_to_file(cms_path)
+                # 更新mtime为当前处理日期（断点记录）
+                timestamp = datetime.strptime(date_str, "%Y-%m-%d").timestamp()
+                os.utime(cms_path, (timestamp, timestamp))
+                batch_count += 1
+                print(f"      💾 批次 {batch_count} 保存完成（{min(BATCH_SIZE, processed_count % BATCH_SIZE or BATCH_SIZE)}天）")
+        
+        if processed_count == 0:
+            print("   ℹ️  没有新的棋谱需要处理")
+        else:
+            print(f"   ✅ 共处理 {processed_count} 个新日期，保存 {batch_count} 次")
+        
+        # 步骤3: 重建
+        print("\n【步骤3】重建定式库...")
+        return self._auto_rebuild(state, cms, config)
+    
+    def _auto_rebuild(self, state: AutoState, cms: CountMinSketch, config: dict) -> List[dict]:
+        """步骤3: 重建定式库"""
+        print("🔄 重建定式库...")
+        
+        # 收集所有temp文件
+        temp_dir = state.auto_dir / "temp"
+        temp_files = sorted(temp_dir.glob("*.txt.gz"))
+        
+        if not temp_files:
+            print("⚠️  没有可用的temp文件")
+            return []
+        
+        print(f"   共 {len(temp_files)} 个temp文件")
+        
+        # 估算总序列数
+        total_sequences = sum(1 for _ in self._iter_temp_files(temp_files)) // 2
+        
+        # 调用构建函数
+        joseki_list = self._build_from_cms_and_temp(
+            temp_files,
+            cms,
+            min_freq=state.config.get('min_freq', 5),
+            top_k=state.config.get('global_top_k', 10000),
+            min_moves=state.config.get('min_moves', 4),
+            max_moves=state.config.get('max_moves', 50),
+            total_sequences=max(total_sequences, 1),
+            verbose=True
+        )
+        
+        # 整库替换
+        self.save_to_db(joseki_list, append=False)
+        
+        print(f"✅ 重建完成，共 {len(joseki_list)} 条定式")
+        return joseki_list
+
+
+# 将自动构建方法混入KatagoJosekiBuilder
+KatagoJosekiBuilder.run_auto = KatagoJosekiBuilderAutoMixin.run_auto
+KatagoJosekiBuilder._auto_rebuild = KatagoJosekiBuilderAutoMixin._auto_rebuild
+
+
 def build_katago_joseki_db(
     tar_path: str,
     db_path: Optional[str] = None,
@@ -535,171 +607,3 @@ def build_katago_joseki_db(
     
     builder.save_to_db(joseki_list, append=False)
     return len(joseki_list)
-
-
-# ========== 自动增量构建方法 ==========
-
-def _ensure_auto_dirs(auto_dir: Path):
-    """确保自动构建目录存在"""
-    (auto_dir / "temp").mkdir(parents=True, exist_ok=True)
-
-
-class KatagoJosekiBuilderAutoMixin:
-    """自动构建功能混入类（简化版）
-    
-    核心思想：状态即文件系统，不依赖复杂的进度跟踪。
-    通过多重继承或monkey patch方式添加到KatagoJosekiBuilder。
-    """
-    
-    def _auto_rebuild_simplified(self, state: AutoState, cms: CountMinSketch) -> List[dict]:
-        """步骤3: 重建定式库（简化版）
-        
-        直接使用传入的CMS对象，不依赖任何state进度记录。
-        
-        Args:
-            state: 状态管理器（只使用config）
-            cms: 已更新的CMS对象
-            
-        Returns:
-            定式列表
-        """
-        print("🔄 重建定式库...")
-        
-        # 收集所有temp文件
-        temp_dir = state.auto_dir / "temp"
-        temp_files = sorted(temp_dir.glob("*.txt.gz"))
-        
-        if not temp_files:
-            print("⚠️  没有可用的temp文件")
-            return []
-        
-        print(f"   共 {len(temp_files)} 个temp文件")
-        
-        # 估算总序列数（简化计算）
-        total_sequences = sum(1 for _ in self._iter_temp_files(temp_files)) // 2
-        
-        # 调用构建函数
-        joseki_list = self._build_from_cms_and_temp(
-            temp_files,
-            cms,
-            min_freq=state.config.get('min_freq', 5),
-            top_k=state.config.get('global_top_k', 10000),
-            min_moves=state.config.get('min_moves', 4),
-            max_moves=state.config.get('max_moves', 50),
-            total_sequences=max(total_sequences, 1),
-            verbose=True
-        )
-        
-        # 整库替换
-        self.save_to_db(joseki_list, append=False)
-        
-        print(f"✅ 重建完成，共 {len(joseki_list)} 条定式")
-        return joseki_list
-    
-    def run_auto(self, state: AutoState, cache_dir: Path) -> Optional[List[dict]]:
-        """自动增量构建主入口（简化版）
-        
-        核心思想：状态即文件系统，不依赖复杂的进度跟踪
-        
-        流程:
-        1. 遍历缓存目录，对每个tar文件：
-           - 如果temp文件不存在，提取四角着法
-           - 提取后立即更新CMS并保存
-        2. 重建定式库（基于所有temp文件）
-        
-        Args:
-            state: 状态管理器（只使用config，不使用progress）
-            cache_dir: tar文件缓存目录
-            
-        Returns:
-            重建后的定式列表
-        """
-        print("=" * 60)
-        print("🚀 Katago 自动增量构建")
-        print("=" * 60)
-        
-        # 确保目录存在
-        _ensure_auto_dirs(state.auto_dir)
-        
-        # 加载或创建CMS
-        cms_file = state.auto_dir / "cms.pkl"
-        if cms_file.exists():
-            cms = CountMinSketch.load_from_file(cms_file)
-            print(f"📊 加载CMS: width={cms.width}, depth={cms.depth}")
-        else:
-            cms_config = get_adaptive_cms_config(state.config.get('global_top_k', 100000) * 20)
-            cms = CountMinSketch(width=cms_config['width'], depth=cms_config['depth'])
-            print(f"📊 创建CMS: width={cms.width}, depth={cms.depth}")
-        
-        config = {
-            'first_n': state.config.get('first_n', 80),
-            'distance_threshold': state.config.get('distance_threshold', 4),
-            'min_moves': state.config.get('min_moves', 4)
-        }
-        
-        # 步骤1&2: 提取并实时更新CMS
-        print("\n【步骤1/2】提取棋谱并更新CMS...")
-        tar_files = sorted(cache_dir.glob("*rating.tar.bz2"))
-        
-        if not tar_files:
-            print("⚠️  缓存目录中没有tar文件")
-            return None
-        
-        processed_count = 0
-        for tar_path in tar_files:
-            date_str = tar_path.name.replace("rating.tar.bz2", "")
-            temp_path = state.auto_dir / "temp" / f"{date_str}.txt.gz"
-            
-            # 如果temp已存在且有效，跳过
-            if temp_path.exists() and temp_path.stat().st_size > 100:
-                continue
-            
-            print(f"   处理: {date_str}...")
-            
-            # 提取到temp
-            with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
-                # 使用一个小CMS仅用于提取（不保存）
-                dummy_cms = CountMinSketch(width=1000, depth=2)
-                processed, joseki_count, _, _ = self._extract_from_tar_to_temp(
-                    tar_path, f_out, dummy_cms, config, verbose=False
-                )
-            
-            if processed == 0:
-                print(f"      ⚠️  未提取到有效棋谱")
-                continue
-            
-            print(f"      ✅ 提取: {processed}谱, {joseki_count}定式串")
-            
-            # 立即更新CMS
-            with gzip.open(temp_path, 'rt', encoding='utf-8') as f_in:
-                for line in f_in:
-                    line = line.strip()
-                    if not line or '|' not in line:
-                        continue
-                    
-                    direction, seq = line.split('|', 1)
-                    seq_parts = seq.split()
-                    min_moves = config['min_moves']
-                    
-                    for end in range(min_moves, len(seq_parts) + 1):
-                        prefix = " ".join(seq_parts[:end])
-                        cms.update(prefix)
-            
-            # 保存CMS（每次处理完一个日期就保存，支持断点）
-            cms.save_to_file(cms_file)
-            processed_count += 1
-            print(f"      💾 CMS已更新并保存")
-        
-        if processed_count == 0:
-            print("   ℹ️  没有新的棋谱需要处理")
-        else:
-            print(f"   ✅ 共处理 {processed_count} 个新日期")
-        
-        # 步骤3: 重建
-        print("\n【步骤3】重建定式库...")
-        return self._auto_rebuild_simplified(state, cms)
-
-
-# 将自动构建方法混入KatagoJosekiBuilder
-KatagoJosekiBuilder._auto_rebuild_simplified = KatagoJosekiBuilderAutoMixin._auto_rebuild_simplified
-KatagoJosekiBuilder.run_auto = KatagoJosekiBuilderAutoMixin.run_auto
