@@ -376,17 +376,26 @@ class KatagoJosekiBuilder:
         candidates = list(seen.values())
         candidates.sort(key=lambda x: -x['count'])
         
-        # 最终去重（使用rudl作为key）
-        final_discard = set()
+        # 最终去重（使用rudl作为key）- 保留ruld方向中频率最高的
+        rudl_seen = {}  # key: rudl_str, value: (item, count)
         for item in candidates:
             rudl_moves = tuple(convert_to_rudl(item['moves']))
             rudl_str = ' '.join(rudl_moves)
-            if rudl_str in final_discard:
-                continue
-            final_discard.add(rudl_str)
+            if rudl_str in rudl_seen:
+                # 保留频率更高的
+                if item['count'] > rudl_seen[rudl_str]['count']:
+                    rudl_seen[rudl_str] = item
+            else:
+                rudl_seen[rudl_str] = item
+        
+        # 最终结果
+        final_candidates = list(rudl_seen.values())
+        final_candidates.sort(key=lambda x: -x['count'])
         
         if verbose:
-            print(f"  去重前: {len(temp_list)}  去重后: {len(candidates)}")
+            print(f"  去重前: {len(temp_list)}  ruld去重后: {len(candidates)}  rudl去重后: {len(final_candidates)}")
+        
+        candidates = final_candidates
         
         # Phase 4: 转换为定式格式
         total_seq = max(total_sequences, 1)
