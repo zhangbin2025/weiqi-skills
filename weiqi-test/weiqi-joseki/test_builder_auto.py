@@ -56,9 +56,10 @@ class TestAutoUpdateCMS:
             temp_dir.mkdir()
             temp_file = temp_dir / "2026-04-20.txt.gz"
             
+            # 测试数据需要有足够的token（min_moves默认是4）
             with gzip.open(temp_file, 'wt') as f:
-                f.write("ruld|pd pp pq\n")
-                f.write("ruld|pd pp pr\n")
+                f.write("ruld|pd pp pq pr ps\n")  # 5个token
+                f.write("ruld|pd pp pr pt pu\n")  # 5个token
             
             builder = KatagoJosekiBuilder(db_path=Path(tmpdir) / "db.json")
             builder._auto_update_cms(state, ["2026-04-20"])
@@ -69,7 +70,9 @@ class TestAutoUpdateCMS:
             
             # 验证CMS内容
             cms = CountMinSketch.load_from_file(cms_file)
-            assert cms.estimate("pd") > 0
+            # 注意：min_moves=4，所以只有长度>=4的前缀才会被统计
+            # "pd pp pq pr" 长度为4，应该被统计
+            assert cms.estimate("pd pp pq pr") > 0
             
             # 验证状态更新
             assert state.progress["cms_updated_to"] == "2026-04-20"
@@ -83,27 +86,32 @@ class TestAutoUpdateCMS:
             temp_dir = Path(tmpdir) / "temp"
             temp_dir.mkdir()
             
-            # 第一批数据
+            # 第一批数据（需要足够长的序列，min_moves=4）
             with gzip.open(temp_dir / "2026-04-20.txt.gz", 'wt') as f:
-                f.write("ruld|pd pp\n")
+                f.write("ruld|pd pp pq pr\n")  # 4个token
             
             builder = KatagoJosekiBuilder(db_path=Path(tmpdir) / "db.json")
             builder._auto_update_cms(state, ["2026-04-20"])
             
             cms1 = CountMinSketch.load_from_file(state.auto_dir / "cms.pkl")
-            count1 = cms1.estimate("pd")
+            count1 = cms1.estimate("pd pp pq pr")  # 查询长度为4的前缀
             
             # 第二批数据
             with gzip.open(temp_dir / "2026-04-21.txt.gz", 'wt') as f:
-                f.write("ruld|pd pq\n")
+                f.write("ruld|pd pp pq ps pt\n")  # 5个token，前缀"pd pp pq"重叠
             
             builder._auto_update_cms(state, ["2026-04-21"])
             
             cms2 = CountMinSketch.load_from_file(state.auto_dir / "cms.pkl")
-            count2 = cms2.estimate("pd")
+            # "pd pp pq"是两个序列的共同前缀(3个token)，但min_moves=4不会统计
+            # "pd pp pq pr"只在第一个序列中出现
+            # 检查"pd pp pq ps"(第二个序列的4-token前缀)
+            count2a = cms2.estimate("pd pp pq pr")
+            count2b = cms2.estimate("pd pp pq ps")
             
-            # 计数应该累加
-            assert count2 > count1
+            # 第一个序列的"pd pp pq pr"计数不变，第二个序列新增了"pd pp pq ps"
+            assert count2a == count1  # 第一个序列的前缀计数不变
+            assert count2b > 0  # 第二个序列有新的前缀
 
 
 class TestShouldRebuild:

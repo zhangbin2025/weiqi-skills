@@ -624,7 +624,7 @@ class KatagoJosekiBuilderAutoMixin:
         config = {
             'first_n': state.config.get('first_n', 80),
             'distance_threshold': state.config.get('distance_threshold', 4),
-            'min_moves': state.config.get('min_freq', 5)  # 使用min_freq作为min_moves
+            'min_moves': state.config.get('min_moves', 4)  # 使用min_moves
         }
         
         total_prefixes = 0
