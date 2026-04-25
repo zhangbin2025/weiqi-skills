@@ -80,12 +80,12 @@ class AutoState:
         }
     
     def init_config(self, 
-                    estimated_games: int = 100_000,
+                    estimated_games: int = 2_000_000,
                     first_n: int = 80,
                     distance_threshold: int = 4,
-                    min_freq: int = 5,
-                    global_top_k: int = 10_000,
-                    rebuild_threshold_days: int = 7) -> dict:
+                    min_freq: int = 10,
+                    global_top_k: int = 100_000,
+                    rebuild_threshold_days: int = 0) -> dict:
         """初始化配置
         
         Args:
@@ -225,7 +225,11 @@ class AutoState:
             return False
         
         # 检查是否达到重建阈值
-        threshold = self._data["config"].get("rebuild_threshold_days", 7)
+        # threshold = 0 表示立即触发（只要有新数据就重建）
+        threshold = self._data["config"].get("rebuild_threshold_days", 0)
+        if threshold == 0:
+            return True
+        
         last_date = datetime.strptime(last_rebuild, "%Y-%m-%d")
         cms_date = datetime.strptime(cms_updated_to, "%Y-%m-%d")
         

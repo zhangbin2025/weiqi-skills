@@ -178,6 +178,20 @@ class TestShouldRebuild:
             state = AutoState(tmpdir)
             state.init_config()
             
+            assert state.should_rebuild() == True
+    
+    def test_immediate_rebuild_with_threshold_zero(self):
+        """threshold=0时立即重建"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = AutoState(tmpdir)
+            state.init_config(rebuild_threshold_days=0)
+            
+            # 模拟已重建过，但有新数据
+            state._data["progress"]["last_rebuild"] = "2026-04-20"
+            state._data["progress"]["cms_updated_to"] = "2026-04-21"
+            state._save()
+            
+            # threshold=0，只要有新数据就重建
             assert state.should_rebuild() == True  # last_rebuild为None
     
     def test_no_new_data_no_rebuild(self):
@@ -221,6 +235,19 @@ class TestShouldRebuild:
             state._save()
             
             assert state.should_rebuild() == True  # 差10天，超过7天阈值
+    
+    def test_new_default_values(self):
+        """测试新的默认配置值"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = AutoState(tmpdir)
+            config = state.init_config()
+            
+            # 新的默认值
+            assert config["cms_width"] == 16_777_216  # 200万棋谱对应16M width
+            assert config["cms_depth"] == 4
+            assert config["min_freq"] == 10
+            assert config["global_top_k"] == 100_000
+            assert config["rebuild_threshold_days"] == 0
 
 
 class TestAutoStatePersistence:
