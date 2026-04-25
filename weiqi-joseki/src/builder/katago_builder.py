@@ -701,7 +701,5 @@ class KatagoJosekiBuilderAutoMixin:
 
 
 # 将自动构建方法混入KatagoJosekiBuilder
-KatagoJosekiBuilder._auto_extract = KatagoJosekiBuilderAutoMixin._auto_extract
-KatagoJosekiBuilder._auto_update_cms = KatagoJosekiBuilderAutoMixin._auto_update_cms
-KatagoJosekiBuilder._auto_rebuild = KatagoJosekiBuilderAutoMixin._auto_rebuild
+KatagoJosekiBuilder._auto_rebuild_simplified = KatagoJosekiBuilderAutoMixin._auto_rebuild_simplified
 KatagoJosekiBuilder.run_auto = KatagoJosekiBuilderAutoMixin.run_auto

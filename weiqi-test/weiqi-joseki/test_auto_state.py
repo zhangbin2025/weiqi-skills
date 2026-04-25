@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-AutoState状态管理测试
+AutoState状态管理测试（简化版）
+
+测试简化的AutoState，只保留config，不跟踪进度。
 """
 
 import sys
 import tempfile
 from pathlib import Path
-from datetime import datetime, timedelta
 
 sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki/src')
 
@@ -73,181 +74,19 @@ class TestAutoStateInit:
             assert config["cms_depth"] == 4
             assert config["first_n"] == 80
             assert config["global_top_k"] == 10_000
-            assert config["rebuild_threshold_days"] == 7
 
 
-class TestAutoStateProgress:
-    """测试进度追踪"""
+class TestAutoStateConfig:
+    """测试配置访问"""
     
-    def test_mark_downloaded(self):
-        """测试标记下载"""
+    def test_config_property(self):
+        """测试config属性"""
         with tempfile.TemporaryDirectory() as tmpdir:
             state = AutoState(tmpdir)
-            state.init_config()
+            state.init_config(estimated_games=50_000)
             
-            state.mark_downloaded("2026-04-20")
-            state.mark_downloaded("2026-04-21")
-            
-            assert "2026-04-20" in state.progress["downloaded"]
-            assert "2026-04-21" in state.progress["downloaded"]
-            assert state.progress["downloaded"] == ["2026-04-20", "2026-04-21"]  # 已排序
-    
-    def test_mark_extracted(self):
-        """测试标记提取"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = AutoState(tmpdir)
-            state.init_config()
-            
-            state.mark_extracted("2026-04-20")
-            assert "2026-04-20" in state.progress["extracted"]
-    
-    def test_mark_cms_updated(self):
-        """测试标记CMS更新"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = AutoState(tmpdir)
-            state.init_config()
-            
-            state.mark_cms_updated("2026-04-20")
-            assert state.progress["cms_updated_to"] == "2026-04-20"
-    
-    def test_mark_rebuild(self):
-        """测试标记重建"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = AutoState(tmpdir)
-            state.init_config()
-            
-            state.mark_rebuild(joseki_count=5000, sequence_count=20000)
-            
-            assert state.progress["last_rebuild"] is not None
-            assert state.stats["current_joseki"] == 5000
-            assert state.stats["total_sequences"] == 20000
-
-
-class TestAutoStateQueries:
-    """测试查询方法"""
-    
-    def test_get_pending_downloads(self):
-        """测试获取待下载日期"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = AutoState(tmpdir)
-            state.init_config()
-            
-            # 模拟已下载
-            state.mark_downloaded("2026-04-20")
-            state.mark_downloaded("2026-04-21")
-            
-            available = ["2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23"]
-            pending = state.get_pending_downloads(available)
-            
-            assert pending == ["2026-04-22", "2026-04-23"]
-    
-    def test_get_pending_extractions(self):
-        """测试获取待提取日期"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = AutoState(tmpdir)
-            state.init_config()
-            
-            state.mark_downloaded("2026-04-20")
-            state.mark_downloaded("2026-04-21")
-            state.mark_extracted("2026-04-20")
-            
-            pending = state.get_pending_extractions()
-            assert pending == ["2026-04-21"]
-    
-    def test_get_pending_cms_dates(self):
-        """测试获取待CMS日期"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = AutoState(tmpdir)
-            state.init_config()
-            
-            # 已提取但未CMS
-            state.mark_extracted("2026-04-20")
-            state.mark_extracted("2026-04-21")
-            state.mark_cms_updated("2026-04-20")
-            
-            pending = state.get_pending_cms_dates()
-            assert pending == ["2026-04-21"]
-
-
-class TestShouldRebuild:
-    """测试重建判断逻辑"""
-    
-    def test_first_run_should_rebuild(self):
-        """首次运行需要重建"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = AutoState(tmpdir)
-            state.init_config()
-            
-            assert state.should_rebuild() == True
-    
-    def test_immediate_rebuild_with_threshold_zero(self):
-        """threshold=0时立即重建"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = AutoState(tmpdir)
-            state.init_config(rebuild_threshold_days=0)
-            
-            # 模拟已重建过，但有新数据
-            state._data["progress"]["last_rebuild"] = "2026-04-20"
-            state._data["progress"]["cms_updated_to"] = "2026-04-21"
-            state._save()
-            
-            # threshold=0，只要有新数据就重建
-            assert state.should_rebuild() == True  # last_rebuild为None
-    
-    def test_no_new_data_no_rebuild(self):
-        """没有新数据不需要重建"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = AutoState(tmpdir)
-            state.init_config()
-            
-            # 模拟刚重建完，没有新数据
-            state.mark_rebuild()
-            state.mark_cms_updated(state.progress["last_rebuild"])
-            
-            assert state.should_rebuild() == False
-    
-    def test_threshold_not_met_no_rebuild(self):
-        """未达到阈值不重建"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = AutoState(tmpdir)
-            state.init_config(rebuild_threshold_days=7)
-            
-            today = datetime.now().strftime("%Y-%m-%d")
-            three_days_ago = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
-            
-            state._data["progress"]["last_rebuild"] = three_days_ago
-            state._data["progress"]["cms_updated_to"] = today
-            state._save()
-            
-            assert state.should_rebuild() == False  # 只差3天，不够7天
-    
-    def test_threshold_met_should_rebuild(self):
-        """达到阈值需要重建"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = AutoState(tmpdir)
-            state.init_config(rebuild_threshold_days=7)
-            
-            ten_days_ago = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
-            today = datetime.now().strftime("%Y-%m-%d")
-            
-            state._data["progress"]["last_rebuild"] = ten_days_ago
-            state._data["progress"]["cms_updated_to"] = today
-            state._save()
-            
-            assert state.should_rebuild() == True  # 差10天，超过7天阈值
-    
-    def test_new_default_values(self):
-        """测试新的默认配置值"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = AutoState(tmpdir)
-            config = state.init_config()
-            
-            # 新的默认值
-            assert config["cms_width"] == 16_777_216  # 200万棋谱对应16M width
-            assert config["cms_depth"] == 4
-            assert config["min_freq"] == 10
-            assert config["global_top_k"] == 100_000
-            assert config["rebuild_threshold_days"] == 0
+            assert state.config["first_n"] == 80
+            assert state.config["min_freq"] == 10  # 新默认值
 
 
 class TestAutoStatePersistence:
@@ -258,25 +97,39 @@ class TestAutoStatePersistence:
         with tempfile.TemporaryDirectory() as tmpdir:
             state = AutoState(tmpdir)
             state.init_config(estimated_games=100_000)
-            state.mark_downloaded("2026-04-20")
             
             # 重新加载
             state2 = AutoState(tmpdir)
             assert state2.is_initialized()
-            assert "2026-04-20" in state2.progress["downloaded"]
+            assert state2.config["first_n"] == 80
     
     def test_reset(self):
         """测试重置"""
         with tempfile.TemporaryDirectory() as tmpdir:
             state = AutoState(tmpdir)
             state.init_config()
-            state.mark_downloaded("2026-04-20")
             
             state.reset()
             
             assert not state.is_initialized()
-            assert state.progress["downloaded"] == []
             assert not (Path(tmpdir) / "state.json").exists()
+
+
+class TestNewDefaultValues:
+    """测试新的默认配置值"""
+    
+    def test_new_defaults(self):
+        """测试新的默认值"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = AutoState(tmpdir)
+            config = state.init_config()
+            
+            # 新的默认值
+            assert config["cms_width"] == 16_777_216  # 200万棋谱对应16M width
+            assert config["cms_depth"] == 4
+            assert config["min_freq"] == 10
+            assert config["global_top_k"] == 100_000
+            assert config["rebuild_threshold_days"] == 0  # 立即重建
 
 
 if __name__ == "__main__":
@@ -284,10 +137,9 @@ if __name__ == "__main__":
     classes = [
         TestAdaptiveCMSConfig,
         TestAutoStateInit,
-        TestAutoStateProgress,
-        TestAutoStateQueries,
-        TestShouldRebuild,
-        TestAutoStatePersistence
+        TestAutoStateConfig,
+        TestAutoStatePersistence,
+        TestNewDefaultValues
     ]
     
     for cls in classes:

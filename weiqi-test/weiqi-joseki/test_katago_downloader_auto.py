@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Katago Downloader 自动下载功能测试
+Katago Downloader 自动下载功能测试（简化版）
 """
 
 import sys
@@ -23,33 +23,40 @@ class TestDownloadAuto:
             state = AutoState(tmpdir)
             state.init_config()
             
-            # 模拟已下载所有日期
-            state.mark_downloaded("2026-04-20")
-            state.mark_downloaded("2026-04-21")
+            # 创建缓存目录和已下载的tar文件
+            cache_dir = Path(tmpdir) / "cache"
+            cache_dir.mkdir()
             
-            # mock fetch_available_dates 返回这些日期
+            # mock fetch_available_dates 返回日期
             with patch('katago_downloader.fetch_available_dates') as mock_fetch:
                 mock_fetch.return_value = ["2026-04-20", "2026-04-21"]
                 
+                # 创建对应的tar文件模拟已下载
+                (cache_dir / "2026-04-20rating.tar.bz2").touch()
+                (cache_dir / "2026-04-21rating.tar.bz2").touch()
+                
                 from katago_downloader import download_auto
                 
-                result = download_auto(state, cache_dir=Path(tmpdir) / "cache")
+                result = download_auto(state, cache_dir=cache_dir)
                 
                 # 应该返回空列表（没有新日期）
                 assert result == []
     
     def test_download_missing_dates(self):
-        """测试下载缺失日期并更新state"""
+        """测试下载缺失日期"""
         with tempfile.TemporaryDirectory() as tmpdir:
             state = AutoState(tmpdir)
             state.init_config()
             
-            # 模拟部分已下载
-            state.mark_downloaded("2026-04-20")
+            cache_dir = Path(tmpdir) / "cache"
+            cache_dir.mkdir()
             
             # mock fetch_available_dates 返回更多日期
             with patch('katago_downloader.fetch_available_dates') as mock_fetch:
                 mock_fetch.return_value = ["2026-04-20", "2026-04-21", "2026-04-22"]
+                
+                # 只创建一个tar文件（部分已下载）
+                (cache_dir / "2026-04-20rating.tar.bz2").touch()
                 
                 # mock DownloadManager 模拟成功下载
                 with patch('katago_downloader.DownloadManager') as mock_dm_class:
@@ -66,20 +73,19 @@ class TestDownloadAuto:
                     
                     from katago_downloader import download_auto
                     
-                    result = download_auto(state, cache_dir=Path(tmpdir) / "cache")
+                    result = download_auto(state, cache_dir=cache_dir)
                     
                     # 应该返回新下载的日期
                     assert sorted(result) == ["2026-04-21", "2026-04-22"]
-                    
-                    # state应该已更新
-                    assert "2026-04-21" in state.progress["downloaded"]
-                    assert "2026-04-22" in state.progress["downloaded"]
     
     def test_partial_download_failure(self):
         """测试部分下载失败时，成功的已记录"""
         with tempfile.TemporaryDirectory() as tmpdir:
             state = AutoState(tmpdir)
             state.init_config()
+            
+            cache_dir = Path(tmpdir) / "cache"
+            cache_dir.mkdir()
             
             with patch('katago_downloader.fetch_available_dates') as mock_fetch:
                 mock_fetch.return_value = ["2026-04-20", "2026-04-21"]
@@ -97,14 +103,10 @@ class TestDownloadAuto:
                     
                     from katago_downloader import download_auto
                     
-                    result = download_auto(state, cache_dir=Path(tmpdir) / "cache")
+                    result = download_auto(state, cache_dir=cache_dir)
                     
                     # 只返回成功的
                     assert result == ["2026-04-20"]
-                    
-                    # 成功的已记录，失败的没有
-                    assert "2026-04-20" in state.progress["downloaded"]
-                    assert "2026-04-21" not in state.progress["downloaded"]
     
     def test_empty_available_dates(self):
         """测试服务器无日期时处理"""
@@ -121,34 +123,6 @@ class TestDownloadAuto:
                 
                 # 应该返回空列表
                 assert result == []
-    
-    def test_cache_hit_not_counted_as_new(self):
-        """测试缓存命中不计入新下载"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = AutoState(tmpdir)
-            state.init_config()
-            
-            # 未下载任何日期
-            with patch('katago_downloader.fetch_available_dates') as mock_fetch:
-                mock_fetch.return_value = ["2026-04-20", "2026-04-21"]
-                
-                with patch('katago_downloader.DownloadManager') as mock_dm_class:
-                    mock_dm = MagicMock()
-                    mock_dm_class.return_value = mock_dm
-                    
-                    # 模拟缓存命中（from_cache=True）
-                    mock_dm.download.return_value = (
-                        {"2026-04-20": Path("/fake/2026-04-20.tar.bz2")},
-                        {},
-                        1  # 1个缓存命中
-                    )
-                    
-                    from katago_downloader import download_auto
-                    
-                    result = download_auto(state, cache_dir=Path(tmpdir) / "cache")
-                    
-                    # 缓存命中也会标记为已下载
-                    assert "2026-04-20" in state.progress["downloaded"]
 
 
 if __name__ == "__main__":

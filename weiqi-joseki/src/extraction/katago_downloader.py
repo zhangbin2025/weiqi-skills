@@ -525,8 +525,12 @@ def download_auto(
     
     print(f"✅ 服务器共有 {len(available_dates)} 个日期的棋谱")
     
-    # 获取待下载的日期
-    pending_dates = state.get_pending_downloads(available_dates)
+    # 获取待下载的日期（基于文件系统检查）
+    pending_dates = []
+    for date_str in available_dates:
+        tar_path = cache_dir / f"{date_str}rating.tar.bz2"
+        if not tar_path.exists():
+            pending_dates.append(date_str)
     
     if not pending_dates:
         print("✅ 所有可用日期已下载，无需增量下载")
@@ -546,11 +550,10 @@ def download_auto(
     # 执行下载
     downloaded_map, error_map, cache_hits = manager.download(pending_dates, on_progress=on_progress)
     
-    # 更新state并收集新下载的日期
+    # 收集新下载的日期
     new_downloaded = []
     for date_str in pending_dates:
         if date_str in downloaded_map:
-            state.mark_downloaded(date_str)
             new_downloaded.append(date_str)
     
     # 统计输出
