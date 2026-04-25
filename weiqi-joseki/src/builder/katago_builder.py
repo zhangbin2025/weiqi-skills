@@ -527,34 +527,18 @@ class KatagoJosekiBuilderAutoMixin:
             
             print(f"   处理: {date_str}...")
             
-            # 提取到temp
+            # 提取到temp，同时更新CMS（直接传入真正的cms，避免二次遍历）
             with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
-                dummy_cms = CountMinSketch(width=1000, depth=2)
-                processed, joseki_count, _, _ = self._extract_from_tar_to_temp(
-                    tar_path, f_out, dummy_cms, config, verbose=False
+                processed, joseki_count, prefix_count, _ = self._extract_from_tar_to_temp(
+                    tar_path, f_out, cms, config, verbose=False
                 )
             
             if processed == 0:
                 print(f"      ⚠️  未提取到有效棋谱")
                 continue
             
-            # 更新CMS
-            with gzip.open(temp_path, 'rt', encoding='utf-8') as f_in:
-                for line in f_in:
-                    line = line.strip()
-                    if not line or '|' not in line:
-                        continue
-                    
-                    direction, seq = line.split('|', 1)
-                    seq_parts = seq.split()
-                    min_moves = config['min_moves']
-                    
-                    for end in range(min_moves, len(seq_parts) + 1):
-                        prefix = " ".join(seq_parts[:end])
-                        cms.update(prefix)
-            
             processed_count += 1
-            print(f"      ✅ 提取: {processed}谱, {joseki_count}定式串")
+            print(f"      ✅ 提取: {processed}谱, {joseki_count}定式串, {prefix_count}前缀")
             
             # 每30天或最后一个保存一次
             if processed_count % BATCH_SIZE == 0 or idx == len(tar_files):
