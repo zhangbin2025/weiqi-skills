@@ -5,8 +5,10 @@ Count-Min Sketch 实现
 """
 
 import hashlib
+import pickle
 import struct
-from typing import List
+from pathlib import Path
+from typing import List, Union
 
 
 class CountMinSketch:
@@ -72,3 +74,45 @@ class CountMinSketch:
     
     def __repr__(self):
         return f"CountMinSketch(width={self.width}, depth={self.depth}, size={self._size})"
+    
+    def save_to_file(self, path: Union[str, Path]):
+        """将CMS保存到文件
+        
+        使用pickle序列化整个对象，包括width、depth、table和size
+        
+        Args:
+            path: 保存路径
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(path, 'wb') as f:
+            pickle.dump({
+                'width': self.width,
+                'depth': self.depth,
+                'table': self.table,
+                'size': self._size
+            }, f)
+    
+    @classmethod
+    def load_from_file(cls, path: Union[str, Path]) -> 'CountMinSketch':
+        """从文件加载CMS
+        
+        Args:
+            path: 文件路径
+            
+        Returns:
+            加载后的CountMinSketch实例
+        """
+        path = Path(path)
+        
+        with open(path, 'rb') as f:
+            data = pickle.load(f)
+        
+        cms = cls.__new__(cls)
+        cms.width = data['width']
+        cms.depth = data['depth']
+        cms.table = data['table']
+        cms._size = data['size']
+        
+        return cms
