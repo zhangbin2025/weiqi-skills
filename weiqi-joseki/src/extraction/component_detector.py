@@ -205,7 +205,7 @@ def _find_temporal_core(
         core_positions: 核心区域位置集合
         discarded_positions: 被标记为脱先的位置集合（用于后续回退判断）
     """
-    from ..core.coords import CoordinateSystem
+    from core.coords import CoordinateSystem
 
     core_positions = set()
     discarded_positions = set()
@@ -359,7 +359,7 @@ def _extract_corner_moves_lu(
     Returns:
         (result_moves, core_positions, discarded_positions)
     """
-    from ..core.coords import CoordinateSystem
+    from core.coords import CoordinateSystem
     
     # N路范围配置
     ranges = {
@@ -452,7 +452,7 @@ def extract_corner_moves_9lu(
     Returns:
         处理后的着法序列（含tt脱先标记）
     """
-    from ..core.coords import CoordinateSystem
+    from core.coords import CoordinateSystem
 
     # 9路范围配置（更靠近角）
     corner_config = {
@@ -533,7 +533,7 @@ def extract_corner_moves_9lu(
     2. 找连通块，取离角最近的
     3. 保留该连通块内的所有棋子（含脱先后回归）
     """
-    from ..core.coords import CoordinateSystem
+    from core.coords import CoordinateSystem
     
     # 9路范围配置
     corner_config = {
@@ -616,7 +616,7 @@ def extract_corner_moves(
     Returns:
         处理后的着法序列（含tt脱先标记）
     """
-    from ..core.coords import CoordinateSystem
+    from core.coords import CoordinateSystem
     
     # 定义四角的13路范围（左上角原点）和角的原点
     corner_config = {

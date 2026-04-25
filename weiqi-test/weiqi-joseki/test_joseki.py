@@ -11,14 +11,14 @@ import sys
 from pathlib import Path
 
 # 添加项目路径
-sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki')
+sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki/src')
 
-from src.extraction import extract_moves_all_corners, get_move_sequence
-from src.extraction import convert_to_multigogm
-from src.builder import KatagoJosekiBuilder
-from src.discover import JosekiDiscoverer
-from src.storage import JsonStorage
-from src.core.coords import convert_to_top_right
+from extraction import extract_moves_all_corners, get_move_sequence
+from extraction import convert_to_multigogm
+from builder import KatagoJosekiBuilder
+from discover import JosekiDiscoverer
+from storage import JsonStorage
+from core.coords import convert_to_top_right
 
 
 class TestExtract(unittest.TestCase):

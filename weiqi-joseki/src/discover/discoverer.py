@@ -7,10 +7,10 @@
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 
-from ..extraction import extract_moves_all_corners, get_move_sequence
-from ..core.coords import convert_to_top_right
-from ..matching import TrieMatcher, PrefixMatchResult
-from ..builder import convert_to_rudl
+from extraction import extract_moves_all_corners, get_move_sequence
+from core.coords import convert_to_top_right
+from matching import TrieMatcher, PrefixMatchResult
+from builder import convert_to_rudl
 
 
 @dataclass
