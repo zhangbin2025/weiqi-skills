@@ -551,7 +551,10 @@ class KatagoJosekiBuilderAutoMixin:
     """
     
     def _auto_extract(self, state: AutoState, cache_dir: Path) -> List[str]:
-        """步骤1: 增量提取新下载的tar文件
+        """步骤1: 增量提取tar文件到temp
+        
+        检查 cache_dir 中的所有tar文件，如果对应的temp文件不存在，则进行提取。
+        不依赖state中的extracted列表，而是检查实际的文件是否存在。
         
         Args:
             state: 状态管理器
@@ -562,12 +565,22 @@ class KatagoJosekiBuilderAutoMixin:
         """
         _ensure_auto_dirs(state.auto_dir)
         
-        pending = state.get_pending_extractions()
+        # 检查所有已下载的tar文件，看哪些需要提取（temp文件不存在）
+        pending = []
+        for tar_file in sorted(cache_dir.glob("*rating.tar.bz2")):
+            # 从文件名提取日期
+            date_str = tar_file.name.replace("rating.tar.bz2", "")
+            temp_path = state.auto_dir / "temp" / f"{date_str}.txt.gz"
+            
+            # 如果temp文件不存在，或者文件为空，则需要提取
+            if not temp_path.exists() or temp_path.stat().st_size < 100:
+                pending.append(date_str)
+        
         if not pending:
-            print("✅ 所有已下载日期已提取，无需增量提取")
+            print("✅ 所有tar文件已提取，无需增量提取")
             return []
         
-        print(f"📊 需要提取 {len(pending)} 个新日期")
+        print(f"📊 需要提取 {len(pending)} 个日期")
         
         config = {
             'first_n': state.config.get('first_n', 80),
@@ -658,6 +671,8 @@ class KatagoJosekiBuilderAutoMixin:
     def _auto_rebuild(self, state: AutoState) -> List[dict]:
         """步骤4: 全量重建定式库
         
+        遍历temp目录中的所有txt.gz文件进行重建，不依赖state中的extracted列表。
+        
         Args:
             state: 状态管理器
             
@@ -666,14 +681,9 @@ class KatagoJosekiBuilderAutoMixin:
         """
         print("🔄 全量重建定式库...")
         
-        # 收集所有temp文件
-        extracted_dates = state.progress.get('extracted', [])
-        temp_files = []
-        
-        for date_str in extracted_dates:
-            temp_path = state.auto_dir / "temp" / f"{date_str}.txt.gz"
-            if temp_path.exists():
-                temp_files.append(temp_path)
+        # 收集所有temp文件（直接扫描目录，不依赖state记录）
+        temp_dir = state.auto_dir / "temp"
+        temp_files = sorted(temp_dir.glob("*.txt.gz"))
         
         if not temp_files:
             print("⚠️  没有可用的temp文件")
