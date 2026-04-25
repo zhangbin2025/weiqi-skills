@@ -17,6 +17,9 @@ from typing import List, Dict, Optional, Tuple, Iterator, Callable
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Import AutoState for auto mode
+from auto import AutoState
+
 
 # KataGo 配置
 KATAGO_BASE_URL = "https://katagoarchive.org/kata1/ratinggames/"
@@ -484,3 +487,84 @@ def download_katago_games(
                 print(f"    {date_str}: {error[:80]}")
     
     return downloaded_files, missing_dates
+
+
+def download_auto(
+    state: AutoState,
+    cache_dir: Optional[Path] = None,
+    max_retries: int = 3,
+    delay: int = 10,
+    on_progress: Optional[Callable[[str, int, int], None]] = None
+) -> List[str]:
+    """自动增量下载KataGo棋谱
+    
+    根据state中记录的已下载日期，自动检测并下载缺失的日期。
+    每成功下载一个日期，自动更新state。
+    
+    Args:
+        state: 自动模式状态管理器
+        cache_dir: 缓存目录，默认 ~/.weiqi-joseki/katago-cache
+        max_retries: 最大重试次数
+        delay: 下载间隔延迟（秒）
+        on_progress: 进度回调函数(date_str, current, total)
+    
+    Returns:
+        本次新下载的日期列表（已排序）
+    """
+    # 设置默认缓存目录
+    if cache_dir is None:
+        cache_dir = Path.home() / ".weiqi-joseki" / "katago-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 获取服务器上所有可用日期
+    print("📋 正在获取可用日期列表...")
+    available_dates = fetch_available_dates()
+    if not available_dates:
+        print("⚠️  无法获取可用日期列表")
+        return []
+    
+    print(f"✅ 服务器共有 {len(available_dates)} 个日期的棋谱")
+    
+    # 获取待下载的日期
+    pending_dates = state.get_pending_downloads(available_dates)
+    
+    if not pending_dates:
+        print("✅ 所有可用日期已下载，无需增量下载")
+        return []
+    
+    print(f"📥 需要下载 {len(pending_dates)} 个新日期: {pending_dates[0]} ~ {pending_dates[-1]}")
+    
+    # 创建下载管理器
+    manager = DownloadManager(
+        cache_dir=cache_dir,
+        max_retries=max_retries,
+        workers=1,  # 串行下载，避免触发频率限制
+        keep_cache=True,
+        delay=delay
+    )
+    
+    # 执行下载
+    downloaded_map, error_map, cache_hits = manager.download(pending_dates, on_progress=on_progress)
+    
+    # 更新state并收集新下载的日期
+    new_downloaded = []
+    for date_str in pending_dates:
+        if date_str in downloaded_map:
+            state.mark_downloaded(date_str)
+            new_downloaded.append(date_str)
+    
+    # 统计输出
+    print(f"\n📊 下载统计:")
+    print(f"  - 需要下载: {len(pending_dates)} 个")
+    print(f"  - 成功: {len(new_downloaded)} 个")
+    print(f"  - 失败: {len(error_map)} 个")
+    print(f"  - 缓存命中: {cache_hits} 个")
+    
+    if error_map:
+        print(f"\n⚠️  下载失败:")
+        for date_str, error in list(error_map.items())[:5]:
+            print(f"    {date_str}: {error[:60]}")
+        if len(error_map) > 5:
+            print(f"    ... 还有 {len(error_map) - 5} 个")
+    
+    return new_downloaded
