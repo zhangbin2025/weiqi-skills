@@ -342,60 +342,39 @@ class KatagoJosekiBuilder:
             print(f"\n✅ Phase 2完成: {processed_seq}定式串/{prefix_processed}前缀候选, "
                   f"堆大小: {len(heap)}, 单链跳过: {skipped_single_chain}")
         
-        # Phase 3: 统一转ruld方向并去重
+        # Phase 3: 排序去重（恢复原版逻辑）
         if verbose:
-            print(f"🔄 Phase 3: 统一转ruld方向并去重...")
+            print("🔄 Phase 3: 排序去重...")
         
+        # 统一转ruld方向
         temp_list = []
         for item in heap:
             moves = item.prefix.split()
-            
-            # 统一转ruld方向
             if item.direction == 'rudl':
                 moves = convert_to_ruld(moves)
-            
-            temp_list.append({
-                'moves': moves,
-                'count': item.count,
-                'original_direction': item.direction
+            temp_list.append((" ".join(moves), item.count))
+        
+        # 按字典序排序（原版逻辑）
+        temp_list.sort(key=lambda x: x[0])
+        
+        discard = set()
+        candidates = []
+        
+        for move_str, count in temp_list:
+            if move_str in discard:
+                continue
+            if len(move_str.split()) > max_moves:
+                continue
+            candidates.append({
+                'moves': move_str.split(),
+                'count': count,
             })
-        
-        # 去重：保留频率最高的
-        seen = {}  # key: moves_tuple, value: (item, count)
-        
-        for item in temp_list:
-            moves_tuple = tuple(item['moves'])
-            if moves_tuple in seen:
-                # 保留频率更高的
-                if item['count'] > seen[moves_tuple]['count']:
-                    seen[moves_tuple] = item
-            else:
-                seen[moves_tuple] = item
-        
-        # 按频率排序
-        candidates = list(seen.values())
-        candidates.sort(key=lambda x: -x['count'])
-        
-        # 最终去重（使用rudl作为key）- 保留ruld方向中频率最高的
-        rudl_seen = {}  # key: rudl_str, value: (item, count)
-        for item in candidates:
-            rudl_moves = tuple(convert_to_rudl(item['moves']))
-            rudl_str = ' '.join(rudl_moves)
-            if rudl_str in rudl_seen:
-                # 保留频率更高的
-                if item['count'] > rudl_seen[rudl_str]['count']:
-                    rudl_seen[rudl_str] = item
-            else:
-                rudl_seen[rudl_str] = item
-        
-        # 最终结果
-        final_candidates = list(rudl_seen.values())
-        final_candidates.sort(key=lambda x: -x['count'])
+            # 将rudl等价加入discard
+            rudl_str = " ".join(convert_to_rudl(move_str.split()))
+            discard.add(rudl_str)
         
         if verbose:
-            print(f"  去重前: {len(temp_list)}  ruld去重后: {len(candidates)}  rudl去重后: {len(final_candidates)}")
-        
-        candidates = final_candidates
+            print(f"  去重前: {len(temp_list)}  去重后: {len(candidates)}")
         
         # Phase 4: 转换为定式格式
         total_seq = max(total_sequences, 1)
