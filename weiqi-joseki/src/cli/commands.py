@@ -29,7 +29,16 @@ def cmd_init(args):
 
 
 def _cmd_katago_auto(args):
-    """自动增量构建模式"""
+    """自动增量构建模式（简化版）
+    
+    核心逻辑：
+    1. 初始化AutoState（只保留配置）
+    2. 调用 builder.run_auto() 完成全部流程：
+       - 对比服务器index和本地缓存，下载新棋谱
+       - 提取所有未提取的tar到temp
+       - 实时更新CMS并保存
+       - 重建定式库
+    """
     
     # 1. 初始化/加载 AutoState
     state = AutoState()
@@ -41,25 +50,11 @@ def _cmd_katago_auto(args):
         print("🆕 初始化自动构建配置...")
         state.init_config()
         print(f"   CMS配置: width={state.config['cms_width']}, depth={state.config['cms_depth']}")
-        print(f"   重建阈值: {'立即' if state.config['rebuild_threshold_days'] == 0 else state.config['rebuild_threshold_days'] + '天'}")
     else:
         print(f"📋 加载现有配置")
-        print(f"   已下载: {len(state.progress['downloaded'])} 个日期")
-        print(f"   已提取: {len(state.progress['extracted'])} 个日期")
-        print(f"   CMS更新至: {state.progress['cms_updated_to'] or '未更新'}")
-        print(f"   最后重建: {state.progress['last_rebuild'] or '未重建'}")
     
-    # 2. 下载新日期
+    # 2. 创建 Builder 并执行自动流程（包含下载、提取、CMS、重建）
     cache_dir = Path.home() / ".weiqi-joseki" / "katago-cache"
-    print("\n【步骤0】检查并下载新棋谱...")
-    new_dates = download_auto(state, cache_dir, max_retries=3, delay=args.delay)
-    if new_dates:
-        print(f"   ✅ 新下载 {len(new_dates)} 个日期: {', '.join(new_dates[:5])}{'...' if len(new_dates) > 5 else ''}")
-    else:
-        print("   ℹ️  没有新日期需要下载")
-    
-    # 3. 创建 Builder 并执行自动流程
-    print()
     builder = KatagoJosekiBuilder(db_path=args.db)
     
     result = builder.run_auto(state, cache_dir)
@@ -68,7 +63,7 @@ def _cmd_katago_auto(args):
         print(f"\n✅ 自动构建完成，共 {len(result)} 条定式")
         return 0
     else:
-        print("\n⏭️  未达到重建条件或没有新数据，跳过")
+        print("\n⏭️  没有新数据，跳过")
         return 0
 
 

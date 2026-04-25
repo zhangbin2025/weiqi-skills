@@ -545,42 +545,91 @@ def _ensure_auto_dirs(auto_dir: Path):
 
 
 class KatagoJosekiBuilderAutoMixin:
-    """自动构建功能混入类
+    """自动构建功能混入类（简化版）
     
-    通过多重继承或monkey patch方式添加到KatagoJosekiBuilder
+    核心思想：状态即文件系统，不依赖复杂的进度跟踪。
+    通过多重继承或monkey patch方式添加到KatagoJosekiBuilder。
     """
     
-    def _auto_extract(self, state: AutoState, cache_dir: Path) -> List[str]:
-        """步骤1: 增量提取tar文件到temp
+    def _auto_rebuild_simplified(self, state: AutoState, cms: CountMinSketch) -> List[dict]:
+        """步骤3: 重建定式库（简化版）
         
-        检查 cache_dir 中的所有tar文件，如果对应的temp文件不存在，则进行提取。
-        不依赖state中的extracted列表，而是检查实际的文件是否存在。
+        直接使用传入的CMS对象，不依赖任何state进度记录。
         
         Args:
-            state: 状态管理器
+            state: 状态管理器（只使用config）
+            cms: 已更新的CMS对象
+            
+        Returns:
+            定式列表
+        """
+        print("🔄 重建定式库...")
+        
+        # 收集所有temp文件
+        temp_dir = state.auto_dir / "temp"
+        temp_files = sorted(temp_dir.glob("*.txt.gz"))
+        
+        if not temp_files:
+            print("⚠️  没有可用的temp文件")
+            return []
+        
+        print(f"   共 {len(temp_files)} 个temp文件")
+        
+        # 估算总序列数（简化计算）
+        total_sequences = sum(1 for _ in self._iter_temp_files(temp_files)) // 2
+        
+        # 调用构建函数
+        joseki_list = self._build_from_cms_and_temp(
+            temp_files,
+            cms,
+            min_freq=state.config.get('min_freq', 5),
+            top_k=state.config.get('global_top_k', 10000),
+            min_moves=state.config.get('min_moves', 4),
+            max_moves=state.config.get('max_moves', 50),
+            total_sequences=max(total_sequences, 1),
+            verbose=True
+        )
+        
+        # 整库替换
+        self.save_to_db(joseki_list, append=False)
+        
+        print(f"✅ 重建完成，共 {len(joseki_list)} 条定式")
+        return joseki_list
+    
+    def run_auto(self, state: AutoState, cache_dir: Path) -> Optional[List[dict]]:
+        """自动增量构建主入口（简化版）
+        
+        核心思想：状态即文件系统，不依赖复杂的进度跟踪
+        
+        流程:
+        1. 遍历缓存目录，对每个tar文件：
+           - 如果temp文件不存在，提取四角着法
+           - 提取后立即更新CMS并保存
+        2. 重建定式库（基于所有temp文件）
+        
+        Args:
+            state: 状态管理器（只使用config，不使用progress）
             cache_dir: tar文件缓存目录
             
         Returns:
-            成功提取的日期列表
+            重建后的定式列表
         """
+        print("=" * 60)
+        print("🚀 Katago 自动增量构建")
+        print("=" * 60)
+        
+        # 确保目录存在
         _ensure_auto_dirs(state.auto_dir)
         
-        # 检查所有已下载的tar文件，看哪些需要提取（temp文件不存在）
-        pending = []
-        for tar_file in sorted(cache_dir.glob("*rating.tar.bz2")):
-            # 从文件名提取日期
-            date_str = tar_file.name.replace("rating.tar.bz2", "")
-            temp_path = state.auto_dir / "temp" / f"{date_str}.txt.gz"
-            
-            # 如果temp文件不存在，或者文件为空，则需要提取
-            if not temp_path.exists() or temp_path.stat().st_size < 100:
-                pending.append(date_str)
-        
-        if not pending:
-            print("✅ 所有tar文件已提取，无需增量提取")
-            return []
-        
-        print(f"📊 需要提取 {len(pending)} 个日期")
+        # 加载或创建CMS
+        cms_file = state.auto_dir / "cms.pkl"
+        if cms_file.exists():
+            cms = CountMinSketch.load_from_file(cms_file)
+            print(f"📊 加载CMS: width={cms.width}, depth={cms.depth}")
+        else:
+            cms_config = get_adaptive_cms_config(state.config.get('global_top_k', 100000) * 20)
+            cms = CountMinSketch(width=cms_config['width'], depth=cms_config['depth'])
+            print(f"📊 创建CMS: width={cms.width}, depth={cms.depth}")
         
         config = {
             'first_n': state.config.get('first_n', 80),
@@ -588,65 +637,40 @@ class KatagoJosekiBuilderAutoMixin:
             'min_moves': state.config.get('min_moves', 4)
         }
         
-        success_dates = []
+        # 步骤1&2: 提取并实时更新CMS
+        print("\n【步骤1/2】提取棋谱并更新CMS...")
+        tar_files = sorted(cache_dir.glob("*rating.tar.bz2"))
         
-        for date_str in pending:
-            tar_path = cache_dir / f"{date_str}rating.tar.bz2"
-            if not tar_path.exists():
-                print(f"⚠️  文件不存在，跳过: {tar_path.name}")
-                continue
-            
+        if not tar_files:
+            print("⚠️  缓存目录中没有tar文件")
+            return None
+        
+        processed_count = 0
+        for tar_path in tar_files:
+            date_str = tar_path.name.replace("rating.tar.bz2", "")
             temp_path = state.auto_dir / "temp" / f"{date_str}.txt.gz"
             
-            print(f"   提取: {date_str}...")
+            # 如果temp已存在且有效，跳过
+            if temp_path.exists() and temp_path.stat().st_size > 100:
+                continue
             
-            # 每个日期独立的CMS（仅用于提取，不保存）
-            cms = CountMinSketch(width=1000, depth=2)
+            print(f"   处理: {date_str}...")
             
+            # 提取到temp
             with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
-                processed, joseki_count, prefix_count, _ = self._extract_from_tar_to_temp(
-                    tar_path, f_out, cms, config, verbose=False
+                # 使用一个小CMS仅用于提取（不保存）
+                dummy_cms = CountMinSketch(width=1000, depth=2)
+                processed, joseki_count, _, _ = self._extract_from_tar_to_temp(
+                    tar_path, f_out, dummy_cms, config, verbose=False
                 )
             
-            print(f"      完成: {processed}谱, {joseki_count}定式串")
-            
-            state.mark_extracted(date_str)
-            success_dates.append(date_str)
-        
-        return success_dates
-    
-    def _auto_update_cms(self, state: AutoState, dates: List[str]):
-        """步骤2: 增量更新CMS
-        
-        Args:
-            state: 状态管理器
-            dates: 新提取的日期列表
-        """
-        print("📊 增量更新CMS统计...")
-        
-        # 加载或创建CMS
-        cms_file = state.auto_dir / "cms.pkl"
-        if cms_file.exists():
-            cms = CountMinSketch.load_from_file(cms_file)
-            print(f"   加载现有CMS: width={cms.width}, depth={cms.depth}")
-        else:
-            cms_config = get_adaptive_cms_config(state.stats.get('total_sgf', 100000))
-            cms = CountMinSketch(width=cms_config['width'], depth=cms_config['depth'])
-            print(f"   创建新CMS: width={cms.width}, depth={cms.depth}")
-        
-        config = {
-            'first_n': state.config.get('first_n', 80),
-            'distance_threshold': state.config.get('distance_threshold', 4),
-            'min_moves': state.config.get('min_moves', 4)  # 使用min_moves
-        }
-        
-        total_prefixes = 0
-        
-        for date_str in dates:
-            temp_path = state.auto_dir / "temp" / f"{date_str}.txt.gz"
-            if not temp_path.exists():
+            if processed == 0:
+                print(f"      ⚠️  未提取到有效棋谱")
                 continue
             
+            print(f"      ✅ 提取: {processed}谱, {joseki_count}定式串")
+            
+            # 立即更新CMS
             with gzip.open(temp_path, 'rt', encoding='utf-8') as f_in:
                 for line in f_in:
                     line = line.strip()
@@ -660,109 +684,20 @@ class KatagoJosekiBuilderAutoMixin:
                     for end in range(min_moves, len(seq_parts) + 1):
                         prefix = " ".join(seq_parts[:end])
                         cms.update(prefix)
-                        total_prefixes += 1
             
-            state.mark_cms_updated(date_str)
+            # 保存CMS（每次处理完一个日期就保存，支持断点）
+            cms.save_to_file(cms_file)
+            processed_count += 1
+            print(f"      💾 CMS已更新并保存")
         
-        # 保存CMS
-        cms.save_to_file(cms_file)
-        print(f"   CMS更新完成，新增前缀统计: {total_prefixes}")
-    
-    def _auto_rebuild(self, state: AutoState) -> List[dict]:
-        """步骤4: 全量重建定式库
-        
-        遍历temp目录中的所有txt.gz文件进行重建，不依赖state中的extracted列表。
-        
-        Args:
-            state: 状态管理器
-            
-        Returns:
-            定式列表
-        """
-        print("🔄 全量重建定式库...")
-        
-        # 收集所有temp文件（直接扫描目录，不依赖state记录）
-        temp_dir = state.auto_dir / "temp"
-        temp_files = sorted(temp_dir.glob("*.txt.gz"))
-        
-        if not temp_files:
-            print("⚠️  没有可用的temp文件")
-            return []
-        
-        print(f"   共 {len(temp_files)} 个temp文件")
-        
-        # 加载CMS
-        cms_file = state.auto_dir / "cms.pkl"
-        cms = CountMinSketch.load_from_file(cms_file)
-        
-        # 计算总序列数（估算）
-        total_sequences = state.stats.get('total_sequences', len(temp_files) * 200)
-        
-        # 调用改造后的构建函数（多文件模式）
-        joseki_list = self._build_from_cms_and_temp(
-            temp_files,  # 列表模式
-            cms,
-            min_freq=state.config.get('min_freq', 5),
-            top_k=state.config.get('global_top_k', 10000),
-            min_moves=state.config.get('min_moves', 4),
-            max_moves=state.config.get('max_moves', 50),
-            total_sequences=total_sequences,
-            verbose=True
-        )
-        
-        # 整库替换
-        self.save_to_db(joseki_list, append=False)
-        
-        # 更新状态
-        state.mark_rebuild(
-            joseki_count=len(joseki_list),
-            sequence_count=total_sequences
-        )
-        
-        print(f"✅ 重建完成，共 {len(joseki_list)} 条定式")
-        return joseki_list
-    
-    def run_auto(self, state: AutoState, cache_dir: Path) -> Optional[List[dict]]:
-        """自动增量构建主入口
-        
-        完整流程:
-        1. 增量提取新下载的tar文件
-        2. 增量更新CMS
-        3. 判断是否需要重建，如需要则执行
-        
-        Args:
-            state: 状态管理器
-            cache_dir: tar文件缓存目录
-            
-        Returns:
-            如执行了重建，返回定式列表；否则返回None
-        """
-        print("=" * 60)
-        print("🚀 Katago 自动增量构建")
-        print("=" * 60)
-        
-        # 步骤1: 增量提取
-        print("\n【步骤1】增量提取...")
-        new_dates = self._auto_extract(state, cache_dir)
-        
-        # 步骤2: CMS更新
-        if new_dates:
-            print("\n【步骤2】CMS增量更新...")
-            self._auto_update_cms(state, new_dates)
-        
-        # 步骤3: 判断并执行重建
-        print("\n【步骤3】检查重建条件...")
-        if state.should_rebuild():
-            print("   需要重建，执行步骤4...")
-            return self._auto_rebuild(state)
+        if processed_count == 0:
+            print("   ℹ️  没有新的棋谱需要处理")
         else:
-            last = state.progress.get('last_rebuild')
-            cms_to = state.progress.get('cms_updated_to')
-            print(f"   未达到重建阈值")
-            print(f"   最后重建: {last or '从未'}")
-            print(f"   CMS更新至: {cms_to or '从未'}")
-            print("   跳过重建")
-            return None
+            print(f"   ✅ 共处理 {processed_count} 个新日期")
+        
+        # 步骤3: 重建
+        print("\n【步骤3】重建定式库...")
+        return self._auto_rebuild_simplified(state, cms)
 
 
 # 将自动构建方法混入KatagoJosekiBuilder
