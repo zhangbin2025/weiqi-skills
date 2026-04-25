@@ -7,10 +7,13 @@ import argparse
 import sys
 from pathlib import Path
 
-from ..storage import JsonStorage, DEFAULT_DB_PATH
-from ..builder import KatagoJosekiBuilder, convert_to_rudl
-from ..discover import discover_joseki
-from ..extraction import extract_moves_all_corners, convert_to_multigogm
+from storage import JsonStorage, DEFAULT_DB_PATH
+from builder import KatagoJosekiBuilder, convert_to_rudl
+from discover import discover_joseki
+from extraction import extract_moves_all_corners, convert_to_multigogm
+
+from auto import AutoState
+from extraction.katago_downloader import download_auto
 
 
 def cmd_init(args):
@@ -20,10 +23,52 @@ def cmd_init(args):
     print(f"✅ 已初始化空数据库: {storage.db_path}")
 
 
-def cmd_katago(args):
-    """从KataGo棋谱构建定式库（支持日期范围）"""
+def _cmd_katago_auto(args):
+    """自动增量构建模式"""
+    
+    # 1. 初始化/加载 AutoState
+    state = AutoState()
+    
+    if not state.is_initialized() or args.force_rebuild:
+        if args.force_rebuild:
+            print("🔄 强制重建模式，清除现有状态...")
+            state.reset()
+        print("🆕 初始化自动构建配置...")
+        state.init_config()
+        print(f"   CMS配置: width={state.config['cms_width']}, depth={state.config['cms_depth']}")
+        print(f"   重建阈值: {'立即' if state.config['rebuild_threshold_days'] == 0 else state.config['rebuild_threshold_days'] + '天'}")
+    else:
+        print(f"📋 加载现有配置")
+        print(f"   已下载: {len(state.progress['downloaded'])} 个日期")
+        print(f"   已提取: {len(state.progress['extracted'])} 个日期")
+        print(f"   CMS更新至: {state.progress['cms_updated_to'] or '未更新'}")
+        print(f"   最后重建: {state.progress['last_rebuild'] or '未重建'}")
+    
+    # 2. 创建 Builder
+    builder = KatagoJosekiBuilder(db_path=args.db)
+    
+    # 3. 执行自动流程
+    cache_dir = Path.home() / ".weiqi-joseki" / "katago-cache"
+    
+    result = builder.run_auto(state, cache_dir)
+    
+    if result:
+        print(f"\n✅ 自动构建完成，共 {len(result)} 条定式")
+        return 0
+    else:
+        print("\n⏭️  未达到重建条件或没有新数据，跳过")
+        return 0
+
+
+def _cmd_katago_custom(args):
+    """自定义构建模式（原katago命令逻辑）"""
     from datetime import datetime, timedelta
-    from ..extraction.katago_downloader import download_katago_games
+    from extraction.katago_downloader import download_katago_games
+    
+    # 检查必需参数
+    if not args.start_date or not args.end_date:
+        print("❌ 错误: custom模式需要指定 --start-date 和 --end-date")
+        return 1
     
     # 配置
     CACHE_DIR = Path.home() / ".weiqi-joseki/katago-cache"
@@ -106,6 +151,14 @@ def cmd_katago(args):
     print("=" * 50)
     print(f"🎉 全部完成！共 {len(joseki_list)} 条定式")
     print("=" * 50)
+
+
+def cmd_katago(args):
+    """从KataGo棋谱构建定式库"""
+    if args.mode == "auto":
+        return _cmd_katago_auto(args)
+    else:
+        return _cmd_katago_custom(args)
 
 
 def cmd_list(args):
@@ -290,7 +343,7 @@ def cmd_discover(args):
             sgf_data = sgf_file.read_text(encoding='utf-8')
             
             # 解析SGF元数据
-            from ..extraction.sgf_parser import parse_sgf
+            from extraction.sgf_parser import parse_sgf
             sgf_result = parse_sgf(sgf_data)
             sgf_game_info = sgf_result.get("game_info", {})
             
@@ -311,9 +364,9 @@ def cmd_discover(args):
             }
             
             # 提取四角着法（用于输出）
-            from ..extraction import extract_moves_all_corners, get_move_sequence
-            from ..core.coords import convert_to_top_right
-            from ..builder import convert_to_rudl
+            from extraction import extract_moves_all_corners, get_move_sequence
+            from core.coords import convert_to_top_right
+            from builder import convert_to_rudl
             corner_moves_dict = extract_moves_all_corners(
                 sgf_data, first_n=args.first_n, distance_threshold=args.distance_threshold
             )
@@ -416,7 +469,7 @@ def cmd_export(args):
         output = "".join(lines)
     elif args.format == "tree":
         # 树状SGF格式
-        from ..matching import TrieMatcher
+        from matching import TrieMatcher
         matcher = TrieMatcher()
         matcher.build(joseki_list)
         prefix = args.prefix.split() if args.prefix else None
@@ -446,8 +499,10 @@ def main():
     
     # katago
     p_katago = subparsers.add_parser("katago", help="从KataGo棋谱构建定式库")
-    p_katago.add_argument("--start-date", required=True, help="起始日期 (YYYY-MM-DD)")
-    p_katago.add_argument("--end-date", required=True, help="结束日期 (YYYY-MM-DD)")
+    p_katago.add_argument("--mode", choices=["custom", "auto"], default="custom",
+                         help="构建模式：custom=自定义构建(默认), auto=自动增量构建")
+    p_katago.add_argument("--start-date", help="起始日期 (YYYY-MM-DD)，custom模式必需")
+    p_katago.add_argument("--end-date", help="结束日期 (YYYY-MM-DD)，custom模式必需")
     p_katago.add_argument("--min-freq", type=int, default=10, help="最小频率")
     p_katago.add_argument("--top-k", type=int, default=100000, help="入库数量上限")
     p_katago.add_argument("--first-n", type=int, default=80, help="提取前N手")
@@ -456,6 +511,7 @@ def main():
     p_katago.add_argument("--max-moves", type=int, default=50, help="最多手数")
     p_katago.add_argument("--download-only", action="store_true", help="仅下载棋谱到缓存，不构建定式库")
     p_katago.add_argument("--delay", type=int, default=10, help="下载间隔延迟（秒），默认10秒")
+    p_katago.add_argument("--force-rebuild", action="store_true", help="强制重建（仅auto模式有效）")
     
     # list
     p_list = subparsers.add_parser("list", help="列出定式")
