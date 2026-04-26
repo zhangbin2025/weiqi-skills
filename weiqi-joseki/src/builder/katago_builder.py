@@ -19,13 +19,11 @@ from typing import List, Dict, Tuple, Optional
 from collections import Counter
 from datetime import datetime
 
-from extraction import extract_moves_all_corners, get_move_sequence
-from extraction.katago_downloader import iter_sgf_from_tar
-from core.coords import convert_to_top_right
-from storage.json_storage import JsonStorage, DEFAULT_DB_PATH
-from utils import CountMinSketch
-
-from auto import AutoState, get_adaptive_cms_config
+from ..extraction import extract_moves_all_corners, get_move_sequence
+from ..extraction.katago_downloader import iter_sgf_from_tar
+from ..core.coords import convert_to_top_right
+from ..storage.json_storage import JsonStorage, DEFAULT_DB_PATH
+from ..utils import CountMinSketch
 
 
 # 四角配置
@@ -44,24 +42,32 @@ def convert_to_rudl(moves: List[str]) -> List[str]:
     1. 用 ruld 坐标系将 SGF 坐标转为局部坐标 (x, y)
     2. 用 rudl 坐标系将局部坐标 (x, y) 转回 SGF 坐标
     """
-    from core.coords import COORDINATE_SYSTEMS
+    from ..core.coords import COORDINATE_SYSTEMS
     
-    if not moves:
-        return []
+    ruld_sys = COORDINATE_SYSTEMS['ruld']  # 源坐标系
+    rudl_sys = COORDINATE_SYSTEMS['rudl']  # 目标坐标系
     
-    # 获取坐标系转换器
-    ruld_system = COORDINATE_SYSTEMS['ruld']
-    rudl_system = COORDINATE_SYSTEMS['rudl']
+    rudl_moves = []
+    for sgf in moves:
+        if not sgf or sgf == 'pass' or sgf == 'tt':
+            rudl_moves.append(sgf)
+            continue
+        
+        # ruld SGF -> 局部坐标
+        local = ruld_sys._to_local_cache.get(sgf)
+        if local is None:
+            rudl_moves.append(sgf)
+            continue
+        
+        # 局部坐标 -> rudl SGF
+        new_sgf = rudl_sys._to_sgf_cache.get(local)
+        if new_sgf is None:
+            rudl_moves.append(sgf)
+            continue
+        
+        rudl_moves.append(new_sgf)
     
-    result = []
-    for coord in moves:
-        # ruld -> 局部坐标 (col, row)
-        local_x, local_y = ruld_system._sgf_to_local(coord)
-        # 局部坐标 -> rudl
-        rudl_coord = rudl_system._local_to_sgf(local_x, local_y)
-        result.append(rudl_coord)
-    
-    return result
+    return rudl_moves
 
 
 def convert_to_ruld(moves: List[str]) -> List[str]:
@@ -71,54 +77,168 @@ def convert_to_ruld(moves: List[str]) -> List[str]:
     
     使用 COORDINATE_SYSTEMS 中定义的坐标系进行转换
     """
-    from core.coords import COORDINATE_SYSTEMS
+    from ..core.coords import COORDINATE_SYSTEMS
     
-    if not moves:
-        return []
+    rudl_sys = COORDINATE_SYSTEMS['rudl']  # 源坐标系
+    ruld_sys = COORDINATE_SYSTEMS['ruld']  # 目标坐标系
     
-    # 获取坐标系转换器
-    ruld_system = COORDINATE_SYSTEMS['ruld']
-    rudl_system = COORDINATE_SYSTEMS['rudl']
+    ruld_moves = []
+    for sgf in moves:
+        if not sgf or sgf == 'pass' or sgf == 'tt':
+            ruld_moves.append(sgf)
+            continue
+        
+        # rudl SGF -> 局部坐标
+        local = rudl_sys._to_local_cache.get(sgf)
+        if local is None:
+            ruld_moves.append(sgf)
+            continue
+        
+        # 局部坐标 -> ruld SGF
+        new_sgf = ruld_sys._to_sgf_cache.get(local)
+        if new_sgf is None:
+            ruld_moves.append(sgf)
+            continue
+        
+        ruld_moves.append(new_sgf)
     
-    result = []
-    for coord in moves:
-        # rudl -> 局部坐标 (col, row)
-        local_x, local_y = rudl_system._sgf_to_local(coord)
-        # 局部坐标 -> ruld
-        ruld_coord = ruld_system._local_to_sgf(local_x, local_y)
-        result.append(ruld_coord)
-    
-    return result
+    return ruld_moves
 
 
 class HeapItem:
-    """小顶堆元素，用于top-k选择"""
-    def __init__(self, count: int, prefix: str, direction: str, prefix_hash: tuple):
+    """堆项 - 用于小顶堆选top-k"""
+    __slots__ = ['count', 'prefix', 'direction', 'prefix_hash']
+    
+    def __init__(self, count, prefix, direction, prefix_hash):
         self.count = count
         self.prefix = prefix
         self.direction = direction
         self.prefix_hash = prefix_hash
     
     def __lt__(self, other):
-        # 小顶堆：计数小的在前
         return self.count < other.count
-    
-    def __eq__(self, other):
-        return self.count == other.count and self.prefix_hash == other.prefix_hash
-    
-    def __hash__(self):
-        return hash((self.count, self.prefix_hash))
 
 
 class KatagoJosekiBuilder:
-    """KataGo定式库构建器"""
+    """
+    KataGo定式库构建器
+    
+    保留原代码核心算法：
+    - CMS频率估算
+    - 临时文件存储
+    - 逆向遍历
+    - 单链检测
+    - 小顶堆选top-k
+    """
     
     def __init__(self, db_path: Optional[str] = None):
-        """
-        Args:
-            db_path: 数据库路径，默认使用 ~/.weiqi-joseki/database.json
-        """
         self.storage = JsonStorage(db_path)
+        # CMS配置（与原代码一致）
+        self._cms_width = 200000
+        self._cms_depth = 5
+    
+    def set_cms_config(self, width: int = 200000, depth: int = 5):
+        """设置CMS配置（与原代码一致）"""
+        self._cms_width = width
+        self._cms_depth = depth
+    
+
+    
+    def process_sgf(self, sgf_data: str, first_n: int = 80, 
+                    distance_threshold: int = 4) -> Dict[str, List[str]]:
+        """
+        处理单个SGF，提取四角着法
+        
+        Returns:
+            {corner: [coord, ...], ...} 原始SGF坐标
+        """
+        corner_moves = extract_moves_all_corners(
+            sgf_data, 
+            first_n=first_n, 
+            distance_threshold=distance_threshold
+        )
+        
+        # 转换为纯坐标序列
+        return {corner: get_move_sequence(moves) 
+                for corner, moves in corner_moves.items()}
+    
+
+    def build_from_files(
+        self,
+        tar_paths: List[Path],
+        min_freq: int = 5,
+        top_k: int = 10000,
+        first_n: int = 80,
+        distance_threshold: int = 4,
+        min_moves: int = 4,
+        max_moves: int = 50,
+        verbose: bool = True
+    ) -> List[dict]:
+        """
+        从已下载的 tar 文件构建定式库（完整流程）
+        
+        Args:
+            tar_paths: tar文件路径列表
+            min_freq: 最小出现频率
+            top_k: 入库定式数量上限
+            first_n: 提取前N手
+            distance_threshold: 连通块距离阈值
+            min_moves: 最少手数
+            max_moves: 最多手数
+            verbose: 详细输出
+        
+        Returns:
+            定式列表
+        """
+        # ===== Phase 1: CMS统计 + 临时文件存储 =====
+        cms = CountMinSketch(width=4194304, depth=4)
+        temp_file = tempfile.NamedTemporaryFile(mode='wb', suffix='.gz', delete=False)
+        temp_path = Path(temp_file.name)
+        
+        if verbose:
+            print(f"📊 Phase 1: CMS统计前缀频率")
+        
+        config = {
+            'first_n': first_n,
+            'distance_threshold': distance_threshold,
+            'min_moves': min_moves
+        }
+        
+        processed = 0
+        joseki_count = 0
+        prefix_count = 0
+        total_unique_sequences = 0
+        
+        with gzip.open(temp_path, 'wt', encoding='utf-8') as f_out:
+            for tar_path in tar_paths:
+                if verbose:
+                    print(f"   处理: {tar_path.name}...")
+                
+                p, j, pref, uniq = self._extract_from_tar_to_temp(
+                    tar_path, f_out, cms, config, verbose=False
+                )
+                processed += p
+                joseki_count += j
+                prefix_count += pref
+                total_unique_sequences += uniq
+                
+                if verbose:
+                    print(f"      累计: {processed}谱, {joseki_count}定式串, {prefix_count}前缀")
+        
+        if verbose:
+            print(f"\n✅ Phase 1完成: {processed}谱, {joseki_count}定式串")
+            print(f"   去重后着法串总数: {total_unique_sequences}")
+        
+        # ===== Phase 2-4: 逆向遍历 + 单链检测 + 去重 + 概率计算 =====
+        joseki_list = self._build_from_cms_and_temp(
+            temp_path, cms, min_freq, top_k, min_moves, max_moves,
+            total_unique_sequences, verbose
+        )
+        
+        # 清理临时文件
+        temp_path.unlink()
+        
+        return joseki_list
     
     def _extract_from_tar_to_temp(
         self,
@@ -200,39 +320,6 @@ class KatagoJosekiBuilder:
         
         return processed, joseki_count, prefix_count, total_unique_sequences
     
-    def process_sgf(self, sgf_data: str, first_n: int = 80, distance_threshold: int = 4) -> dict:
-        """处理单个SGF数据，返回四角着法信息
-        
-        Args:
-            sgf_data: SGF格式的棋谱数据
-            first_n: 提取前N手
-            distance_threshold: 连通块距离阈值
-            
-        Returns:
-            四角着法信息字典，key为角部名称
-        """
-        if not sgf_data:
-            return {}
-        
-        try:
-            corner_moves = extract_moves_all_corners(
-                sgf_data, first_n=first_n, distance_threshold=distance_threshold
-            )
-            
-            result = {}
-            for corner in CORNERS:
-                moves = corner_moves.get(corner, [])
-                if moves:
-                    coords = get_move_sequence(moves)
-                    result[corner] = {
-                        'moves': coords,
-                        'move_count': len(coords)
-                    }
-            
-            return result
-        except Exception as e:
-            return {}
-    
     def _iter_temp_files(self, temp_paths):
         """流式迭代多个temp文件的内容
         
@@ -248,21 +335,17 @@ class KatagoJosekiBuilder:
                     yield line
     
     def _build_from_cms_and_temp(
-        self, 
-        temp_source,  # Path or List[Path]
-        cms, 
-        min_freq: int, 
-        top_k: int,
-        min_moves: int, 
-        max_moves: int, 
-        total_sequences: int, 
-        verbose: bool
+        self, temp_source, cms, min_freq: int, top_k: int,
+        min_moves: int, max_moves: int, total_sequences: int, verbose: bool
     ) -> List[dict]:
         """从CMS和临时文件构建定式（Phase 2-4）
         
         Args:
-            temp_source: 单个Path或Path列表（支持多文件流式读取）
+            temp_source: 单个Path或List[Path]（支持多文件流式读取）
         """
+        import heapq
+        from datetime import datetime
+        
         if verbose:
             print(f"🔄 Phase 2: 逆向遍历+单链检测，选取top-{top_k}...")
         
@@ -339,22 +422,13 @@ class KatagoJosekiBuilder:
                 line_iter.close()
         
         if verbose:
-            print(f"\n✅ Phase 2完成: {processed_seq}定式串/{prefix_processed}前缀候选, "
-                  f"堆大小: {len(heap)}, 单链跳过: {skipped_single_chain}")
+            print(f"\n  堆中候选: {len(heap)} 个, 单链跳过: {skipped_single_chain} 个")
         
-        # Phase 3: 排序去重（恢复原版逻辑）
+        # Phase 3: 排序去重
         if verbose:
             print("🔄 Phase 3: 排序去重...")
         
-        # 统一转ruld方向
-        temp_list = []
-        for item in heap:
-            moves = item.prefix.split()
-            if item.direction == 'rudl':
-                moves = convert_to_ruld(moves)
-            temp_list.append((" ".join(moves), item.count))
-        
-        # 按字典序排序（原版逻辑）
+        temp_list = [(item.prefix, item.count) for item in heap]
         temp_list.sort(key=lambda x: x[0])
         
         discard = set()
@@ -369,7 +443,6 @@ class KatagoJosekiBuilder:
                 'moves': move_str.split(),
                 'count': count,
             })
-            # 将rudl等价加入discard
             rudl_str = " ".join(convert_to_rudl(move_str.split()))
             discard.add(rudl_str)
         
@@ -429,6 +502,33 @@ class KatagoJosekiBuilder:
         print(f"已保存 {len(joseki_list)} 条定式到 {self.storage.db_path}")
 
 
+def build_katago_joseki_db(
+    tar_path: str,
+    db_path: Optional[str] = None,
+    min_freq: int = 5,
+    top_k: int = 10000,
+    first_n: int = 80,
+    distance_threshold: int = 4,
+    min_moves: int = 4,
+    max_moves: int = 50
+) -> int:
+    """便捷函数：从KataGo棋谱构建定式库"""
+    builder = KatagoJosekiBuilder(db_path)
+    
+    joseki_list = builder.build_from_tar(
+        tar_path=tar_path,
+        min_freq=min_freq,
+        top_k=top_k,
+        first_n=first_n,
+        distance_threshold=distance_threshold,
+        min_moves=min_moves,
+        max_moves=max_moves
+    )
+    
+    builder.save_to_db(joseki_list, append=False)
+    return len(joseki_list)
+
+
 # ========== 自动增量构建方法 ==========
 
 def _ensure_auto_dirs(auto_dir: Path):
@@ -443,7 +543,7 @@ class KatagoJosekiBuilderAutoMixin:
     通过多重继承或monkey patch方式添加到KatagoJosekiBuilder。
     """
     
-    def run_auto(self, state: AutoState, cache_dir: Path) -> Optional[List[dict]]:
+    def run_auto(self, state, cache_dir: Path) -> Optional[List[dict]]:
         """自动增量构建主入口（批量保存优化版）
         
         优化：每30天保存一次CMS，减少写入次数
@@ -455,6 +555,8 @@ class KatagoJosekiBuilderAutoMixin:
         Returns:
             重建后的定式列表
         """
+        from ..auto import AutoState, get_adaptive_cms_config
+        
         print("=" * 60)
         print("🚀 Katago 自动增量构建")
         print("=" * 60)
@@ -547,7 +649,7 @@ class KatagoJosekiBuilderAutoMixin:
         print("\n【步骤3】重建定式库...")
         return self._auto_rebuild(state, cms, config)
     
-    def _auto_rebuild(self, state: AutoState, cms: CountMinSketch, config: dict) -> List[dict]:
+    def _auto_rebuild(self, state, cms: CountMinSketch, config: dict) -> List[dict]:
         """步骤3: 重建定式库"""
         print("🔄 重建定式库...")
         
@@ -586,30 +688,3 @@ class KatagoJosekiBuilderAutoMixin:
 # 将自动构建方法混入KatagoJosekiBuilder
 KatagoJosekiBuilder.run_auto = KatagoJosekiBuilderAutoMixin.run_auto
 KatagoJosekiBuilder._auto_rebuild = KatagoJosekiBuilderAutoMixin._auto_rebuild
-
-
-def build_katago_joseki_db(
-    tar_path: str,
-    db_path: Optional[str] = None,
-    min_freq: int = 5,
-    top_k: int = 10000,
-    first_n: int = 80,
-    distance_threshold: int = 4,
-    min_moves: int = 4,
-    max_moves: int = 50
-) -> int:
-    """便捷函数：从KataGo棋谱构建定式库"""
-    builder = KatagoJosekiBuilder(db_path)
-    
-    joseki_list = builder.build_from_tar(
-        tar_path=tar_path,
-        min_freq=min_freq,
-        top_k=top_k,
-        first_n=first_n,
-        distance_threshold=distance_threshold,
-        min_moves=min_moves,
-        max_moves=max_moves
-    )
-    
-    builder.save_to_db(joseki_list, append=False)
-    return len(joseki_list)

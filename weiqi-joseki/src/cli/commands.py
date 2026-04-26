@@ -7,18 +7,13 @@ import argparse
 import sys
 from pathlib import Path
 
-# 添加项目根目录到路径（支持 python -m 方式运行）
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+from ..storage import JsonStorage, DEFAULT_DB_PATH
+from ..builder import KatagoJosekiBuilder, convert_to_rudl
+from ..discover import discover_joseki
+from ..extraction import extract_moves_all_corners, convert_to_multigogm
 
-from storage import JsonStorage, DEFAULT_DB_PATH
-from builder import KatagoJosekiBuilder, convert_to_rudl
-from discover import discover_joseki
-from extraction import extract_moves_all_corners, convert_to_multigogm
-
-from auto import AutoState
-from extraction.katago_downloader import download_auto
+from ..auto import AutoState
+from ..extraction.katago_downloader import download_auto
 
 
 def cmd_init(args):
@@ -33,8 +28,8 @@ def _cmd_katago_auto(args):
     
     核心逻辑：
     1. 初始化AutoState（只保留配置）
-    2. 调用 builder.run_auto() 完成全部流程：
-       - 对比服务器index和本地缓存，下载新棋谱
+    2. 调用 download_auto() 下载新日期的棋谱
+    3. 调用 builder.run_auto() 完成构建流程：
        - 提取所有未提取的tar到temp
        - 实时更新CMS并保存
        - 重建定式库
@@ -53,8 +48,19 @@ def _cmd_katago_auto(args):
     else:
         print(f"📋 加载现有配置")
     
-    # 2. 创建 Builder 并执行自动流程（包含下载、提取、CMS、重建）
+    # 2. 准备缓存目录
     cache_dir = Path.home() / ".weiqi-joseki" / "katago-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 3. 下载新日期的棋谱（如果存在）
+    print("\n📥 检查并下载新棋谱...")
+    downloaded = download_auto(state, cache_dir=cache_dir)
+    if downloaded:
+        print(f"   ✅ 下载完成: {len(downloaded)} 个新日期")
+    else:
+        print("   ℹ️  没有新日期需要下载")
+    
+    # 4. 创建 Builder 并执行自动流程（提取、CMS、重建）
     builder = KatagoJosekiBuilder(db_path=args.db)
     
     result = builder.run_auto(state, cache_dir)
@@ -70,7 +76,7 @@ def _cmd_katago_auto(args):
 def _cmd_katago_custom(args):
     """自定义构建模式（原katago命令逻辑）"""
     from datetime import datetime, timedelta
-    from extraction.katago_downloader import download_katago_games
+    from ..extraction.katago_downloader import download_katago_games
     
     # 检查必需参数
     if not args.start_date or not args.end_date:
@@ -350,7 +356,7 @@ def cmd_discover(args):
             sgf_data = sgf_file.read_text(encoding='utf-8')
             
             # 解析SGF元数据
-            from extraction.sgf_parser import parse_sgf
+            from ..extraction.sgf_parser import parse_sgf
             sgf_result = parse_sgf(sgf_data)
             sgf_game_info = sgf_result.get("game_info", {})
             
@@ -371,9 +377,9 @@ def cmd_discover(args):
             }
             
             # 提取四角着法（用于输出）
-            from extraction import extract_moves_all_corners, get_move_sequence
-            from core.coords import convert_to_top_right
-            from builder import convert_to_rudl
+            from ..extraction import extract_moves_all_corners, get_move_sequence
+            from ..core.coords import convert_to_top_right
+            from ..builder import convert_to_rudl
             corner_moves_dict = extract_moves_all_corners(
                 sgf_data, first_n=args.first_n, distance_threshold=args.distance_threshold
             )
@@ -476,7 +482,7 @@ def cmd_export(args):
         output = "".join(lines)
     elif args.format == "tree":
         # 树状SGF格式
-        from matching import TrieMatcher
+        from ..matching import TrieMatcher
         matcher = TrieMatcher()
         matcher.build(joseki_list)
         prefix = args.prefix.split() if args.prefix else None

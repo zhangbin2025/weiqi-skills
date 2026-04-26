@@ -8,10 +8,9 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki/src')
-sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki/src/extraction')
+sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki')
 
-from auto import AutoState
+from src.auto import AutoState
 
 
 class TestDownloadAuto:
@@ -28,14 +27,14 @@ class TestDownloadAuto:
             cache_dir.mkdir()
             
             # mock fetch_available_dates 返回日期
-            with patch('katago_downloader.fetch_available_dates') as mock_fetch:
+            with patch('src.extraction.katago_downloader.fetch_available_dates') as mock_fetch:
                 mock_fetch.return_value = ["2026-04-20", "2026-04-21"]
                 
                 # 创建对应的tar文件模拟已下载
                 (cache_dir / "2026-04-20rating.tar.bz2").touch()
                 (cache_dir / "2026-04-21rating.tar.bz2").touch()
                 
-                from katago_downloader import download_auto
+                from src.extraction.katago_downloader import download_auto
                 
                 result = download_auto(state, cache_dir=cache_dir)
                 
@@ -52,14 +51,14 @@ class TestDownloadAuto:
             cache_dir.mkdir()
             
             # mock fetch_available_dates 返回更多日期
-            with patch('katago_downloader.fetch_available_dates') as mock_fetch:
+            with patch('src.extraction.katago_downloader.fetch_available_dates') as mock_fetch:
                 mock_fetch.return_value = ["2026-04-20", "2026-04-21", "2026-04-22"]
                 
                 # 只创建一个tar文件（部分已下载）
                 (cache_dir / "2026-04-20rating.tar.bz2").touch()
                 
                 # mock DownloadManager 模拟成功下载
-                with patch('katago_downloader.DownloadManager') as mock_dm_class:
+                with patch('src.extraction.katago_downloader.DownloadManager') as mock_dm_class:
                     mock_dm = MagicMock()
                     mock_dm_class.return_value = mock_dm
                     
@@ -71,7 +70,7 @@ class TestDownloadAuto:
                         0    # cache_hits
                     )
                     
-                    from katago_downloader import download_auto
+                    from src.extraction.katago_downloader import download_auto
                     
                     result = download_auto(state, cache_dir=cache_dir)
                     
@@ -87,10 +86,10 @@ class TestDownloadAuto:
             cache_dir = Path(tmpdir) / "cache"
             cache_dir.mkdir()
             
-            with patch('katago_downloader.fetch_available_dates') as mock_fetch:
+            with patch('src.extraction.katago_downloader.fetch_available_dates') as mock_fetch:
                 mock_fetch.return_value = ["2026-04-20", "2026-04-21"]
                 
-                with patch('katago_downloader.DownloadManager') as mock_dm_class:
+                with patch('src.extraction.katago_downloader.DownloadManager') as mock_dm_class:
                     mock_dm = MagicMock()
                     mock_dm_class.return_value = mock_dm
                     
@@ -101,7 +100,7 @@ class TestDownloadAuto:
                         0
                     )
                     
-                    from katago_downloader import download_auto
+                    from src.extraction.katago_downloader import download_auto
                     
                     result = download_auto(state, cache_dir=cache_dir)
                     
@@ -114,10 +113,10 @@ class TestDownloadAuto:
             state = AutoState(tmpdir)
             state.init_config()
             
-            with patch('katago_downloader.fetch_available_dates') as mock_fetch:
+            with patch('src.extraction.katago_downloader.fetch_available_dates') as mock_fetch:
                 mock_fetch.return_value = []  # 服务器无日期
                 
-                from katago_downloader import download_auto
+                from src.extraction.katago_downloader import download_auto
                 
                 result = download_auto(state, cache_dir=Path(tmpdir) / "cache")
                 

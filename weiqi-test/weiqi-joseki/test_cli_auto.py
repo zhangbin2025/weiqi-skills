@@ -8,11 +8,10 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki/src')
-sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki/src/cli')
+sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki')
 
 # 先测试参数解析
-from commands import main
+from src.cli.commands import main
 
 
 def test_cli_parser():
@@ -20,7 +19,7 @@ def test_cli_parser():
     
     # 测试1: 默认模式是custom
     with patch('sys.argv', ['weiqi-joseki', 'katago', '--start-date', '2026-04-01', '--end-date', '2026-04-10']):
-        with patch('commands._cmd_katago_custom') as mock_custom:
+        with patch('src.cli.commands._cmd_katago_custom') as mock_custom:
             mock_custom.return_value = 0
             try:
                 main()
@@ -35,7 +34,7 @@ def test_auto_mode():
     """测试auto模式调用"""
     
     with patch('sys.argv', ['weiqi-joseki', 'katago', '--mode', 'auto']):
-        with patch('commands._cmd_katago_auto') as mock_auto:
+        with patch('src.cli.commands._cmd_katago_auto') as mock_auto:
             mock_auto.return_value = 0
             try:
                 main()
@@ -51,7 +50,7 @@ def test_help_output():
     import io
     import argparse
     
-    from commands import main
+    from src.cli.commands import main
     
     # 捕获帮助输出
     old_stdout = sys.stdout

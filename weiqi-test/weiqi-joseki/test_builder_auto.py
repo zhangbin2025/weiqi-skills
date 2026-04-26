@@ -8,12 +8,11 @@ import gzip
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki/src')
-sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki/src/builder')
+sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki')
 
-from auto import AutoState
-from katago_builder import KatagoJosekiBuilder
-from utils import CountMinSketch
+from src.auto import AutoState
+from src.builder import KatagoJosekiBuilder
+from src.utils import CountMinSketch
 
 
 class TestBuildFromCmsAndTempMulti:

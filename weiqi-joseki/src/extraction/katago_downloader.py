@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Import AutoState for auto mode
-from auto import AutoState
+from ..auto import AutoState
 
 
 # KataGo 配置

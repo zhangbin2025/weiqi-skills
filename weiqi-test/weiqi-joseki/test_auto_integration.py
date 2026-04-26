@@ -20,11 +20,11 @@ import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
 
-sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki/src')
+sys.path.insert(0, '/root/.openclaw/workspace/weiqi-joseki')
 
-from auto import AutoState
-from builder import KatagoJosekiBuilder
-from extraction.katago_downloader import download_auto, fetch_available_dates
+from src.auto import AutoState
+from src.builder import KatagoJosekiBuilder
+from src.extraction.katago_downloader import download_auto, fetch_available_dates
 
 
 def run_integration_test():
