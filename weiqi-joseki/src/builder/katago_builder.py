@@ -543,7 +543,7 @@ class KatagoJosekiBuilderAutoMixin:
     通过多重继承或monkey patch方式添加到KatagoJosekiBuilder。
     """
     
-    def run_auto(self, state, cache_dir: Path) -> Optional[List[dict]]:
+    def run_auto(self, state, cache_dir: Path, limit: Optional[int] = None) -> Optional[List[dict]]:
         """自动增量构建主入口（批量保存优化版）
         
         优化：每30天保存一次CMS，减少写入次数
@@ -551,6 +551,7 @@ class KatagoJosekiBuilderAutoMixin:
         Args:
             state: 状态管理器（只使用config）
             cache_dir: tar文件缓存目录
+            limit: 限制处理的tar文件数量（用于测试）
             
         Returns:
             重建后的定式列表
@@ -585,6 +586,11 @@ class KatagoJosekiBuilderAutoMixin:
                          if f.name.replace("rating.tar.bz2", "") > last_date]
             if not tar_files:
                 print("✅ 所有日期已处理，无需增量")
+        
+        # 限制处理数量（用于测试）
+        if limit is not None and limit > 0:
+            tar_files = tar_files[:limit]
+            print(f"🧪 测试模式：限制处理前 {limit} 个tar文件")
         
         # 加载或创建CMS
         cms_config = get_adaptive_cms_config(state.config.get('global_top_k', 100000) * 20)

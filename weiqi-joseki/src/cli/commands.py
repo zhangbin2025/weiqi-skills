@@ -63,7 +63,7 @@ def _cmd_katago_auto(args):
     # 4. 创建 Builder 并执行自动流程（提取、CMS、重建）
     builder = KatagoJosekiBuilder(db_path=args.db)
     
-    result = builder.run_auto(state, cache_dir)
+    result = builder.run_auto(state, cache_dir, limit=args.limit)
     
     if result:
         print(f"\n✅ 自动构建完成，共 {len(result)} 条定式")
@@ -525,6 +525,7 @@ def main():
     p_katago.add_argument("--download-only", action="store_true", help="仅下载棋谱到缓存，不构建定式库")
     p_katago.add_argument("--delay", type=int, default=10, help="下载间隔延迟（秒），默认10秒")
     p_katago.add_argument("--force-rebuild", action="store_true", help="强制重建（仅auto模式有效）")
+    p_katago.add_argument("--limit", type=int, help="限制处理的tar文件数量（仅auto模式测试用）")
     
     # list
     p_list = subparsers.add_parser("list", help="列出定式")
