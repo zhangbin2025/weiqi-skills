@@ -1170,6 +1170,10 @@
             trialPlaceStone(pos.x, pos.y);
         });
         
+        function isWechatBrowser() {
+            return /MicroMessenger/i.test(navigator.userAgent);
+        }
+        
         function downloadSGF() {
             let sgf = '(;GM[1]FF[4]SZ[' + BOARD_SIZE + ']';
             sgf += 'PB[' + (tree.properties.PB || '黑棋') + ']';
@@ -1219,6 +1223,21 @@
             }
             
             sgf += ')';
+            
+            // 微信浏览器：复制到剪贴板
+            if (isWechatBrowser()) {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(sgf).then(function() {
+                        showStatus('SGF已复制到剪贴板');
+                    }).catch(function() {
+                        showStatus('复制失败，请手动复制');
+                    });
+                } else {
+                    showStatus('浏览器不支持复制功能');
+                }
+                return;
+            }
+            
             const blob = new Blob([sgf], { type: 'application/x-go-sgf' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
