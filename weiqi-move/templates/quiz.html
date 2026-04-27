@@ -1911,6 +1911,11 @@
             }
         }
 
+        // ==================== 微信浏览器检测 ====================
+        function isWechatBrowser() {
+            return /MicroMessenger/i.test(navigator.userAgent);
+        }
+        
         // ==================== 保存SGF功能 ====================
         function saveToSGF() {
             if (!currentProblem) return;
@@ -1975,6 +1980,20 @@
             }
 
             sgf += ')';
+
+            // 微信浏览器：复制到剪贴板
+            if (isWechatBrowser()) {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(sgf).then(function() {
+                        alert('SGF已复制到剪贴板');
+                    }).catch(function() {
+                        alert('复制失败，请手动复制');
+                    });
+                } else {
+                    alert('浏览器不支持复制功能');
+                }
+                return;
+            }
 
             // 下载文件
             const blob = new Blob([sgf], { type: 'application/x-go-sgf' });
