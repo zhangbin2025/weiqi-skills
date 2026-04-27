@@ -162,7 +162,7 @@
                 <button class="btn btn-sm" onclick="undoMove()" title="悔棋">↩️</button>
                 <button class="btn btn-sm" onclick="passMove()" title="停一手">🙅</button>
                 <button class="btn btn-sm" onclick="clearBoard()" title="新建棋谱">📝</button>
-                <button class="btn btn-sm" onclick="exportSGF()" title="导出SGF">📤</button>
+                <button id="exportBtn" class="btn btn-sm" onclick="exportSGF()" title="导出SGF">📤</button>
                 <button class="btn btn-sm" onclick="copySGF()" title="复制SGF到剪贴板">📄</button>
             </div>
             <div class="move-display">
@@ -178,6 +178,19 @@
         const canvas = document.getElementById('board');
         const ctx = canvas.getContext('2d');
         const BOARD_SIZE = 19;
+        
+        // 检测微信浏览器
+        function isWechatBrowser() {
+            return /MicroMessenger/i.test(navigator.userAgent);
+        }
+        
+        // 微信浏览器下隐藏导出按钮
+        if (isWechatBrowser()) {
+            const exportBtn = document.getElementById('exportBtn');
+            if (exportBtn) {
+                exportBtn.style.display = 'none';
+            }
+        }
         
         function getBoardSize() {
             const maxWidth = Math.min(window.innerWidth - 20, 600);
