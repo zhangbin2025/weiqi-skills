@@ -89,11 +89,15 @@ results = discover_joseki(sgf, joseki_list)
 weiqi-joseki/
 ├── SKILL.md                 # 技能文档
 └── src/                     # 重构后的模块化代码
+    ├── auto/                # 自动构建状态管理（v2.1.0新增）
+    │   ├── state.py         # AutoState配置/进度/统计
+    │   └── __init__.py
     ├── builder/             # 定式库构建器
     │   ├── katago_builder.py
     │   └── __init__.py
     ├── cli/                 # 命令行接口
     │   ├── commands.py
+    │   ├── __main__.py      # 支持python -m运行
     │   └── __init__.py
     ├── core/                # 核心模块（坐标系统）
     │   ├── coords.py
@@ -123,6 +127,10 @@ weiqi-joseki/
 
 - **数据库路径**: `~/.weiqi-joseki/database.json`
 - **KataGo缓存**: `~/.weiqi-joseki/katago-cache/`
+- **自动构建数据**: `~/.weiqi-joseki/auto/`（v2.1.0新增）
+  - `state.json` - 配置、进度、统计
+  - `cms.pkl` - CMS统计数据
+  - `temp/` - 每日提取的着法串（YYYY-MM-DD.txt.gz）
 - 自动创建目录和文件
 
 ### 定式数据格式
@@ -170,9 +178,45 @@ python3 -m src.cli.commands init
 
 ### 从KataGo构建定式库 ⭐
 
-从 [KataGo Archive](https://katagoarchive.org/kata1/ratinggames/) 下载棋谱并构建定式库。
+从 [KataGo Archive](https://katagoarchive.org/kata1/ratinggames/index.html) 下载棋谱并构建定式库。
 
-**基本用法：**
+#### 模式一：自动增量构建（推荐）
+
+自动检测新增棋谱，增量下载、提取、统计、入库。适合日更定式库。
+
+```bash
+# 首次运行：全量下载并构建
+python3 -m src.cli.commands katago --mode auto
+
+# 日常更新：只下载新增日期
+python3 -m src.cli.commands katago --mode auto
+
+# 强制重建
+python3 -m src.cli.commands katago --mode auto --force-rebuild
+```
+
+**自动模式特点：**
+- ✅ **增量下载** - 只下载服务器新增的日期
+- ✅ **增量提取** - 只处理新下载的棋谱
+- ✅ **增量CMS** - 基于历史统计累加新数据
+- ✅ **智能重建** - 达到阈值后自动全量重建定式库
+- ✅ **状态持久化** - 进度自动保存，支持断点续跑
+
+**数据存储：**
+```
+~/.weiqi-joseki/
+├── auto/
+│   ├── state.json          # 配置和进度
+│   ├── cms.pkl             # CMS统计数据
+│   └── temp/               # 每日提取的着法串
+│       └── YYYY-MM-DD.txt.gz
+└── database.json           # 定式库
+```
+
+#### 模式二：自定义构建
+
+手动指定日期范围，适合一次性构建或补历史数据。
+
 ```bash
 # 构建指定日期范围的定式库
 python3 -m src.cli.commands katago \
@@ -183,13 +227,15 @@ python3 -m src.cli.commands katago \
 **完整参数：**
 ```bash
 python3 -m src.cli.commands katago \
-  --start-date 2026-01-01 \      # 起始日期（必需）
-  --end-date 2026-04-21 \        # 结束日期（必需）
+  --mode custom \                # 模式：custom或auto（默认custom）
+  --start-date 2026-01-01 \      # 起始日期（custom模式必需）
+  --end-date 2026-04-21 \        # 结束日期（custom模式必需）
   --min-freq 10 \                # 最小出现频率（默认10）
   --top-k 100000 \               # 入库数量上限（默认10万）
   --first-n 80 \                 # 每谱提取前N手（默认80）
   --distance-threshold 4 \       # 连通块距离阈值（默认4）
-  --min-moves 4                  # 最少手数（默认4）
+  --min-moves 4 \                # 最少手数（默认4）
+  --force-rebuild                # 强制重建（仅auto模式有效）
 ```
 
 **构建流程：**
@@ -358,6 +404,97 @@ python3 -m src.cli.commands export --format sgf --output joseki.sgf
 python3 -m src.cli.commands export --limit 1000 --output top1000.json
 ```
 
+## 自动增量构建详解
+
+自动模式（`--mode auto`）专为日更定式库设计，实现全流程自动化。
+
+### 工作流程
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    自动增量构建流程                           │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  1. 检测新日期                                                │
+│     └─> 访问KataGo Archive，获取所有可用日期                  │
+│     └─> 对比本地已下载列表，找出缺失日期                      │
+│                                                              │
+│  2. 增量下载                                                  │
+│     └─> 仅下载新日期对应的tar.bz2文件                         │
+│     └─> 已下载的文件自动跳过                                  │
+│                                                              │
+│  3. 增量提取（步骤2）                                         │
+│     └─> 遍历新下载的tar文件                                   │
+│     └─> 提取四角着法 → auto/temp/YYYY-MM-DD.txt.gz           │
+│     └─> 每日一个文件，便于增量处理                            │
+│                                                              │
+│  4. 增量CMS统计（步骤3）                                      │
+│     └─> 加载历史CMS（auto/cms.pkl）                          │
+│     └─> 从新temp文件统计前缀频率                              │
+│     └─> 累加到现有CMS并保存                                   │
+│                                                              │
+│  5. 全量重建（步骤4）                                         │
+│     └─> 流式读取所有temp文件                                  │
+│     └─> 逆向遍历 + 单链检测 + topk筛选                        │
+│     └─> 整库替换 database.json                               │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 配置参数
+
+自动模式的默认配置（可通过修改 `auto/state.json` 调整）：
+
+| 参数 | 默认值 | 说明 |
+|-----|--------|-----|
+| `estimated_games` | 200万 | 预估棋谱数，决定CMS大小（16M width） |
+| `min_freq` | 10 | 最小出现频率 |
+| `global_top_k` | 10万 | 定式库上限 |
+| `rebuild_threshold_days` | 0 | 重建阈值（0=立即重建） |
+| `first_n` | 80 | 每谱提取前N手 |
+| `distance_threshold` | 4 | 连通块距离阈值 |
+| `min_moves` | 4 | 最少手数 |
+
+### 手动修改配置
+
+编辑 `~/.weiqi-joseki/auto/state.json`：
+
+```json
+{
+  "config": {
+    "min_freq": 15,
+    "global_top_k": 50000,
+    "rebuild_threshold_days": 7
+  }
+}
+```
+
+修改后下次运行 `katago --mode auto` 即生效。
+
+### 强制重建
+
+如果需要全量重建（如算法升级后）：
+
+```bash
+# 删除状态，下次运行将全量重建
+rm -rf ~/.weiqi-joseki/auto/
+python3 -m src.cli.commands katago --mode auto
+
+# 或使用 --force-rebuild
+python3 -m src.cli.commands katago --mode auto --force-rebuild
+```
+
+### 空间占用估算
+
+| 项目 | 单日 | 100天 | 300天 |
+|-----|------|-------|-------|
+| tar.bz2缓存 | ~500MB | ~50GB | ~150GB |
+| temp.txt.gz | ~50MB | ~5GB | ~15GB |
+| cms.pkl | 固定~8MB | ~8MB | ~8MB |
+| database.json | ~100KB | ~100KB | ~100KB |
+
+**说明：** temp文件保留全部历史，用于重建时流式读取。
+
 ## 核心算法
 
 ### 时序连通性分析（Temporal Connectivity）v2.0.0
@@ -490,6 +627,23 @@ for corner, moves in result.items():
 - 无第三方依赖（纯标准库）
 
 ## 版本更新
+
+### v2.1.0 (2026-04-25) - 自动增量构建
+**新增自动增量构建模式**
+
+**自动模式（`--mode auto`）：**
+- ✅ **增量下载** - 只下载服务器新增的日期，支持断点续传
+- ✅ **增量提取** - 每日一个temp文件，只处理新下载的棋谱
+- ✅ **增量CMS** - 基于历史统计数据累加，避免全量重统计
+- ✅ **智能重建** - 达到阈值后自动全量重建定式库
+- ✅ **状态持久化** - 配置、进度、统计自动保存到auto/state.json
+- ✅ **大容量配置** - 默认支持200万棋谱，10万条定式
+
+**架构改进：**
+- ✅ **新增auto模块** - AutoState状态管理，自适应CMS配置
+- ✅ **CMS持久化** - save_to_file/load_from_file支持序列化
+- ✅ **流式多文件读取** - 重建时流式处理所有temp文件，内存友好
+- ✅ **Mixin混入模式** - 自动构建方法动态添加到KatagoJosekiBuilder
 
 ### v2.0.0 (2026-04-22) - 重大重构
 **性能与架构全面升级**

@@ -12,6 +12,9 @@ from ..builder import KatagoJosekiBuilder, convert_to_rudl
 from ..discover import discover_joseki
 from ..extraction import extract_moves_all_corners, convert_to_multigogm
 
+from ..auto import AutoState
+from ..extraction.katago_downloader import download_auto
+
 
 def cmd_init(args):
     """初始化空数据库"""
@@ -20,10 +23,65 @@ def cmd_init(args):
     print(f"✅ 已初始化空数据库: {storage.db_path}")
 
 
-def cmd_katago(args):
-    """从KataGo棋谱构建定式库（支持日期范围）"""
+def _cmd_katago_auto(args):
+    """自动增量构建模式（简化版）
+    
+    核心逻辑：
+    1. 初始化AutoState（只保留配置）
+    2. 调用 download_auto() 下载新日期的棋谱
+    3. 调用 builder.run_auto() 完成构建流程：
+       - 提取所有未提取的tar到temp
+       - 实时更新CMS并保存
+       - 重建定式库
+    """
+    
+    # 1. 初始化/加载 AutoState
+    state = AutoState()
+    
+    if not state.is_initialized() or args.force_rebuild:
+        if args.force_rebuild:
+            print("🔄 强制重建模式，清除现有状态...")
+            state.reset()
+        print("🆕 初始化自动构建配置...")
+        state.init_config()
+        print(f"   CMS配置: width={state.config['cms_width']}, depth={state.config['cms_depth']}")
+    else:
+        print(f"📋 加载现有配置")
+    
+    # 2. 准备缓存目录
+    cache_dir = Path.home() / ".weiqi-joseki" / "katago-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 3. 下载新日期的棋谱（如果存在）
+    print("\n📥 检查并下载新棋谱...")
+    downloaded = download_auto(state, cache_dir=cache_dir)
+    if downloaded:
+        print(f"   ✅ 下载完成: {len(downloaded)} 个新日期")
+    else:
+        print("   ℹ️  没有新日期需要下载")
+    
+    # 4. 创建 Builder 并执行自动流程（提取、CMS、重建）
+    builder = KatagoJosekiBuilder(db_path=args.db)
+    
+    result = builder.run_auto(state, cache_dir, limit=args.limit)
+    
+    if result:
+        print(f"\n✅ 自动构建完成，共 {len(result)} 条定式")
+        return 0
+    else:
+        print("\n⏭️  没有新数据，跳过")
+        return 0
+
+
+def _cmd_katago_custom(args):
+    """自定义构建模式（原katago命令逻辑）"""
     from datetime import datetime, timedelta
     from ..extraction.katago_downloader import download_katago_games
+    
+    # 检查必需参数
+    if not args.start_date or not args.end_date:
+        print("❌ 错误: custom模式需要指定 --start-date 和 --end-date")
+        return 1
     
     # 配置
     CACHE_DIR = Path.home() / ".weiqi-joseki/katago-cache"
@@ -61,8 +119,9 @@ def cmd_katago(args):
         end_date=args.end_date,
         cache_dir=CACHE_DIR,
         max_retries=3,
-        workers=3,
-        keep_cache=True
+        workers=1,
+        keep_cache=True,
+        delay=args.delay
     )
     
     print(f"✅ 文件准备完成: {len(downloaded_files)}/{len(dates)} 个")
@@ -73,6 +132,11 @@ def cmd_katago(args):
     if not downloaded_files:
         print("❌ 没有可处理的文件")
         return 1
+    
+    # 仅下载模式
+    if args.download_only:
+        print("✅ 下载完成，跳过定式库构建")
+        return 0
     
     # 构建定式库
     print(f"⏳ 开始构建定式库...")
@@ -100,6 +164,14 @@ def cmd_katago(args):
     print("=" * 50)
     print(f"🎉 全部完成！共 {len(joseki_list)} 条定式")
     print("=" * 50)
+
+
+def cmd_katago(args):
+    """从KataGo棋谱构建定式库"""
+    if args.mode == "auto":
+        return _cmd_katago_auto(args)
+    else:
+        return _cmd_katago_custom(args)
 
 
 def cmd_list(args):
@@ -440,14 +512,20 @@ def main():
     
     # katago
     p_katago = subparsers.add_parser("katago", help="从KataGo棋谱构建定式库")
-    p_katago.add_argument("--start-date", required=True, help="起始日期 (YYYY-MM-DD)")
-    p_katago.add_argument("--end-date", required=True, help="结束日期 (YYYY-MM-DD)")
+    p_katago.add_argument("--mode", choices=["custom", "auto"], default="custom",
+                         help="构建模式：custom=自定义构建(默认), auto=自动增量构建")
+    p_katago.add_argument("--start-date", help="起始日期 (YYYY-MM-DD)，custom模式必需")
+    p_katago.add_argument("--end-date", help="结束日期 (YYYY-MM-DD)，custom模式必需")
     p_katago.add_argument("--min-freq", type=int, default=10, help="最小频率")
     p_katago.add_argument("--top-k", type=int, default=100000, help="入库数量上限")
     p_katago.add_argument("--first-n", type=int, default=80, help="提取前N手")
     p_katago.add_argument("--distance-threshold", type=int, default=4, help="连通块距离阈值")
     p_katago.add_argument("--min-moves", type=int, default=4, help="最少手数")
     p_katago.add_argument("--max-moves", type=int, default=50, help="最多手数")
+    p_katago.add_argument("--download-only", action="store_true", help="仅下载棋谱到缓存，不构建定式库")
+    p_katago.add_argument("--delay", type=int, default=10, help="下载间隔延迟（秒），默认10秒")
+    p_katago.add_argument("--force-rebuild", action="store_true", help="强制重建（仅auto模式有效）")
+    p_katago.add_argument("--limit", type=int, help="限制处理的tar文件数量（仅auto模式测试用）")
     
     # list
     p_list = subparsers.add_parser("list", help="列出定式")
