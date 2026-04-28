@@ -2,7 +2,7 @@
 name: 围棋记谱工具
 description: weiqi-recorder 围棋记谱工具 - 提供单文件网页版围棋记谱工具，支持棋盘显示、黑白轮流落子、提子、打劫规则、悔棋等功能。当用户需要"记谱工具"、"围棋记谱"、"网页记谱"或类似的围棋记录需求时使用此技能。
 tags: ["围棋", "weiqi", "go", "记谱", "棋盘", "网页工具"]
-version: 1.0.2
+version: 1.0.3
 ---
 
 # 围棋记谱工具
@@ -66,11 +66,21 @@ version: 1.0.2
 
 ## 外部服务
 
-- **二维码解码页面**: https://weiqi-dev.github.io/sgf-decode/
-  - 部署于 GitHub Pages，用于微信环境下扫码下载棋谱
-  - 源代码: https://github.com/weiqi-dev/sgf-decode
+- **分享库**: https://weiqi-dev.github.io/weiqi-assets/js/share.js
+  - 提供二维码生成、棋谱编码解码功能
+  - 源码: https://github.com/weiqi-dev/weiqi-assets
+
+- **解码页面**: https://weiqi-dev.github.io/weiqi-assets/share/
+  - 扫码后自动下载 SGF
+  - 依赖 share.js 的解码功能
 
 ## 更新日志
+
+### v1.0.3 (2026-04-28)
+- 重构二维码分享功能
+  - 抽取核心代码到 weiqi-assets 项目，通过 `share.js` 复用
+  - weiqi-recorder 只负责调用，不再内置编解码逻辑
+  - 解码页面迁移至 `weiqi-assets/share/`
 
 ### v1.0.2 (2026-04-28)
 - 新增二维码分享功能：微信浏览器环境下，通过二维码分享棋谱
