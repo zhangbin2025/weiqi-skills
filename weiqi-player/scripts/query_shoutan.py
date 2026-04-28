@@ -112,14 +112,21 @@ def parse_shoutan_basic(html, name):
             for key, value in re.findall(attr_pattern, xs_attrs):
                 attrs[key] = value
             
-            if attrs.get('姓名'):
+            # 只要有编号就认为是有效选手
+            if attrs.get('编号'):
                 player = {
-                    "姓名": attrs.get('姓名', ''),
-                    "地区": attrs.get('地区', attrs.get('省份', '未知')),
+                    "姓名": attrs.get('姓名', name),  # 如果没有姓名，使用传入的name
+                    "地区": attrs.get('地区', ''),
+                    "省份": attrs.get('省份', ''),  # 添加省份字段
                     "称谓": attrs.get('称谓', ''),
                     "等级分": attrs.get('等级分', ''),
                     "全国排名": attrs.get('全国排名', ''),
                     "对局次数": attrs.get('对局次数', ''),
+                    "参赛次数": attrs.get('参赛次数', ''),  # 添加参赛次数字段
+                    "注册日期": attrs.get('注册日期', ''),  # 添加注册日期字段
+                    "注册等级分": attrs.get('注册等级分', ''),  # 添加注册等级分字段
+                    "省份排名": attrs.get('省份排名', ''),  # 添加省份排名
+                    "地区排名": attrs.get('地区排名', ''),  # 添加地区排名
                     "Yh": yh,
                     "编号": attrs.get('编号', '')
                 }
@@ -224,7 +231,8 @@ def query_shoutan(name, timer):
         try:
             html = fetch_url(url)
         except Exception as e:
-            raise Exception(f"查询失败: {e}")
+            # 网络错误时返回空列表
+            return []
     
     # 步骤3: 解析HTML内容
     with timer.step("解析HTML"):

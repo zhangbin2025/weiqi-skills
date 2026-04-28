@@ -128,26 +128,56 @@ def query_batch(names, json_output=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='围棋选手信息统一查询')
-    parser.add_argument('names', nargs='+', help='选手姓名')
-    parser.add_argument('--batch', action='store_true', help='批量查询模式')
-    parser.add_argument('--json', action='store_true', help='输出 JSON 格式')
-    args = parser.parse_args()
+    # 兼容旧版命令行参数（无 argparse）
+    if len(sys.argv) < 2:
+        print(__doc__)
+        print("\n【单个查询】")
+        print("  python3 query.py <姓名>")
+        print("  python3 query.py --json <姓名>")
+        print("\n【批量查询】")
+        print("  python3 query.py --batch 姓名1 姓名2 ...")
+        sys.exit(1)
     
-    if args.batch:
-        # 批量模式
-        if args.json:
-            results = query_batch(args.names, json_output=True)
+    # 检查是否是新格式（--json 作为 flag 而非 positional）
+    json_output = '--json' in sys.argv
+    batch_mode = '--batch' in sys.argv
+    
+    # 移除选项参数，只保留姓名
+    names = []
+    skip_next = False
+    for i, arg in enumerate(sys.argv[1:], 1):
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in ('--json', '--batch'):
+            continue
+        if arg.startswith('-'):
+            continue
+        names.append(arg)
+    
+    # 批量模式检查
+    if batch_mode:
+        if not names:
+            print("❌ 批量查询需要至少一个姓名")
+            sys.exit(1)
+        if json_output:
+            results = query_batch(names, json_output=True)
             print(json.dumps(results, ensure_ascii=False, indent=2))
         else:
-            query_batch(args.names)
+            query_batch(names)
     else:
         # 单个查询
-        if args.json:
-            result = query_single(args.names[0], json_output=True)
+        if not names:
+            print(__doc__)
+            print("\n【单个查询】")
+            print("  python3 query.py <姓名>")
+            print("  python3 query.py --json <姓名>")
+            sys.exit(1)
+        if json_output:
+            result = query_single(names[0], json_output=True)
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
-            query_single(args.names[0])
+            query_single(names[0])
 
 
 if __name__ == "__main__":
