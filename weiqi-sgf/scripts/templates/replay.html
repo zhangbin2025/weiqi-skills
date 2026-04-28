@@ -48,6 +48,13 @@
         .controls-divider { width: 1px; height: 20px; background: #ddd; margin: 0 3px; flex-shrink: 0; }
         #moveSlider { width: 100%; height: 18px; }
         .trial-panel { display: none; margin: 6px 0; padding: 8px 12px; background: #e8f5e9; border-radius: 8px; border: 1px solid #4caf50; justify-content: center; gap: 24px; }
+        /* 二维码弹窗样式 */
+        .qr-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); display: none; justify-content: center; align-items: center; z-index: 2000; }
+        .qr-modal.show { display: flex; }
+        .qr-container { background: white; padding: 20px; border-radius: 12px; text-align: center; max-width: 280px; width: 90%; }
+        .qr-title { font-size: 16px; color: #333; margin-bottom: 15px; }
+        .qr-hint { font-size: 13px; color: #666; margin-top: 15px; line-height: 1.5; }
+        .qr-close { margin-top: 15px; padding: 10px 30px; background: #667eea; color: white; border: none; border-radius: 20px; font-size: 14px; cursor: pointer; }
         .trial-panel.visible { display: flex; }
         .trial-info { display: flex; align-items: center; gap: 10px; font-size: 14px; }
         .trial-info span:first-child { font-weight: bold; color: #2e7d32; }
@@ -77,7 +84,7 @@
                 <div class="extra-buttons" id="extraButtons">
                     <button class="btn" id="soundToggleBtn" onclick="toggleSound()" title="音效开关" style="width: 32px; height: 32px; font-size: 14px;">🔊</button>
                     <button class="btn" id="numToggleBtn" onclick="toggleNumbers()" title="显示/隐藏手数" style="width: 32px; height: 32px; font-size: 11px;">1️⃣</button>
-                    <button class="btn" onclick="downloadSGF()" title="下载SGF" style="width: 32px; height: 32px; font-size: 14px;">💾</button>
+                    <button class="btn" id="downloadBtn" onclick="downloadSGF()" title="下载SGF" style="width: 32px; height: 32px; font-size: 14px;">💾</button>
                 </div>
                 <button class="btn" id="moreBtn" onclick="toggleMorePanel()" title="更多" style="width: 32px; height: 32px; font-size: 14px;">⋮</button>
             </div>
@@ -97,6 +104,16 @@
         <div class="legend">
             <div class="legend-item"><div class="stone-black"></div><span id="blackName">{{BLACK_NAME}}</span></div>
             <div class="legend-item"><div class="stone-white"></div><span id="whiteName">{{WHITE_NAME}}</span></div>
+        </div>
+    </div>
+    
+    <!-- 二维码弹窗 -->
+    <div id="qrModal" class="qr-modal">
+        <div class="qr-container">
+            <div class="qr-title">扫码下载棋谱</div>
+            <div id="qrcode"></div>
+            <div class="qr-hint">截图或长按二维码<br>识别后即可下载SGF文件</div>
+            <button class="qr-close" onclick="closeQRCode()">关闭</button>
         </div>
     </div>
     <script>
@@ -1174,6 +1191,71 @@
             return /MicroMessenger/i.test(navigator.userAgent);
         }
         
+        // 关闭二维码弹窗
+        function closeQRCode() {
+            document.getElementById('qrModal').classList.remove('show');
+            document.getElementById('qrcode').innerHTML = '';
+        }
+        
+        // 点击弹窗背景关闭
+        document.getElementById('qrModal').addEventListener('click', function(e) {
+            if (e.target === this) closeQRCode();
+        });
+        
+        // 转换当前局面为 gameState 格式
+        function convertToGameState() {
+            const gameState = [];
+            const moves = getMovesToCurrent();
+            
+            for (let i = 0; i < moves.length; i++) {
+                const move = moves[i];
+                const coord = move.coord;
+                if (coord && coord.length === 2) {
+                    const x = coord.charCodeAt(0) - 97;
+                    const y = coord.charCodeAt(1) - 97;
+                    gameState.push({
+                        col: x,
+                        row: y,
+                        player: move.color === 'black' ? 'B' : 'W',
+                        isPass: false
+                    });
+                }
+            }
+            
+            // 如果是试下模式，追加试下着法
+            if (state.trialMode) {
+                for (let i = 0; i < trialIndex; i++) {
+                    const m = state.trialMoves[i];
+                    gameState.push({
+                        col: m.x,
+                        row: m.y,
+                        player: m.color === 'black' ? 'B' : 'W',
+                        isPass: false
+                    });
+                }
+            }
+            
+            return gameState;
+        }
+        
+        // 动态加载分享库（微信环境下）
+        if (isWechatBrowser()) {
+            const shareScript = document.createElement('script');
+            shareScript.src = 'https://weiqi-dev.github.io/weiqi-assets/js/share.js';
+            shareScript.onload = function() {
+                // 修改下载按钮为分享图标
+                const downloadBtn = document.getElementById('downloadBtn');
+                if (downloadBtn) {
+                    downloadBtn.innerHTML = '<svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;"><circle cx="18" cy="6" r="3" fill="currentColor" stroke="none"/><circle cx="6" cy="12" r="3" fill="currentColor" stroke="none"/><circle cx="18" cy="18" r="3" fill="currentColor" stroke="none"/><path d="M15.5 7.5l-6 3"/><path d="M15.5 16.5l-6-3"/></svg>';
+                    downloadBtn.title = '分享二维码';
+                }
+            };
+            shareScript.onerror = function() {
+                console.error('Share lib load failed');
+            };
+            document.head.appendChild(shareScript);
+        }
+        
         function downloadSGF() {
             let sgf = '(;GM[1]FF[4]SZ[' + BOARD_SIZE + ']';
             sgf += 'PB[' + (tree.properties.PB || '黑棋') + ']';
@@ -1224,17 +1306,20 @@
             
             sgf += ')';
             
-            // 微信浏览器：复制到剪贴板
+            // 微信浏览器：显示二维码分享
+            if (isWechatBrowser() && typeof WeiqiShare !== 'undefined') {
+                const gameState = convertToGameState();
+                const qrContainer = document.getElementById('qrcode');
+                WeiqiShare.generateQR(qrContainer, gameState)
+                    .then(() => {
+                        document.getElementById('qrModal').classList.add('show');
+                    })
+                    .catch(err => showStatus(err.message));
+                return;
+            }
+            // 微信浏览器但库未加载：提示
             if (isWechatBrowser()) {
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(sgf).then(function() {
-                        showStatus('SGF已复制到剪贴板');
-                    }).catch(function() {
-                        showStatus('复制失败，请手动复制');
-                    });
-                } else {
-                    showStatus('浏览器不支持复制功能');
-                }
+                showStatus('分享库加载中，请稍候');
                 return;
             }
             
