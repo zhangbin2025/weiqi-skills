@@ -86,9 +86,45 @@ def fetch_url(url, timeout=30):
 def parse_shoutan_basic(html, name):
     """
     解析手谈等级分基础信息（支持多同名选手）
-    提取表格中的选手数据
+    提取表格中的选手数据或直接返回的XML数据
     """
     players = []
+    
+    # 检查是否是直接返回单个选手数据的页面（通过 DataTxt 变量）
+    datatxt_match = re.search(r'var DataTxt = [\'"](<PkList>.*?</PkList>)[\'"];', html, re.DOTALL)
+    if datatxt_match:
+        # 单个选手 - 解析 DataTxt XML 数据
+        xml_content = datatxt_match.group(1)
+        # 解析 <Xs 编号="..." 姓名="..." ... /> 属性
+        xs_pattern = r'<Xs\s+([^>]+)/>'
+        xs_matches = re.findall(xs_pattern, xml_content)
+        
+        # 从 RediTxt 提取 Yh
+        yh = ""
+        reditxt_match = re.search(r'var RediTxt = [\'"]<Redi[^>]*Yh="(\d+)"[^>]*/>[\'"];', html)
+        if reditxt_match:
+            yh = reditxt_match.group(1)
+        
+        for xs_attrs in xs_matches:
+            # 解析属性
+            attrs = {}
+            attr_pattern = r'(\w+)=[\'"]([^\'"]*)[\'"]'
+            for key, value in re.findall(attr_pattern, xs_attrs):
+                attrs[key] = value
+            
+            if attrs.get('姓名'):
+                player = {
+                    "姓名": attrs.get('姓名', ''),
+                    "地区": attrs.get('地区', attrs.get('省份', '未知')),
+                    "称谓": attrs.get('称谓', ''),
+                    "等级分": attrs.get('等级分', ''),
+                    "全国排名": attrs.get('全国排名', ''),
+                    "对局次数": attrs.get('对局次数', ''),
+                    "Yh": yh,
+                    "编号": attrs.get('编号', '')
+                }
+                players.append(player)
+        return players
     
     # 检查是否有多个选手（通过"请确认您要查看的选手"判断）
     if '请确认您要查看的选手' in html or 'onclick="ChooseQy' in html:
@@ -124,7 +160,7 @@ def parse_shoutan_basic(html, name):
             }
             players.append(player)
     else:
-        # 单个选手 - 解析详情页
+        # 单个选手 - 解析详情页（旧格式）
         # 尝试提取基本信息
         if '未找到任何记录' in html or '找不到符合条件的数据' in html:
             return []
