@@ -1,22 +1,22 @@
 ---
 name: 围棋定式数据库
-description: weiqi-joseki v2.0.0 围棋定式数据库 - 基于KataGo棋谱构建。重构版采用多级时序连通性过滤，性能大幅提升。模块化设计，数据完全本地存储。
+description: weiqi-joseki v2.1.1 围棋定式数据库 - 基于KataGo棋谱构建。重构版采用多级时序连通性过滤，性能大幅提升。模块化设计，数据完全本地存储。
 tags: ["围棋", "weiqi", "go", "定式", "joseki", "SGF", "KataGo"]
 ---
 
-# 围棋定式数据库 v2.0.0
+# 围棋定式数据库 v2.1.1
 
 基于KataGo Archive棋谱构建的围棋定式数据库。采用模块化架构设计，数据完全本地存储，支持从大量棋谱中自动提取高频定式。
 
 **核心理念**: 从实战中学习的定式库，收录AI对局中出现频率最高的定式变化。
 
-**v2.0.0 重大更新**: 重构提取算法，引入时序连通性分析和多级回退策略，性能大幅提升，接口大幅精简。
+**v2.1.1 重大更新**: 重构提取算法，引入时序连通性分析和多级回退策略，性能大幅提升，接口大幅精简。
 
-## v2.0.0 重构亮点
+## v2.1.1 重构亮点
 
 ### 🚀 性能优化
 
-| 指标 | v1.x | v2.0.0 | 提升 |
+| 指标 | v1.x | v2.1.1 | 提升 |
 |-----|------|--------|-----|
 | 定式提取速度 | 基准 | **+40%** | 算法简化，减少重复计算 |
 | 内存占用 | 基准 | **-30%** | 移除冗余数据结构 |
@@ -62,7 +62,7 @@ tags: ["围棋", "weiqi", "go", "定式", "joseki", "SGF", "KataGo"]
 - ❌ `compare` - 对比接口（使用频率低）
 - ❌ `search` - 搜索接口（被list --sort替代）
 
-**v2.0.0 保留接口（7个核心命令）：**
+**v2.1.1 保留接口（7个核心命令）：**
 - ✅ `init` - 初始化数据库
 - ✅ `katago` - 从KataGo构建定式库
 - ✅ `list` - 列示定式（支持排序）
@@ -78,7 +78,7 @@ from weiqi_joseki import JosekiMatcher, JosekiImporter, JosekiExporter
 matcher = JosekiMatcher(db)
 results = matcher.match(sgf, direction="both", threshold=0.8)
 
-# v2.0.0 - 简洁
+# v2.1.1 - 简洁
 from weiqi_joseki.src.discover import discover_joseki
 results = discover_joseki(sgf, joseki_list)
 ```
@@ -497,7 +497,7 @@ python3 -m src.cli.commands katago --mode auto --force-rebuild
 
 ## 核心算法
 
-### 时序连通性分析（Temporal Connectivity）v2.0.0
+### 时序连通性分析（Temporal Connectivity）v2.1.1
 
 从棋谱中提取定式的核心算法，替代传统的局面连通块分析：
 
@@ -511,7 +511,7 @@ python3 -m src.cli.commands katago --mode auto --force-rebuild
 
 **优势对比：**
 
-| 特性 | 局面连通块 (v1.x) | 时序连通性 (v2.0.0) |
+| 特性 | 局面连通块 (v1.x) | 时序连通性 (v2.1.1) |
 |-----|------------------|-------------------|
 | 关注点 | 最终谁连通 | 行棋是否连续 |
 | 脱先处理 | 混在一起 | 正确剔除 |
@@ -557,7 +557,7 @@ Count-Min Sketch算法估算前缀出现频率：
 
 ## Python API
 
-### v2.0.0 简化接口
+### v2.1.1 简化接口
 
 ```python
 from weiqi_joseki.src.builder import build_katago_joseki_db
@@ -604,9 +604,9 @@ for corner, moves in result.items():
 
 ### API 变化说明
 
-**v1.x → v2.0.0 迁移：**
+**v1.x → v2.1.1 迁移：**
 
-| v1.x | v2.0.0 | 说明 |
+| v1.x | v2.1.1 | 说明 |
 |-----|--------|-----|
 | `JosekiMatcher.match()` | `discover_joseki()` | 统一发现接口 |
 | `JosekiImporter.import()` | 无需导入 | 功能合并到katago构建 |
@@ -627,6 +627,18 @@ for corner, moves in result.items():
 - 无第三方依赖（纯标准库）
 
 ## 版本更新
+
+### v2.1.1 (2026-04-28) - 定式方向归一化
+**定式存储和匹配优化**
+
+**方向归一化：**
+- ✅ **标准化存储**: 定式统一归一化为角部上半区域存储
+- ✅ **对角线对称**: 以 (c+r=18) 对角线为对称轴进行镜像转换
+- ✅ **简化匹配**: TrieMatcher 和 Discoverer 改为单方向匹配，代码减少57行
+- ✅ **移除冗余去重**: Phase 3 去重逻辑不再需要，简化构建流程
+
+**测试优化：**
+- ✅ **新增--limit参数**: 自动构建支持 `--limit` 参数，限制处理的tar文件数量，便于测试
 
 ### v2.1.0 (2026-04-25) - 自动增量构建
 **新增自动增量构建模式**

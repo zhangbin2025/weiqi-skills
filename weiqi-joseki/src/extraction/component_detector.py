@@ -439,93 +439,6 @@ def extract_corner_moves_9lu(
     distance_threshold: int = 4
 ) -> List[Tuple[str, str]]:
     """
-    提取指定角的着法（9路范围，更严格）
-
-    与 extract_corner_moves 逻辑相同，但使用9路范围而非13路
-    用于当初步提取的13路着法过于分散时回退
-
-    Args:
-        moves: [(color, coord), ...] 完整着法序列
-        corner_key: 角标识 ('tl', 'tr', 'bl', 'br')
-        distance_threshold: 连通块合并距离阈值
-
-    Returns:
-        处理后的着法序列（含tt脱先标记）
-    """
-    from ..core.coords import CoordinateSystem
-
-    # 9路范围配置（更靠近角）
-    corner_config = {
-        'tl': {'col_range': (0, 8), 'row_range': (0, 8), 'origin': (0, 0)},
-        'tr': {'col_range': (10, 18), 'row_range': (0, 8), 'origin': (18, 0)},
-        'bl': {'col_range': (0, 8), 'row_range': (10, 18), 'origin': (0, 18)},
-        'br': {'col_range': (10, 18), 'row_range': (10, 18), 'origin': (18, 18)},
-    }
-
-    config = corner_config.get(corner_key)
-    if not config:
-        return []
-
-    col_min, col_max = config['col_range']
-    row_min, row_max = config['row_range']
-    origin = config['origin']
-
-    # 收集9路范围内的所有棋子位置
-    corner_positions = []
-    for color, coord in moves:
-        if coord == 'tt' or not coord or len(coord) != 2:
-            continue
-        try:
-            col, row = CoordinateSystem.sgf_to_nums(coord)
-            if col_min <= col <= col_max and row_min <= row <= row_max:
-                corner_positions.append((col, row))
-        except:
-            continue
-
-    if not corner_positions:
-        return []
-
-    # 找连通块并筛选最近的
-    components = find_connected_components(corner_positions, origin, distance_threshold)
-    valid_positions = filter_nearest_component(components)
-
-    if not valid_positions:
-        return []
-
-    # 行棋时序连通性分析：确定核心定式区域
-    core_positions, _ = _find_temporal_core(valid_positions, moves, max_distance=4)
-
-    # 重新遍历着法，只保留在核心区域内的着法
-    # 同时检测脱先（连续同色）
-    result = []
-    last_color = None
-
-    for color, coord in moves:
-        if coord == 'tt' or not coord or len(coord) != 2:
-            continue
-
-        try:
-            col, row = CoordinateSystem.sgf_to_nums(coord)
-            if (col, row) in core_positions:
-                # 检测脱先
-                if last_color == color:
-                    # 插入对方脱先标记
-                    pass_color = 'W' if color == 'B' else 'B'
-                    result.append((pass_color, 'tt'))
-                result.append((color, coord))
-                last_color = color
-        except:
-            continue
-
-    return result
-
-
-def extract_corner_moves_9lu(
-    moves: List[Tuple[str, str]],
-    corner_key: str,
-    distance_threshold: int = 4
-) -> List[Tuple[str, str]]:
-    """
     提取指定角的着法（9路范围，最终回退方案）
     
     只做局面连通性过滤（不做时序过滤）：
@@ -647,13 +560,6 @@ def extract_corner_moves(
             continue
     
     if not corner_positions:
-        return []
-    
-    # 找连通块并筛选最近的
-    components = find_connected_components(corner_positions, origin, distance_threshold)
-    valid_positions = filter_nearest_component(components)
-    
-    if not valid_positions:
         return []
     
     # 多级回退策略：13路 → 11路 → 9路

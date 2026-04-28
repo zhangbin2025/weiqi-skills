@@ -288,7 +288,13 @@ class KatagoJosekiBuilder:
                     if len(coords) < min_moves:
                         continue
                     
+                    # 检查该角9路范围内是否有棋子（转换前判断）
+                    from ..core.coords import has_stone_in_corner_9lu
+                    if not has_stone_in_corner_9lu(coords, corner):
+                        continue  # 该角9路无棋子，跳过
+                    
                     tr_coords = convert_to_top_right(coords, corner)
+                    
                     # 标准化：统一到对角线上方（靠近上边缘）
                     from ..core.coords import normalize_corner_sequence
                     std_coords, _ = normalize_corner_sequence(tr_coords)

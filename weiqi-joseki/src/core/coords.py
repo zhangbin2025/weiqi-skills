@@ -156,6 +156,36 @@ def detect_corner(moves: List[str], corner_size: int = 9) -> Optional[str]:
     return None
 
 
+def has_stone_in_corner_9lu(moves: List[str], corner_key: str) -> bool:
+    """
+    检查指定角的9路范围内是否有棋子
+    
+    Args:
+        moves: 坐标序列
+        corner_key: 角标识 ('tl', 'tr', 'bl', 'br')
+    
+    Returns:
+        True 如果该角9路范围内有棋子
+    """
+    # 9路范围配置（各角不重叠）
+    corner_9lu_ranges = {
+        'tl': (0, 8, 0, 8),    # col 0-8, row 0-8
+        'tr': (10, 18, 0, 8),  # col 10-18, row 0-8
+        'bl': (0, 8, 10, 18),  # col 0-8, row 10-18
+        'br': (10, 18, 10, 18) # col 10-18, row 10-18
+    }
+    
+    cmin, cmax, rmin, rmax = corner_9lu_ranges.get(corner_key, (0, 0, 0, 0))
+    
+    for c in moves:
+        if c and len(c) == 2 and c != 'pass' and c != 'tt':
+            col = ord(c[0]) - ord('a')
+            row = ord(c[1]) - ord('a')
+            if cmin <= col <= cmax and rmin <= row <= rmax:
+                return True
+    return False
+
+
 def convert_to_top_right(moves: List[str], source_corner: str) -> List[str]:
     """
     将定式坐标转换为右上角（视觉）的坐标

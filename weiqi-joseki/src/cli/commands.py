@@ -387,6 +387,12 @@ def cmd_discover(args):
             extracted_moves = {}
             for corner, moves in corner_moves_dict.items():
                 coords = get_move_sequence(moves)
+                
+                # 检查该角9路范围内是否有棋子（转换前判断）
+                from ..core.coords import has_stone_in_corner_9lu
+                if not has_stone_in_corner_9lu(coords, corner):
+                    continue  # 该角9路无棋子，不输出
+                
                 tr_coords = convert_to_top_right(coords, corner)
                 extracted_moves[corner] = " ".join(tr_coords)
             

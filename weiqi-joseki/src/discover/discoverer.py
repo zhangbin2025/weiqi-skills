@@ -50,7 +50,13 @@ class JosekiDiscoverer:
         if not moves or len(moves) < 2:
             return None
         
+        # 检查该角9路范围内是否有棋子（转换前判断）
+        from ..core.coords import has_stone_in_corner_9lu
+        if not has_stone_in_corner_9lu(moves, corner):
+            return None  # 该角9路无棋子，无匹配
+        
         tr_moves = convert_to_top_right(moves, corner)
+        
         # 标准化后匹配（自动处理方向）
         std_moves, _ = normalize_corner_sequence(tr_moves)
         match = self.matcher.match(std_moves, top_k=1)

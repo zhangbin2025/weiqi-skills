@@ -6,6 +6,7 @@ from .coords import (
     COORDINATE_SYSTEMS,
     detect_corner,
     convert_to_top_right,
+    has_stone_in_corner_9lu,
 )
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     'COORDINATE_SYSTEMS',
     'detect_corner',
     'convert_to_top_right',
+    'has_stone_in_corner_9lu',
 ]
