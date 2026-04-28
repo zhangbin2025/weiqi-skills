@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>棋谱解码下载</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 360px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        .icon {
+            font-size: 60px;
+            margin-bottom: 20px;
+        }
+        .title {
+            font-size: 20px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .info {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+        .btn {
+            display: inline-block;
+            padding: 14px 40px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 25px;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn:hover {
+            background: #5a6fd6;
+            transform: translateY(-2px);
+        }
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .error {
+            color: #e74c3c;
+            font-size: 14px;
+            margin-top: 15px;
+        }
+        .sgf-preview {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            text-align: left;
+            font-family: monospace;
+            font-size: 12px;
+            color: #333;
+            max-height: 150px;
+            overflow: auto;
+            word-break: break-all;
+        }
+        .copy-btn {
+            margin-top: 10px;
+            padding: 8px 20px;
+            background: #48bb78;
+            color: white;
+            border: none;
+            border-radius: 15px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">⚫⚪</div>
+        <div class="title" id="title">正在解码棋谱...</div>
+        <div class="info" id="info">请稍候，正在处理数据</div>
+        <button class="btn" id="downloadBtn" style="display:none;">下载SGF文件</button>
+        <div class="error" id="error"></div>
+        <div class="sgf-preview" id="sgfPreview" style="display:none;"></div>
+        <button class="copy-btn" id="copyBtn" style="display:none;">复制SGF内容</button>
+    </div>
+
+    <script>
+        // URL safe base64 解码
+        function decodeBase64UrlSafe(str) {
+            // 还原 URL safe 字符
+            str = str.replace(/-/g, '+').replace(/_/g, '/');
+            // 补齐 padding
+            while (str.length % 4) {
+                str += '=';
+            }
+            return atob(str);
+        }
+
+        // 解码紧凑格式
+        function decodeCompact(base64) {
+            const binary = Uint8Array.from(decodeBase64UrlSafe(base64), c => c.charCodeAt(0));
+
+            // 解析文件头
+            const magic = binary[0];
+            const version = binary[1];
+            const boardSize = binary[2];
+            const handicap = binary[3];
+
+            if (magic !== 0x57) {
+                throw new Error('无效的数据格式');
+            }
+
+            // 解析手数
+            const moves = [];
+            for (let i = 4; i < binary.length; i += 2) {
+                if (i + 1 >= binary.length) break;
+                const color = (binary[i] & 0x80) ? 'W' : 'B';
+                const x = binary[i] & 0x7F;
+                const y = binary[i + 1];
+                moves.push({ color, x, y });
+            }
+
+            return { boardSize, handicap, moves };
+        }
+
+        // 转换为SGF格式
+        function toSGF(data) {
+            const coords = 'abcdefghijklmnopqrstuvwxyz';
+            let sgf = '(;GM[1]FF[4]SZ[' + data.boardSize + ']CA[UTF-8]AP[GoRecorder]KM[0]';
+
+            for (const move of data.moves) {
+                const coord = coords[move.x] + coords[move.y];
+                sgf += ';' + move.color + '[' + coord + ']';
+            }
+
+            sgf += ')';
+            return sgf;
+        }
+
+        // 自动下载
+        function autoDownload(sgf) {
+            const blob = new Blob([sgf], { type: 'application/x-go-sgf' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            const now = new Date();
+            const dateStr = now.getFullYear().toString() +
+                           String(now.getMonth() + 1).padStart(2, '0') +
+                           String(now.getDate()).padStart(2, '0') + '_' +
+                           String(now.getHours()).padStart(2, '0') +
+                           String(now.getMinutes()).padStart(2, '0');
+            a.download = `棋谱_${dateStr}_${gameData.moves.length}手.sgf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // 复制到剪贴板
+        function copyToClipboard(text) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(function() {
+                    alert('SGF已复制到剪贴板');
+                }).catch(function() {
+                    fallbackCopy(text);
+                });
+            } else {
+                fallbackCopy(text);
+            }
+        }
+
+        function fallbackCopy(text) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-9999px';
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                alert('SGF已复制到剪贴板');
+            } catch (err) {
+                alert('复制失败，请手动复制');
+            }
+            document.body.removeChild(textArea);
+        }
+
+        // 主逻辑
+        let gameData = null;
+        let sgfContent = '';
+
+        function init() {
+            const params = new URLSearchParams(location.search);
+            const base64 = params.get('d');
+
+            if (!base64) {
+                document.getElementById('title').textContent = '参数错误';
+                document.getElementById('info').textContent = '未找到棋谱数据';
+                return;
+            }
+
+            try {
+                gameData = decodeCompact(base64);
+                sgfContent = toSGF(gameData);
+
+                document.getElementById('title').textContent = '棋谱已就绪';
+                document.getElementById('info').innerHTML = 
+                    `棋盘: ${gameData.boardSize}×${gameData.boardSize}<br>` +
+                    `手数: ${gameData.moves.length}手`;
+
+                // 显示下载按钮
+                const downloadBtn = document.getElementById('downloadBtn');
+                downloadBtn.style.display = 'inline-block';
+                downloadBtn.onclick = function() {
+                    autoDownload(sgfContent);
+                };
+
+                // 自动触发下载
+                setTimeout(function() {
+                    autoDownload(sgfContent);
+                }, 500);
+
+                // 显示SGF预览
+                const preview = document.getElementById('sgfPreview');
+                preview.style.display = 'block';
+                preview.textContent = sgfContent;
+
+                // 显示复制按钮
+                const copyBtn = document.getElementById('copyBtn');
+                copyBtn.style.display = 'inline-block';
+                copyBtn.onclick = function() {
+                    copyToClipboard(sgfContent);
+                };
+
+            } catch (err) {
+                document.getElementById('title').textContent = '解码失败';
+                document.getElementById('info').textContent = '棋谱数据可能已损坏';
+                document.getElementById('error').textContent = err.message;
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -137,6 +137,51 @@
         .toast.show {
             opacity: 1;
         }
+        /* 二维码弹窗样式 */
+        .qr-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        .qr-modal.show {
+            display: flex;
+        }
+        .qr-container {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            max-width: 280px;
+            width: 90%;
+        }
+        .qr-title {
+            font-size: 16px;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .qr-hint {
+            font-size: 13px;
+            color: #666;
+            margin-top: 15px;
+            line-height: 1.5;
+        }
+        .qr-close {
+            margin-top: 15px;
+            padding: 10px 30px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            font-size: 14px;
+            cursor: pointer;
+        }
         @media (min-width: 600px) {
             body { padding: 8px; }
             .container { max-width: 500px; padding: 20px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); min-height: auto; }
@@ -174,6 +219,16 @@
     
     <div id="toast" class="toast"></div>
 
+    <!-- 二维码弹窗 -->
+    <div id="qrModal" class="qr-modal">
+        <div class="qr-container">
+            <div class="qr-title">扫码下载棋谱</div>
+            <div id="qrcode"></div>
+            <div class="qr-hint">截图或长按二维码<br>识别后即可下载SGF文件</div>
+            <button class="qr-close" onclick="closeQRCode()">关闭</button>
+        </div>
+    </div>
+
     <script>
         const canvas = document.getElementById('board');
         const ctx = canvas.getContext('2d');
@@ -184,13 +239,106 @@
             return /MicroMessenger/i.test(navigator.userAgent);
         }
         
-        // 微信浏览器下隐藏导出按钮
+        // 微信浏览器下加载二维码功能
         if (isWechatBrowser()) {
             const exportBtn = document.getElementById('exportBtn');
             if (exportBtn) {
-                exportBtn.style.display = 'none';
+                exportBtn.innerHTML = '📱';
+                exportBtn.title = '分享二维码';
+                exportBtn.onclick = showQRCode;
             }
+            // 动态加载 qrcode.js
+            loadQRCodeLib();
         }
+
+        // 动态加载 qrcode.js
+        let qrcodeLibLoaded = false;
+        function loadQRCodeLib() {
+            if (qrcodeLibLoaded) return;
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+            script.onload = function() {
+                qrcodeLibLoaded = true;
+                console.log('QRCode library loaded');
+            };
+            script.onerror = function() {
+                showStatus('二维码库加载失败，请检查网络');
+            };
+            document.head.appendChild(script);
+        }
+
+        // 紧凑格式编码：文件头4字节 + 每手2字节
+        function encodeCompact() {
+            const moves = gameState.filter(m => !m.isPass);
+            if (moves.length === 0) return null;
+
+            // 文件头: Magic(1) + Version(1) + BoardSize(1) + Handicap(1)
+            const header = new Uint8Array([0x57, 0x01, 0x13, 0x00]);
+
+            // 手数数据: 每手2字节 (Color 1bit + X 7bit, Y 8bit)
+            const data = new Uint8Array(moves.length * 2);
+            for (let i = 0; i < moves.length; i++) {
+                const m = moves[i];
+                const color = m.player === 'W' ? 1 : 0;  // 1=白, 0=黑
+                data[i * 2] = (color << 7) | (m.col & 0x7F);  // 颜色放最高位，X坐标
+                data[i * 2 + 1] = m.row & 0xFF;  // Y坐标
+            }
+
+            // 合并
+            const compact = new Uint8Array(header.length + data.length);
+            compact.set(header);
+            compact.set(data, header.length);
+
+            // Base64编码 (URL safe)
+            const base64 = btoa(String.fromCharCode(...compact))
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+            return base64;
+        }
+
+        // 显示二维码弹窗
+        function showQRCode() {
+            if (!qrcodeLibLoaded) {
+                showStatus('二维码库加载中，请稍候');
+                return;
+            }
+
+            const base64 = encodeCompact();
+            if (!base64) {
+                showStatus('棋盘为空');
+                return;
+            }
+
+            const url = 'https://zhangbin2025.github.io/weiqi-page/tools/sgf-decode.html?d=' + base64;
+            const qrContainer = document.getElementById('qrcode');
+            qrContainer.innerHTML = '';
+
+            // 使用 QRCode.js 生成二维码
+            new QRCode(qrContainer, {
+                text: url,
+                width: 200,
+                height: 200,
+                colorDark: '#000000',
+                colorLight: '#ffffff',
+                correctLevel: QRCode.CorrectLevel.M
+            });
+
+            document.getElementById('qrModal').classList.add('show');
+        }
+
+        // 关闭二维码弹窗
+        function closeQRCode() {
+            document.getElementById('qrModal').classList.remove('show');
+            document.getElementById('qrcode').innerHTML = '';
+        }
+
+        // 点击弹窗背景关闭
+        document.getElementById('qrModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeQRCode();
+            }
+        });
         
         function getBoardSize() {
             const maxWidth = Math.min(window.innerWidth - 20, 600);
