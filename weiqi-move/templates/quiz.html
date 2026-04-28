@@ -1949,11 +1949,18 @@
             const gameState = [];
             
             // 添加题目初始位置的棋子
-            for (const stone of currentProblem.position) {
+            // position 格式: [{coord: "pd", color: "B"}, ...]
+            const position = currentProblem.position;
+            const displayMove = Math.min(currentMove, position.length);
+            
+            for (let i = 0; i < displayMove; i++) {
+                const move = position[i];
+                const x = move.coord.charCodeAt(0) - 97;
+                const y = move.coord.charCodeAt(1) - 97;
                 gameState.push({
-                    col: stone.x,
-                    row: stone.y,
-                    player: stone.color === 'black' ? 'B' : 'W',
+                    col: x,
+                    row: y,
+                    player: move.color,
                     isPass: false
                 });
             }
