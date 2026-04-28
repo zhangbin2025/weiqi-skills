@@ -86,15 +86,23 @@
             width: 44px;
             height: 44px;
             border: none;
-            border-radius: 50%;
+            border-radius: 12px;
             cursor: pointer;
-            font-size: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.2s ease;
-            background: #f0f0f0;
+            background: #f5f5f5;
             color: #333;
+        }
+        .btn svg {
+            width: 22px;
+            height: 22px;
+            stroke: currentColor;
+            stroke-width: 2;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
         }
         .btn:disabled {
             opacity: 0.3;
@@ -182,6 +190,32 @@
             font-size: 14px;
             cursor: pointer;
         }
+        /* 移动端：棋盘最大化 */
+        @media (max-width: 599px) {
+            .container {
+                padding: 0;
+            }
+            .header {
+                margin: 2px 0;
+            }
+            .header h1 {
+                font-size: 14px;
+            }
+            .board-container {
+                margin: 0;
+                padding: 0 2px;
+            }
+            #board {
+                width: calc(100vw - 4px);
+                height: calc(100vw - 4px);
+                max-width: calc(100vh - 100px);
+                max-height: calc(100vh - 100px);
+            }
+            .toolbar {
+                margin: 4px 0;
+                padding: 0 4px;
+            }
+        }
         @media (min-width: 600px) {
             body { padding: 8px; }
             .container { max-width: 500px; padding: 20px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); min-height: auto; }
@@ -204,11 +238,21 @@
         
         <div class="toolbar">
             <div class="btn-group">
-                <button class="btn btn-sm" onclick="undoMove()" title="悔棋">↩️</button>
-                <button class="btn btn-sm" onclick="passMove()" title="停一手">🙅</button>
-                <button class="btn btn-sm" onclick="clearBoard()" title="新建棋谱">📝</button>
-                <button id="exportBtn" class="btn btn-sm" onclick="exportSGF()" title="导出SGF">📤</button>
-                <button class="btn btn-sm" onclick="copySGF()" title="复制SGF到剪贴板">📄</button>
+                <button class="btn btn-sm" onclick="undoMove()" title="悔棋">
+                    <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/></svg>
+                </button>
+                <button class="btn btn-sm" onclick="passMove()" title="停一手">
+                    <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/></svg>
+                </button>
+                <button class="btn btn-sm" onclick="clearBoard()" title="清空棋盘">
+                    <svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+                <button id="exportBtn" class="btn btn-sm" onclick="exportSGF()" title="导出SGF">
+                    <svg viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M7 10l5-5 5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+                </button>
+                <button class="btn btn-sm" onclick="copySGF()" title="复制SGF">
+                    <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                </button>
             </div>
             <div class="move-display">
                 <div id="player-indicator" class="stone-indicator black"></div>
@@ -350,7 +394,7 @@
         if (isWechatBrowser()) {
             const exportBtn = document.getElementById('exportBtn');
             if (exportBtn) {
-                exportBtn.innerHTML = '📱';
+                exportBtn.innerHTML = '<svg viewBox="0 0 24 24" stroke-width="2"><circle cx="18" cy="6" r="3" fill="currentColor" stroke="none"/><circle cx="6" cy="12" r="3" fill="currentColor" stroke="none"/><circle cx="18" cy="18" r="3" fill="currentColor" stroke="none"/><path d="M15.5 7.5l-6 3"/><path d="M15.5 16.5l-6-3"/></svg>';
                 exportBtn.title = '分享二维码';
                 exportBtn.removeAttribute('onclick');
                 exportBtn.onclick = showQRCode;
