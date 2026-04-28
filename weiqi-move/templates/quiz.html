@@ -364,6 +364,13 @@
             justify-content: center;
             gap: 24px;
         }
+        /* 二维码弹窗样式 */
+        .qr-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); display: none; justify-content: center; align-items: center; z-index: 2000; }
+        .qr-modal.show { display: flex; }
+        .qr-container { background: white; padding: 20px; border-radius: 12px; text-align: center; max-width: 280px; width: 90%; }
+        .qr-title { font-size: 16px; color: #333; margin-bottom: 15px; }
+        .qr-hint { font-size: 13px; color: #666; margin-top: 15px; line-height: 1.5; }
+        .qr-close { margin-top: 15px; padding: 10px 30px; background: #667eea; color: white; border: none; border-radius: 20px; font-size: 14px; cursor: pointer; }
         
         .progress-text {
             font-size: 14px;
@@ -615,6 +622,16 @@
                 <button class="btn-text" onclick="prevProblem()" id="prevProblemBtn">上一题</button>
                 <button class="btn-text" onclick="nextProblem()" id="nextProblemBtn">下一题</button>
             </div>
+        </div>
+    </div>
+    
+    <!-- 二维码弹窗 -->
+    <div id="qrModal" class="qr-modal">
+        <div class="qr-container">
+            <div class="qr-title">扫码下载棋谱</div>
+            <div id="qrcode"></div>
+            <div class="qr-hint">截图或长按二维码<br>识别后即可下载SGF文件</div>
+            <button class="qr-close" onclick="closeQRCode()">关闭</button>
         </div>
     </div>
 
@@ -1916,6 +1933,75 @@
             return /MicroMessenger/i.test(navigator.userAgent);
         }
         
+        // 关闭二维码弹窗
+        function closeQRCode() {
+            document.getElementById('qrModal').classList.remove('show');
+            document.getElementById('qrcode').innerHTML = '';
+        }
+        
+        // 点击弹窗背景关闭
+        document.getElementById('qrModal').addEventListener('click', function(e) {
+            if (e.target === this) closeQRCode();
+        });
+        
+        // 转换当前局面为 gameState 格式
+        function convertToGameState() {
+            const gameState = [];
+            
+            // 添加题目初始位置的棋子
+            for (const stone of currentProblem.position) {
+                gameState.push({
+                    col: stone.x,
+                    row: stone.y,
+                    player: stone.color === 'black' ? 'B' : 'W',
+                    isPass: false
+                });
+            }
+            
+            // 根据当前状态添加额外的着法
+            if (currentState === STATE_VARIATION && varIndex > 0 && varMoves.length > 0) {
+                for (let i = 0; i < varIndex && i < varMoves.length; i++) {
+                    const move = varMoves[i];
+                    gameState.push({
+                        col: move.x,
+                        row: move.y,
+                        player: move.color === 'black' ? 'B' : 'W',
+                        isPass: false
+                    });
+                }
+            } else if (currentState === STATE_TRYPLAY && tryIndex > 0 && tryMoves.length > 0) {
+                for (let i = 0; i < tryIndex && i < tryMoves.length; i++) {
+                    const move = tryMoves[i];
+                    gameState.push({
+                        col: move.x,
+                        row: move.y,
+                        player: move.color === 'black' ? 'B' : 'W',
+                        isPass: false
+                    });
+                }
+            }
+            
+            return gameState;
+        }
+        
+        // 动态加载分享库（微信环境下）
+        if (isWechatBrowser()) {
+            const shareScript = document.createElement('script');
+            shareScript.src = 'https://weiqi-dev.github.io/weiqi-assets/js/share.js';
+            shareScript.onload = function() {
+                // 修改保存按钮为分享图标
+                const saveBtns = document.querySelectorAll('button[onclick="saveToSGF()"]');
+                saveBtns.forEach(btn => {
+                    btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;"><circle cx="18" cy="6" r="3" fill="currentColor" stroke="none"/><circle cx="6" cy="12" r="3" fill="currentColor" stroke="none"/><circle cx="18" cy="18" r="3" fill="currentColor" stroke="none"/><path d="M15.5 7.5l-6 3"/><path d="M15.5 16.5l-6-3"/></svg>';
+                    btn.title = '分享二维码';
+                });
+            };
+            shareScript.onerror = function() {
+                console.error('Share lib load failed');
+            };
+            document.head.appendChild(shareScript);
+        }
+        
         // ==================== 保存SGF功能 ====================
         function saveToSGF() {
             if (!currentProblem) return;
@@ -1981,17 +2067,20 @@
 
             sgf += ')';
 
-            // 微信浏览器：复制到剪贴板
+            // 微信浏览器：显示二维码分享
+            if (isWechatBrowser() && typeof WeiqiShare !== 'undefined') {
+                const gameState = convertToGameState();
+                const qrContainer = document.getElementById('qrcode');
+                WeiqiShare.generateQR(qrContainer, gameState)
+                    .then(() => {
+                        document.getElementById('qrModal').classList.add('show');
+                    })
+                    .catch(err => alert(err.message));
+                return;
+            }
+            // 微信浏览器但库未加载：提示
             if (isWechatBrowser()) {
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(sgf).then(function() {
-                        alert('SGF已复制到剪贴板');
-                    }).catch(function() {
-                        alert('复制失败，请手动复制');
-                    });
-                } else {
-                    alert('浏览器不支持复制功能');
-                }
+                alert('分享库加载中，请稍候');
                 return;
             }
 
