@@ -80,6 +80,8 @@ def generate_replay_html(sgf_content, game_name="测试对局"):
     output = output.replace('{{BOARD_SIZE}}', str(board_size))
     output = output.replace('{{HANDICAP_STONES}}', json.dumps(handicap_stones))
     output = output.replace('{{DOWNLOAD_FILENAME}}', 'test.sgf')
+    output = output.replace('{{MAX_MOVES}}', str(result["stats"]["max_depth"]))
+    output = output.replace('{{DEFAULT_MOVE}}', '0')  # 默认从第0手开始
     
     return output
 

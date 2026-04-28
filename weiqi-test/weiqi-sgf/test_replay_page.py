@@ -178,6 +178,10 @@ class TestSoundToggle:
         html_path = page_factory(simple_sgf)
         page.goto(f"file://{html_path}")
         
+        # 点击更多按钮展开额外控制
+        page.locator("#moreBtn").click()
+        page.wait_for_timeout(100)
+        
         sound_btn = page.locator("#soundToggleBtn")
         
         # 初始状态是开启（🔊）
@@ -204,6 +208,10 @@ class TestMoveNumbers:
         # 先前进几步
         for _ in range(3):
             page.locator("#nextBtn").click()
+        
+        # 点击更多按钮展开额外控制
+        page.locator("#moreBtn").click()
+        page.wait_for_timeout(100)
         
         canvas = page.locator("#board")
         num_btn = page.locator("#numToggleBtn")
@@ -258,6 +266,10 @@ class TestSGFDownload:
         html_path = page_factory(simple_sgf)
         page.goto(f"file://{html_path}")
         
+        # 点击更多按钮展开额外控制
+        page.locator("#moreBtn").click()
+        page.wait_for_timeout(100)
+        
         # 找到下载按钮（通过 title 或包含 💾 的按钮）
         download_btn = page.locator("button[title='下载SGF']")
         expect(download_btn).to_be_visible()
@@ -267,6 +279,10 @@ class TestSGFDownload:
         """测试下载功能可触发"""
         html_path = page_factory(simple_sgf)
         page.goto(f"file://{html_path}")
+        
+        # 点击更多按钮展开额外控制
+        page.locator("#moreBtn").click()
+        page.wait_for_timeout(100)
         
         # 设置下载监听
         with page.expect_download() as download_info:
