@@ -291,30 +291,26 @@
             }
         });
 
-        // 微信浏览器下加载分享库
-        if (typeof WeiqiShare !== 'undefined' && WeiqiShare.isWechat()) {
-            const exportBtn = document.getElementById('exportBtn');
-            if (exportBtn) {
-                exportBtn.innerHTML = '<svg viewBox="0 0 24 24" stroke-width="2"><circle cx="18" cy="6" r="3" fill="currentColor" stroke="none"/><circle cx="6" cy="12" r="3" fill="currentColor" stroke="none"/><circle cx="18" cy="18" r="3" fill="currentColor" stroke="none"/><path d="M15.5 7.5l-6 3"/><path d="M15.5 16.5l-6-3"/></svg>';
-                exportBtn.title = '分享二维码';
-                exportBtn.removeAttribute('onclick');
-                exportBtn.onclick = function() {
-                    const qrContainer = document.getElementById('qrcode');
-                    WeiqiShare.generateQR(qrContainer, gameState)
-                        .then(() => {
-                            document.getElementById('qrModal').classList.add('show');
-                        })
-                        .catch(err => showStatus(err.message));
-                };
-            }
-        }
-
         // 动态加载分享库（微信环境下）
         if (/MicroMessenger/i.test(navigator.userAgent)) {
             const shareScript = document.createElement('script');
             shareScript.src = 'https://weiqi-dev.github.io/weiqi-assets/js/share.js';
             shareScript.onload = function() {
-                // 库加载完成后的回调已在上面定义
+                // 库加载完成后，修改导出按钮为分享
+                const exportBtn = document.getElementById('exportBtn');
+                if (exportBtn) {
+                    exportBtn.innerHTML = '<svg viewBox="0 0 24 24" stroke-width="2"><circle cx="18" cy="6" r="3" fill="currentColor" stroke="none"/><circle cx="6" cy="12" r="3" fill="currentColor" stroke="none"/><circle cx="18" cy="18" r="3" fill="currentColor" stroke="none"/><path d="M15.5 7.5l-6 3"/><path d="M15.5 16.5l-6-3"/></svg>';
+                    exportBtn.title = '分享二维码';
+                    exportBtn.removeAttribute('onclick');
+                    exportBtn.onclick = function() {
+                        const qrContainer = document.getElementById('qrcode');
+                        WeiqiShare.generateQR(qrContainer, gameState)
+                            .then(() => {
+                                document.getElementById('qrModal').classList.add('show');
+                            })
+                            .catch(err => showStatus(err.message));
+                    };
+                }
             };
             shareScript.onerror = function() {
                 console.error('Share lib load failed');
