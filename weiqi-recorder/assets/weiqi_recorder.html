@@ -238,25 +238,13 @@
         function isWechatBrowser() {
             return /MicroMessenger/i.test(navigator.userAgent);
         }
-        
-        // 微信浏览器下加载二维码功能
-        if (isWechatBrowser()) {
-            const exportBtn = document.getElementById('exportBtn');
-            if (exportBtn) {
-                exportBtn.innerHTML = '📱';
-                exportBtn.title = '分享二维码';
-                exportBtn.onclick = showQRCode;
-            }
-            // 动态加载 qrcode.js
-            loadQRCodeLib();
-        }
 
         // 动态加载 qrcode.js
         let qrcodeLibLoaded = false;
         function loadQRCodeLib() {
             if (qrcodeLibLoaded) return;
             const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+            script.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
             script.onload = function() {
                 qrcodeLibLoaded = true;
                 console.log('QRCode library loaded');
@@ -297,6 +285,9 @@
             return base64;
         }
 
+        // 解码页面地址配置（可自定义）
+        const QR_DECODE_URL = 'https://weiqi-dev.github.io/sgf-decode/';
+
         // 显示二维码弹窗
         function showQRCode() {
             if (!qrcodeLibLoaded) {
@@ -310,18 +301,33 @@
                 return;
             }
 
-            const url = 'https://zhangbin2025.github.io/weiqi-page/tools/sgf-decode.html?d=' + base64;
+            const url = QR_DECODE_URL + '?d=' + base64;
             const qrContainer = document.getElementById('qrcode');
             qrContainer.innerHTML = '';
 
-            // 使用 QRCode.js 生成二维码
-            new QRCode(qrContainer, {
+            // 使用 QRCode.js 生成二维码，生成完成后转为 img
+            const qrObj = new QRCode(qrContainer, {
                 text: url,
                 width: 200,
                 height: 200,
                 colorDark: '#000000',
                 colorLight: '#ffffff',
                 correctLevel: QRCode.CorrectLevel.M
+            });
+
+            // 将 canvas 转换为 img，支持微信长按识别
+            // QRCode.js 生成是同步的，但用 requestAnimationFrame 确保 DOM 更新
+            requestAnimationFrame(function() {
+                const canvas = qrContainer.querySelector('canvas');
+                if (canvas) {
+                    const img = document.createElement('img');
+                    img.src = canvas.toDataURL('image/png');
+                    img.style.width = '200px';
+                    img.style.height = '200px';
+                    img.alt = '扫码下载棋谱';
+                    qrContainer.innerHTML = '';
+                    qrContainer.appendChild(img);
+                }
             });
 
             document.getElementById('qrModal').classList.add('show');
@@ -339,7 +345,22 @@
                 closeQRCode();
             }
         });
-        
+
+        // 微信浏览器下加载二维码功能（在函数定义之后执行）
+        if (isWechatBrowser()) {
+            const exportBtn = document.getElementById('exportBtn');
+            if (exportBtn) {
+                exportBtn.innerHTML = '📱';
+                exportBtn.title = '分享二维码';
+                exportBtn.removeAttribute('onclick');
+                exportBtn.onclick = showQRCode;
+            }
+            // 延迟加载 qrcode.js，确保页面功能先初始化
+            setTimeout(function() {
+                loadQRCodeLib();
+            }, 100);
+        }
+
         function getBoardSize() {
             const maxWidth = Math.min(window.innerWidth - 20, 600);
             const maxHeight = window.innerHeight - 180;
@@ -1262,6 +1283,5 @@
         
         init();
     </script>
-</div>
 </body>
 </html>
