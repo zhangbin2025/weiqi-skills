@@ -822,7 +822,7 @@ def main():
     parser = argparse.ArgumentParser(description='云比赛网数据查询工具')
     parser.add_argument('--event-id', '-e', type=int, help='比赛ID')
     parser.add_argument('--group-id', '-g', type=int, help='分组ID')
-    parser.add_argument('--area', '-a', default='广东省', help='地区（默认：广东省）')
+    parser.add_argument('--area', '-a', default='', help='地区（默认：全国）')
     parser.add_argument('--month', '-m', type=int, default=1, help='最近多少个月（默认：1）')
     parser.add_argument('--keyword', '-k', help='关键词过滤（在标题/城市中搜索）')
     parser.add_argument('--page-size', '-p', type=int, default=100, help='每页数量（默认：100，最大200）')
