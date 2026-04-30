@@ -156,6 +156,36 @@ def detect_corner(moves: List[str], corner_size: int = 9) -> Optional[str]:
     return None
 
 
+def has_stone_in_corner_9lu(moves: List[str], corner_key: str) -> bool:
+    """
+    检查指定角的9路范围内是否有棋子
+    
+    Args:
+        moves: 坐标序列
+        corner_key: 角标识 ('tl', 'tr', 'bl', 'br')
+    
+    Returns:
+        True 如果该角9路范围内有棋子
+    """
+    # 9路范围配置（各角不重叠）
+    corner_9lu_ranges = {
+        'tl': (0, 8, 0, 8),    # col 0-8, row 0-8
+        'tr': (10, 18, 0, 8),  # col 10-18, row 0-8
+        'bl': (0, 8, 10, 18),  # col 0-8, row 10-18
+        'br': (10, 18, 10, 18) # col 10-18, row 10-18
+    }
+    
+    cmin, cmax, rmin, rmax = corner_9lu_ranges.get(corner_key, (0, 0, 0, 0))
+    
+    for c in moves:
+        if c and len(c) == 2 and c != 'pass' and c != 'tt':
+            col = ord(c[0]) - ord('a')
+            row = ord(c[1]) - ord('a')
+            if cmin <= col <= cmax and rmin <= row <= rmax:
+                return True
+    return False
+
+
 def convert_to_top_right(moves: List[str], source_corner: str) -> List[str]:
     """
     将定式坐标转换为右上角（视觉）的坐标
@@ -199,3 +229,43 @@ def convert_to_top_right(moves: List[str], source_corner: str) -> List[str]:
             converted.append(coord)
     
     return converted
+
+
+def normalize_corner_sequence(moves: List[str]) -> Tuple[List[str], bool]:
+    """
+    将ruld方向的着法序列标准化到对角线上方（靠近上边缘）
+    
+    以过右上角顶点的对角线(c+r=18)为对称轴：
+    - c + r == 18: 着法在对角线上
+    - c + r < 18:  上半部分（靠近上边缘），已是标准方向
+    - c + r > 18:  下半部分（靠近左边缘），需要翻转
+    
+    Args:
+        moves: ruld方向的SGF坐标列表
+        
+    Returns:
+        (标准化后的着法序列, 是否被翻转)
+    """
+    for sgf in moves:
+        if not sgf or sgf == 'pass' or sgf == 'tt' or len(sgf) != 2:
+            continue
+            
+        c = ord(sgf[0]) - ord('a')  # 全局列 0-18
+        r = ord(sgf[1]) - ord('a')  # 全局行 0-18
+        
+        coord_sum = c + r
+        
+        if coord_sum == 18:
+            continue  # 在对角线上，继续判断下一个着法
+        
+        if coord_sum < 18:
+            # 上半部分（靠近上边缘），已是标准方向
+            return moves, False
+        else:
+            # 下半部分（靠近左边缘），需要翻转
+            # 翻转操作: (c, r) -> (18-r, 18-c)
+            from ..builder import convert_to_rudl
+            return convert_to_rudl(moves), True
+    
+    # 所有着法都在对角线上，无需处理
+    return moves, False

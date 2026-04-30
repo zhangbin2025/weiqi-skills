@@ -288,23 +288,30 @@ class KatagoJosekiBuilder:
                     if len(coords) < min_moves:
                         continue
                     
-                    tr_coords = convert_to_top_right(coords, corner)
-                    ruld = " ".join(tr_coords)
-                    rudl = " ".join(convert_to_rudl(tr_coords))
+                    # 检查该角9路范围内是否有棋子（转换前判断）
+                    from ..core.coords import has_stone_in_corner_9lu
+                    if not has_stone_in_corner_9lu(coords, corner):
+                        continue  # 该角9路无棋子，跳过
                     
-                    for direction, seq in [('ruld', ruld), ('rudl', rudl)]:
-                        if seq in seen_sequences:
-                            continue
-                        seen_sequences.add(seq)
-                        
-                        temp_f_out.write(f"{direction}|{seq}\n")
-                        joseki_count += 1
-                        
-                        seq_parts = seq.split()
-                        for end in range(min_moves, len(seq_parts) + 1):
-                            prefix = " ".join(seq_parts[:end])
-                            cms.update(prefix)
-                            prefix_count += 1
+                    tr_coords = convert_to_top_right(coords, corner)
+                    
+                    # 标准化：统一到对角线上方（靠近上边缘）
+                    from ..core.coords import normalize_corner_sequence
+                    std_coords, _ = normalize_corner_sequence(tr_coords)
+                    seq = " ".join(std_coords)
+                    
+                    if seq in seen_sequences:
+                        continue
+                    seen_sequences.add(seq)
+                    
+                    temp_f_out.write(f"std|{seq}\n")
+                    joseki_count += 1
+                    
+                    seq_parts = seq.split()
+                    for end in range(min_moves, len(seq_parts) + 1):
+                        prefix = " ".join(seq_parts[:end])
+                        cms.update(prefix)
+                        prefix_count += 1
                 
                 total_unique_sequences += len(seen_sequences)
                 processed += 1
@@ -424,30 +431,22 @@ class KatagoJosekiBuilder:
         if verbose:
             print(f"\n  堆中候选: {len(heap)} 个, 单链跳过: {skipped_single_chain} 个")
         
-        # Phase 3: 排序去重
+        # Phase 3: 排序（去重已不需要，因为已标准化）
         if verbose:
-            print("🔄 Phase 3: 排序去重...")
+            print("🔄 Phase 3: 排序...")
         
-        temp_list = [(item.prefix, item.count) for item in heap]
-        temp_list.sort(key=lambda x: x[0])
-        
-        discard = set()
         candidates = []
-        
-        for move_str, count in temp_list:
-            if move_str in discard:
-                continue
+        for item in heap:
+            move_str = item.prefix
             if len(move_str.split()) > max_moves:
                 continue
             candidates.append({
                 'moves': move_str.split(),
-                'count': count,
+                'count': item.count,
             })
-            rudl_str = " ".join(convert_to_rudl(move_str.split()))
-            discard.add(rudl_str)
         
         if verbose:
-            print(f"  去重前: {len(temp_list)}  去重后: {len(candidates)}")
+            print(f"  候选定式: {len(candidates)}")
         
         # Phase 4: 转换为定式格式
         total_seq = max(total_sequences, 1)

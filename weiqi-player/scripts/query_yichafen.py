@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-易查分平台围棋业余段位查询 - 浏览器会话复用优化版
+易查分平台围棋业余段位查询 - 浏览器会话复用优化版（支持 JSON 输出）
 使用 Playwright 持久化上下文实现会话复用
 
 优化效果：
@@ -13,17 +13,18 @@
 
 【单个查询】
     python3 query_yichafen.py 张三
-    python3 query_yichafen.py 李四
+    python3 query_yichafen.py 李四 --json
 
 【批量查询 - 推荐】
     python3 query_yichafen.py --batch 张三 李四 王五
-    python3 query_yichafen.py --batch 赵六 孙七
+    python3 query_yichafen.py --batch 赵六 孙七 --json
 """
 
 import sys
 import json
 import time
 import os
+import argparse
 from pathlib import Path
 from contextlib import contextmanager
 from collections import OrderedDict
@@ -73,7 +74,7 @@ class PerformanceTimer:
         return 0
     
     def format_report(self):
-        """格式化计时报告"""
+        """格式化计时报告（Markdown 格式）"""
         lines = []
         lines.append("\n" + "="*50)
         lines.append("⏱️  性能计时报告（易查分查询）")
@@ -89,6 +90,13 @@ class PerformanceTimer:
         lines.append(f"  {'总耗时':20s} : {self.get_total():>8.3f}s")
         lines.append("="*50)
         return "\n".join(lines)
+    
+    def to_dict(self):
+        """返回计时数据字典（用于 JSON）"""
+        return {
+            "steps": dict(self.timings),
+            "total": round(self.get_total(), 3)
+        }
 
 
 # 全局计时器实例
@@ -99,99 +107,99 @@ def is_browser_ready():
     """检查浏览器是否已准备好（页面已加载）"""
     if not STATE_FILE.exists():
         return False
-    try:
-        with open(STATE_FILE, 'r') as f:
-            state = json.load(f)
-        # 检查是否在有效期内
-        if time.time() - state.get('timestamp', 0) > SESSION_TIMEOUT:
-            return False
-        return state.get('ready', False)
-    except:
+    
+    # 检查状态文件是否过期
+    age = time.time() - STATE_FILE.stat().st_mtime
+    if age > SESSION_TIMEOUT:
         return False
+    
+    return True
 
 
-def save_browser_state(ready=True):
-    """保存浏览器状态"""
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(STATE_FILE, 'w') as f:
-        json.dump({
-            'ready': ready,
-            'timestamp': time.time()
-        }, f)
-
-
-def query_player_fast(name, headless=True):
+def query_player(name, headless=True):
     """
-    快速查询 - 单次查询优化版（精简流程）
+    查询单个选手的业余段位信息
     
     Args:
         name: 选手姓名
         headless: 是否无头模式
+    
+    Returns:
+        str: 页面文本内容，失败返回 None
     """
     global timer
     timer.start()
     
     with sync_playwright() as p:
+        # 启动浏览器
         with timer.step("启动浏览器"):
-            browser = p.chromium.launch(
+            browser = p.chromium.launch_persistent_context(
+                user_data_dir=str(USER_DATA_DIR),
                 headless=headless,
-                args=['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
+                args=['--no-sandbox'] if headless else []
             )
         
-        page = browser.new_page()
-        
         try:
-            # 合并步骤：直接加载页面并等待输入框
+            # 获取页面
             with timer.step("加载并查询"):
-                page.goto(BASE_URL, wait_until='networkidle')
-                # 使用更精确的选择器
-                input_box = page.locator('input[name="s_xingming"]').first
-                if input_box.count() == 0:
-                    input_box = page.locator('input[type="text"]').first
+                page = browser.pages[0] if browser.pages else browser.new_page()
+                page.goto(BASE_URL, wait_until='domcontentloaded')
+                
+                # 等待输入框
+                page.wait_for_selector('input[placeholder*="姓名"], input[type="text"]', timeout=10000)
+                
+                # 填写姓名
+                input_selector = 'input[placeholder*="姓名"], input[type="text"]'
+                input_box = page.locator(input_selector).first
                 input_box.fill(name)
                 time.sleep(0.3)
-                # 点击查询按钮（而不是按Enter）
-                button = page.locator('#yiDunSubmitBtn').first
+                
+                # 点击查询按钮
+                button_selector = 'button:has-text("查询"), .query-btn, [class*="query"]'
+                button = page.locator(button_selector).first
                 if button.count() > 0:
                     button.click()
                 else:
                     input_box.press('Enter')
-                # 等待结果出现（最多4秒）
-                for _ in range(20):  # 20 * 0.2s = 4s max
-                    time.sleep(0.2)
-                    text = page.locator('body').inner_text()
-                    # 检查是否有结果数据（姓名出现在页面中且包含段位信息）
-                    if name in text and ('段' in text or '暂无数据' in text or '未找到' in text):
-                        break
-            
-            with timer.step("提取数据"):
+                
+                # 等待结果
+                time.sleep(1.2)
+                try:
+                    page.wait_for_selector('.result-container, .info-item, table', timeout=5000)
+                except:
+                    pass
+                
+                # 获取页面文本
                 text_content = page.locator('body').inner_text()
+            
+            # 提取数据
+            with timer.step("提取数据"):
+                info = parse_player_info(text_content)
             
             return text_content
             
+        except Exception as e:
+            print(f"❌ 查询出错: {e}")
+            return None
         finally:
+            # 关闭浏览器
             with timer.step("关闭浏览器"):
                 browser.close()
 
 
-def query_player(name, headless=True):
+def parse_player_info(text):
     """
-    查询选手信息（含性能计时）- 保持兼容性的原始版本
+    解析选手信息
     
     Args:
-        name: 选手姓名
-        headless: 是否无头模式（False可看到浏览器界面，用于调试）
+        text: 页面文本内容
+    
+    Returns:
+        dict: 选手信息字典
     """
-    # 默认使用快速版本
-    return query_player_fast(name, headless)
-
-
-def parse_player_info(text):
-    """解析选手信息 - 改进版"""
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     
     info = {
-        '姓名': None,
         '段位': None,
         '等级分': None,
         '总排名': None,
@@ -282,8 +290,9 @@ def parse_player_info(text):
 
 
 def format_output(name, info, elapsed):
-    """格式化输出结果 - 单行 Markdown 格式"""
-    print(f"\n📋 **{name}** - 易查分业余段位查询\n")
+    """格式化输出结果 - Markdown 格式"""
+    output = []
+    output.append(f"\n📋 **{name}** - 易查分业余段位查询\n")
     
     parts = []
     if info.get('段位'):
@@ -300,17 +309,37 @@ def format_output(name, info, elapsed):
         parts.append(f"出生: {info['出生']}")
     
     if parts:
-        print(" | ".join(parts))
+        output.append(" | ".join(parts))
     else:
-        print("⚠️ 未查询到业余段位信息")
+        output.append("⚠️ 未查询到业余段位信息")
     
     if info.get('备注'):
-        print(f"\n备注: {info['备注']}")
+        output.append(f"\n备注: {info['备注']}")
     
-    print(f"\n⏱️ 查询耗时: {elapsed:.1f}秒\n")
-    
-    # 输出详细性能报告
-    print(timer.format_report())
+    output.append(f"\n⏱️ 查询耗时: {elapsed:.1f}秒\n")
+    output.append(timer.format_report())
+    return "\n".join(output)
+
+
+def format_json_output(name, info, elapsed):
+    """格式化输出结果 - JSON 格式"""
+    result = {
+        "found": bool(info.get('段位') or info.get('等级分')),
+        "name": name,
+        "level": info.get('段位', ''),
+        "rating": float(info.get('等级分', 0)) if info.get('等级分') else 0,
+        "total_rank": int(info.get('总排名', 0)) if info.get('总排名') else 0,
+        "province_rank": int(info.get('省区排名', 0)) if info.get('省区排名') else 0,
+        "city_rank": int(info.get('本市排名', 0)) if info.get('本市排名') else 0,
+        "gender": info.get('性别', ''),
+        "birth_year": info.get('出生', ''),
+        "province": info.get('省区', ''),
+        "city": info.get('城市', ''),
+        "notes": info.get('备注', ''),
+        "query_time": round(elapsed, 1),
+        "performance": timer.to_dict()
+    }
+    return json.dumps(result, ensure_ascii=False, indent=2)
 
 
 def query_single_player(page, name, timer):
@@ -365,7 +394,6 @@ def query_single_player(page, name, timer):
             return info
             
     except Exception as e:
-        print(f"❌ 查询 {name} 出错: {e}")
         return {'_name': name, '_error': str(e)}
 
 
@@ -384,9 +412,6 @@ def query_multiple_players(names, headless=True):
     timer.start()
     results = []
     
-    print(f"🚀 批量查询 {len(names)} 位棋手...")
-    print(f"   名单: {', '.join(names)}\n")
-    
     with sync_playwright() as p:
         # 启动浏览器（只启动一次）
         with timer.step("启动浏览器"):
@@ -401,20 +426,11 @@ def query_multiple_players(names, headless=True):
             page = browser.pages[0] if browser.pages else browser.new_page()
             page.goto(BASE_URL, wait_until='networkidle')
             page.wait_for_selector('input[placeholder*="姓名"], input[type="text"]', timeout=10000)
-            print("✅ 浏览器初始化完成\n")
         
         # 逐个查询
         for i, name in enumerate(names, 1):
-            print(f"[{i}/{len(names)}] 查询: {name}")
             info = query_single_player(page, name, timer)
             results.append(info)
-            
-            # 输出当前结果
-            if info.get('段位') or info.get('等级分'):
-                print(f"    ✅ 段位: {info.get('段位', 'N/A')}, 等级分: {info.get('等级分', 'N/A')}")
-            else:
-                print(f"    ⚠️ 未找到段位信息")
-            print()
         
         # 关闭浏览器（只关闭一次）
         with timer.step("关闭浏览器"):
@@ -423,84 +439,113 @@ def query_multiple_players(names, headless=True):
     return results
 
 
-def format_batch_output(results, total_elapsed):
-    """格式化批量查询输出 - 单行 Markdown 格式"""
-    print("\n📋 批量查询结果汇总\n")
-    
-    for info in results:
-        name = info.get('_name', '未知')
+def format_batch_output(results, total_elapsed, json_mode=False):
+    """格式化批量查询输出"""
+    if json_mode:
+        output = []
+        for info in results:
+            name = info.get('_name', '未知')
+            if info.get('_error'):
+                output.append({
+                    "found": False,
+                    "name": name,
+                    "error": info['_error']
+                })
+            else:
+                output.append({
+                    "found": bool(info.get('段位') or info.get('等级分')),
+                    "name": name,
+                    "level": info.get('段位', ''),
+                    "rating": float(info.get('等级分', 0)) if info.get('等级分') else 0,
+                    "province": info.get('省区', ''),
+                    "city": info.get('城市', ''),
+                    "notes": info.get('备注', '')
+                })
+        print(json.dumps({
+            "count": len(results),
+            "results": output,
+            "performance": timer.to_dict()
+        }, ensure_ascii=False, indent=2))
+    else:
+        output = []
+        output.append("\n📋 批量查询结果汇总\n")
         
-        if info.get('_error'):
-            print(f"• **{name}**: ❌ 查询失败 - {info['_error']}")
-            continue
+        for info in results:
+            name = info.get('_name', '未知')
+            
+            if info.get('_error'):
+                output.append(f"• **{name}**: ❌ 查询失败 - {info['_error']}")
+                continue
+            
+            parts = []
+            if info.get('段位'):
+                parts.append(f"段位: {info['段位']}")
+            if info.get('等级分'):
+                parts.append(f"等级分: {info['等级分']}")
+            if info.get('总排名'):
+                parts.append(f"总排名: {info['总排名']}")
+            if info.get('省区'):
+                parts.append(f"地区: {info['省区']}")
+            
+            if parts:
+                output.append(f"• **{name}**: {' | '.join(parts)}")
+            else:
+                output.append(f"• **{name}**: ⚠️ 未找到段位信息")
         
-        parts = []
-        if info.get('段位'):
-            parts.append(f"段位: {info['段位']}")
-        if info.get('等级分'):
-            parts.append(f"等级分: {info['等级分']}")
-        if info.get('总排名'):
-            parts.append(f"总排名: {info['总排名']}")
-        if info.get('省区'):
-            parts.append(f"地区: {info['省区']}")
-        
-        if parts:
-            print(f"• **{name}**: {' | '.join(parts)}")
-        else:
-            print(f"• **{name}**: ⚠️ 未找到段位信息")
-    
-    print(f"\n⏱️ 总耗时: {total_elapsed:.1f}秒 | 平均: {total_elapsed/len(results):.1f}秒/人\n")
-    print(timer.format_report())
+        output.append(f"\n⏱️ 总耗时: {total_elapsed:.1f}秒 | 平均: {total_elapsed/len(results):.1f}秒/人\n")
+        output.append(timer.format_report())
+        return "\n".join(output)
 
 
 def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        print("\n【单个查询】")
-        print("  python3 query_yichafen.py <姓名>")
-        print("  示例: python3 query_yichafen.py 张三")
-        print("\n【批量查询】")
-        print("  python3 query_yichafen.py --batch 姓名1 姓名2 姓名3 ...")
-        print("  示例: python3 query_yichafen.py --batch 张三 李四 王五")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description='查询易查分业余段位')
+    parser.add_argument('names', nargs='+', help='选手姓名（单个或多个）')
+    parser.add_argument('--batch', action='store_true', help='批量查询模式')
+    parser.add_argument('--json', action='store_true', help='输出 JSON 格式')
+    parser.add_argument('--visible', action='store_true', help='显示浏览器窗口（调试用）')
+    parser.add_argument('--debug', action='store_true', help='打印调试信息')
+    args = parser.parse_args()
     
-    # 检查是否有 --visible 参数（调试用）
-    headless = '--visible' not in sys.argv
+    headless = not args.visible
     
     # 批量查询模式
-    if '--batch' in sys.argv:
-        names = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
-        if len(names) < 1:
-            print("❌ 批量查询需要至少一个姓名")
-            sys.exit(1)
-        
+    if args.batch:
         start_time = time.time()
-        results = query_multiple_players(names, headless=headless)
+        results = query_multiple_players(args.names, headless=headless)
         total_elapsed = time.time() - start_time
-        format_batch_output(results, total_elapsed)
+        format_batch_output(results, total_elapsed, json_mode=args.json)
         return
     
     # 单个查询模式
-    name = sys.argv[1]
-    
+    name = args.names[0]
     start_time = time.time()
     
     # 执行查询
     result_text = query_player(name, headless=headless)
-    
     elapsed = time.time() - start_time
     
     if result_text:
         info = parse_player_info(result_text)
-        format_output(name, info, elapsed)
+        if args.json:
+            print(format_json_output(name, info, elapsed))
+        else:
+            print(format_output(name, info, elapsed))
         
         # 同时打印原始文本（调试用）
-        if '--debug' in sys.argv:
+        if args.debug:
             print("\n原始文本:")
             print("-" * 50)
             print(result_text[:1500])
     else:
-        print("❌ 查询失败，请检查网络连接或稍后重试")
+        if args.json:
+            print(json.dumps({
+                "found": False,
+                "name": name,
+                "error": "查询失败，请检查网络连接或稍后重试",
+                "performance": timer.to_dict()
+            }, ensure_ascii=False, indent=2))
+        else:
+            print("❌ 查询失败，请检查网络连接或稍后重试")
 
 
 if __name__ == "__main__":

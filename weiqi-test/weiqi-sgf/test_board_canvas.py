@@ -443,6 +443,10 @@ class TestMoveNumbersRendering:
         for _ in range(3):
             page.locator("#nextBtn").click()
         
+        # 点击更多按钮展开额外控制
+        page.locator("#moreBtn").click()
+        page.wait_for_timeout(100)
+        
         # 开启手数显示
         page.locator("#numToggleBtn").click()
         page.wait_for_timeout(100)

@@ -2,6 +2,7 @@
 name: 围棋记谱工具
 description: weiqi-recorder 围棋记谱工具 - 提供单文件网页版围棋记谱工具，支持棋盘显示、黑白轮流落子、提子、打劫规则、悔棋等功能。当用户需要"记谱工具"、"围棋记谱"、"网页记谱"或类似的围棋记录需求时使用此技能。
 tags: ["围棋", "weiqi", "go", "记谱", "棋盘", "网页工具"]
+version: 1.0.3
 ---
 
 # 围棋记谱工具
@@ -62,3 +63,36 @@ tags: ["围棋", "weiqi", "go", "记谱", "棋盘", "网页工具"]
 ## 资源文件
 
 - `assets/weiqi_recorder.html` - 记谱工具网页（单文件，可直接在浏览器打开）
+
+## 外部服务
+
+- **分享库**: https://weiqi-dev.github.io/weiqi-assets/js/share.js
+  - 提供二维码生成、棋谱编码解码功能
+  - 源码: https://github.com/weiqi-dev/weiqi-assets
+
+- **解码页面**: https://weiqi-dev.github.io/weiqi-assets/share/
+  - 扫码后自动下载 SGF
+  - 依赖 share.js 的解码功能
+
+## 更新日志
+
+### v1.0.3 (2026-04-28)
+- 重构二维码分享功能
+  - 抽取核心代码到 weiqi-assets 项目，通过 `share.js` 复用
+  - weiqi-recorder 只负责调用，不再内置编解码逻辑
+  - 解码页面迁移至 `weiqi-assets/share/`
+
+### v1.0.2 (2026-04-28)
+- 新增二维码分享功能：微信浏览器环境下，通过二维码分享棋谱
+  - 使用 CDN 加载 qrcode.js，不影响离线使用
+  - 紧凑二进制格式编码，300手棋谱轻松容纳
+  - 配套解码页面自动下载 SGF
+
+### v1.0.1 (2026-04-28)
+- UI优化：统一按钮样式和图标风格
+- 新增二维码分享棋谱设计方案（见 `docs/qrcode-sharing-design.md`）
+
+### v1.0.0
+- 基础功能：棋盘显示、轮流落子、提子、打劫规则、悔棋
+- 音效系统：Web Audio API 落子音效
+- 响应式设计：支持移动端触摸操作

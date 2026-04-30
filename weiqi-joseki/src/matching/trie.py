@@ -22,8 +22,7 @@ class TrieMatcher:
     """Trie树匹配器 - 支持ruld和rudl两个方向"""
     
     def __init__(self):
-        self._trie: Dict = {}      # ruld方向前缀树
-        self._trie_rudl: Dict = {} # rudl方向前缀树
+        self._trie: Dict = {}      # 标准化方向前缀树
         self._joseki_map: Dict[str, dict] = {}  # id -> 定式数据
     
     def build(self, joseki_list: List[dict]):
@@ -34,7 +33,6 @@ class TrieMatcher:
             joseki_list: 定式列表，每个定式包含 id, name, moves
         """
         self._trie = {}
-        self._trie_rudl = {}
         self._joseki_map = {}
         
         for j in joseki_list:
@@ -47,12 +45,8 @@ class TrieMatcher:
             if not moves:
                 continue
             
-            # ruld方向入树
+            # 直接入树（定式已标准化）
             self._add_to_trie(self._trie, moves, joseki_id)
-            
-            # rudl方向入树
-            rudl_moves = self._convert_to_rudl(moves)
-            self._add_to_trie(self._trie_rudl, rudl_moves, joseki_id)
     
     def _add_to_trie(self, trie: dict, moves: List[str], joseki_id: str):
         """将定式着法序列加入前缀树"""
@@ -68,32 +62,20 @@ class TrieMatcher:
         匹配着法序列，返回最佳匹配的定式
         
         Args:
-            moves: 着法序列
+            moves: 着法序列（ruld方向，将被标准化）
             top_k: 返回结果数量上限
         
         Returns:
             匹配结果列表，按 prefix_len 降序，相同按 total_moves 升序
         """
-        # 在ruld方向匹配
-        ruld_results = self._match_direction(self._trie, moves, "ruld")
-        
-        # 在rudl方向匹配
-        rudl_moves = self._convert_to_rudl(moves)
-        rudl_results = self._match_direction(self._trie_rudl, rudl_moves, "rudl")
-        
-        # 合并结果
-        all_results = ruld_results + rudl_results
-        
-        # 按 id 和 direction 去重，保留 prefix_len 最大的
-        seen = {}
-        for prefix_len, joseki_id, total_moves, direction in all_results:
-            key = (joseki_id, direction)
-            if key not in seen or seen[key][0] < prefix_len:
-                seen[key] = (prefix_len, total_moves, direction)
+        # 标准化后匹配
+        from ..core.coords import normalize_corner_sequence
+        std_moves, _ = normalize_corner_sequence(moves)
+        all_results = self._match_direction(self._trie, std_moves, "std")
         
         # 构建结果对象
         results = []
-        for (joseki_id, direction), (prefix_len, total_moves, _) in seen.items():
+        for prefix_len, joseki_id, total_moves, direction in all_results:
             joseki = self._joseki_map.get(joseki_id, {})
             results.append(PrefixMatchResult(
                 id=joseki_id,
@@ -136,40 +118,6 @@ class TrieMatcher:
             results.append((match_len, joseki_id, total_moves, direction))
         
         return results
-    
-    @staticmethod
-    def _convert_to_rudl(moves: List[str]) -> List[str]:
-        """
-        将ruld方向的着法序列转换为rudl方向
-        
-        转换原理:
-        ruld: 右上(左→下) - 原点是sa(18,0)
-        rudl: 右上(下→左) - 原点是ss(18,18)
-        
-        对于19路棋盘:
-        - ruld局部坐标(x,y) → SGF: chr(ord('a') + (18-x)) + chr(ord('a') + y)
-        - rudl局部坐标(x,y) → SGF: chr(ord('a') + (18-y)) + chr(ord('a') + (18-x))
-        
-        因此转换: (x,y) → (y,x) 然后取反
-        """
-        rudl_moves = []
-        for sgf in moves:
-            if not sgf or sgf == 'pass' or sgf == 'tt':
-                rudl_moves.append(sgf)
-            else:
-                # ruld SGF坐标 → 局部坐标
-                c = ord(sgf[0]) - ord('a')  # 0-18, ruld中18是左边界
-                r = ord(sgf[1]) - ord('a')  # 0-18, ruld中0是上边界
-                # ruld局部坐标: x = 18-c, y = r
-                x = 18 - c
-                y = r
-                # rudl局部坐标: x' = y, y' = x
-                # rudl SGF: col = 18-y', row = 18-x'
-                new_col = 18 - y
-                new_row = 18 - x
-                new_sgf = chr(ord('a') + new_col) + chr(ord('a') + new_row)
-                rudl_moves.append(new_sgf)
-        return rudl_moves
     
     def export_tree(self, prefix: List[str] = None, main_branch: List[str] = None, limit: int = 100) -> str:
         """导出树状SGF"""

@@ -32,7 +32,7 @@ def load_template():
         return f.read()
 
 
-def generate_html(tree, game_info, output_path, input_base_name='棋谱', start_move=0):
+def generate_html(tree, game_info, output_path, input_base_name='棋谱', start_move=0, max_moves=0):
     """生成HTML打谱网页"""
     
     # 加载模板
@@ -78,6 +78,7 @@ def generate_html(tree, game_info, output_path, input_base_name='棋谱', start_
     html_content = html_content.replace('{{WHITE_NAME}}', white_name + (' ' + white_rank if white_rank else ''))
     html_content = html_content.replace('{{DOWNLOAD_FILENAME}}', html.escape(input_base_name) + '.sgf')
     html_content = html_content.replace('{{DEFAULT_MOVE}}', str(start_move))
+    html_content = html_content.replace('{{MAX_MOVES}}', str(max_moves))
     
     # 写入文件
     with open(output_path, 'w', encoding='utf-8') as f:
@@ -199,7 +200,7 @@ def main():
     input_base_name = os.path.splitext(os.path.basename(input_file))[0]
 
     # 生成HTML
-    generate_html(tree, game_info, output_path, input_base_name, start_move)
+    generate_html(tree, game_info, output_path, input_base_name, start_move, stats['max_depth'])
     
     if start_move > 0:
         print(f"   默认跳转: 第 {start_move} 手")

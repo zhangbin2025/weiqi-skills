@@ -237,6 +237,10 @@ class TestBackToParent:
         page.locator("#backToParentBtn").click()
         page.wait_for_timeout(100)
         
+        # 点击更多按钮展开额外控制
+        page.locator("#moreBtn").click()
+        page.wait_for_timeout(100)
+        
         # 手数和音效按钮应该恢复
         num_btn = page.locator("#numToggleBtn")
         sound_btn = page.locator("#soundToggleBtn")

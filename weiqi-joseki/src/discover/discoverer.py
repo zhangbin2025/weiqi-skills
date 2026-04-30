@@ -8,9 +8,8 @@ from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 
 from ..extraction import extract_moves_all_corners, get_move_sequence
-from ..core.coords import convert_to_top_right
+from ..core.coords import convert_to_top_right, normalize_corner_sequence
 from ..matching import TrieMatcher, PrefixMatchResult
-from ..builder import convert_to_rudl
 
 
 @dataclass
@@ -51,28 +50,22 @@ class JosekiDiscoverer:
         if not moves or len(moves) < 2:
             return None
         
+        # 检查该角9路范围内是否有棋子（转换前判断）
+        from ..core.coords import has_stone_in_corner_9lu
+        if not has_stone_in_corner_9lu(moves, corner):
+            return None  # 该角9路无棋子，无匹配
+        
         tr_moves = convert_to_top_right(moves, corner)
         
-        # 尝试ruld方向
-        ruld_match = self.matcher.match(tr_moves, top_k=1)
-        ruld_len = ruld_match[0].prefix_len if ruld_match else 0
-        
-        # 尝试rudl方向
-        rudl_moves = convert_to_rudl(tr_moves)
-        rudl_match = self.matcher.match(rudl_moves, top_k=1)
-        rudl_len = rudl_match[0].prefix_len if rudl_match else 0
-        
-        # 取匹配最长的
-        if ruld_len >= rudl_len and ruld_len > 0:
-            matched_moves = tr_moves
-            prefix_len = ruld_len
-            joseki_id = ruld_match[0].id
-        elif rudl_len > 0:
-            matched_moves = rudl_moves
-            prefix_len = rudl_len
-            joseki_id = rudl_match[0].id
-        else:
+        # 标准化后匹配（自动处理方向）
+        std_moves, _ = normalize_corner_sequence(tr_moves)
+        match = self.matcher.match(std_moves, top_k=1)
+        if not match:
             return None
+        
+        matched_moves = std_moves
+        prefix_len = match[0].prefix_len
+        joseki_id = match[0].id
         
         # 生成 tree SGF
         prefix = matched_moves[:prefix_len]

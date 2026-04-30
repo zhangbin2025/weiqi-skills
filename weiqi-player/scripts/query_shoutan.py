@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 """
-手谈等级分查询 - 性能计时版（修复多同名选手问题）
+手谈等级分查询 - 性能计时版（支持 JSON 输出）
 查询围棋选手的手谈等级分、排名等信息
 支持显示多个同名选手
 
 使用方法:
     python3 query_shoutan.py 张三
-    python3 query_shoutan.py 李四
+    python3 query_shoutan.py 李四 --json
     python3 query_shoutan.py 王五
 """
 
 import sys
 import base64
+import json
 import time
+import argparse
 import requests
 from contextlib import contextmanager
 from collections import OrderedDict
 
 import re
-
-
-
 
 
 # ===== 性能计时工具 =====
@@ -52,7 +51,7 @@ class PerformanceTimer:
         return 0
     
     def format_report(self):
-        """格式化计时报告"""
+        """格式化计时报告（Markdown 格式）"""
         lines = []
         lines.append("\n" + "="*50)
         lines.append("⏱️  性能计时报告（手谈查询）")
@@ -68,6 +67,13 @@ class PerformanceTimer:
         lines.append(f"  {'总耗时':20s} : {self.get_total():>8.3f}s")
         lines.append("="*50)
         return "\n".join(lines)
+    
+    def to_dict(self):
+        """返回计时数据字典（用于 JSON）"""
+        return {
+            "steps": dict(self.timings),
+            "total": round(self.get_total(), 3)
+        }
 
 
 def fetch_url(url, timeout=30):
@@ -79,90 +85,126 @@ def fetch_url(url, timeout=30):
 
 def parse_shoutan_basic(html, name):
     """
-    解析手谈基本信息HTML
-    支持多个同名选手
+    解析手谈等级分基础信息（支持多同名选手）
+    提取表格中的选手数据或直接返回的XML数据
     """
     players = []
     
-    # 从DataTxt提取所有选手信息
-    data_match = re.search(r'DataTxt = \'([^\']+)\'', html)
-    if data_match:
-        data_content = data_match.group(1)
-        # 查找所有Xs标签（在<PkList>内）
-        xs_matches = re.findall(r'<Xs ([^>]+)/>', data_content)
+    # 检查是否是直接返回单个选手数据的页面（通过 DataTxt 变量）
+    datatxt_match = re.search(r'var DataTxt = [\'"](<PkList>.*?</PkList>)[\'"];', html, re.DOTALL)
+    if datatxt_match:
+        # 单个选手 - 解析 DataTxt XML 数据
+        xml_content = datatxt_match.group(1)
+        # 解析 <Xs 编号="..." 姓名="..." ... /> 属性
+        xs_pattern = r'<Xs\s+([^>]+)/>'
+        xs_matches = re.findall(xs_pattern, xml_content)
+        
+        # 从 RediTxt 提取 Yh
+        yh = ""
+        reditxt_match = re.search(r'var RediTxt = [\'"]<Redi[^>]*Yh="(\d+)"[^>]*/>[\'"];', html)
+        if reditxt_match:
+            yh = reditxt_match.group(1)
         
         for xs_attrs in xs_matches:
-            info = {
-                '姓名': name,
-                '编号': None,
-                'Yh': None,
-                '等级分': None,
-                '省份': None,
-                '地区': None,
-                '对局次数': None,
-                '参赛次数': None,
-                '注册日期': None,
-                '注册等级分': None,
-                '全国排名': None,
-                '省份排名': None,
-                '地区排名': None,
-                '称谓': None,
-            }
+            # 解析属性
+            attrs = {}
+            attr_pattern = r'(\w+)=[\'"]([^\'"]*)[\'"]'
+            for key, value in re.findall(attr_pattern, xs_attrs):
+                attrs[key] = value
             
-            # 提取各个属性
-            info['编号'] = re.search(r'编号="(\d+)"', xs_attrs).group(1) if re.search(r'编号="(\d+)"', xs_attrs) else None
-            info['等级分'] = re.search(r'等级分="([\d.]+)"', xs_attrs).group(1) if re.search(r'等级分="([\d.]+)"', xs_attrs) else None
-            info['省份'] = re.search(r'省份="([^"]+)"', xs_attrs).group(1) if re.search(r'省份="([^"]+)"', xs_attrs) else None
-            info['地区'] = re.search(r'地区="([^"]+)"', xs_attrs).group(1) if re.search(r'地区="([^"]+)"', xs_attrs) else None
-            info['对局次数'] = re.search(r'对局次数="(\d+)"', xs_attrs).group(1) if re.search(r'对局次数="(\d+)"', xs_attrs) else None
-            info['参赛次数'] = re.search(r'参赛次数="(\d+)"', xs_attrs).group(1) if re.search(r'参赛次数="(\d+)"', xs_attrs) else None
-            info['注册日期'] = re.search(r'注册日期="([^"]+)"', xs_attrs).group(1) if re.search(r'注册日期="([^"]+)"', xs_attrs) else None
-            info['注册等级分'] = re.search(r'注册等级分="([\d.]+)"', xs_attrs).group(1) if re.search(r'注册等级分="([\d.]+)"', xs_attrs) else None
-            info['全国排名'] = re.search(r'全国排名="(\d+)"', xs_attrs).group(1) if re.search(r'全国排名="(\d+)"', xs_attrs) else None
-            info['省份排名'] = re.search(r'省份排名="(\d+)"', xs_attrs).group(1) if re.search(r'省份排名="(\d+)"', xs_attrs) else None
-            info['地区排名'] = re.search(r'地区排名="(\d+)"', xs_attrs).group(1) if re.search(r'地区排名="(\d+)"', xs_attrs) else None
-            info['称谓'] = re.search(r'称谓="([^"]+)"', xs_attrs).group(1) if re.search(r'称谓="([^"]+)"', xs_attrs) else None
-            
-            players.append(info)
+            # 只要有编号就认为是有效选手
+            if attrs.get('编号'):
+                player = {
+                    "姓名": attrs.get('姓名', name),  # 如果没有姓名，使用传入的name
+                    "地区": attrs.get('地区', ''),
+                    "省份": attrs.get('省份', ''),  # 添加省份字段
+                    "称谓": attrs.get('称谓', ''),
+                    "等级分": attrs.get('等级分', ''),
+                    "全国排名": attrs.get('全国排名', ''),
+                    "对局次数": attrs.get('对局次数', ''),
+                    "参赛次数": attrs.get('参赛次数', ''),  # 添加参赛次数字段
+                    "注册日期": attrs.get('注册日期', ''),  # 添加注册日期字段
+                    "注册等级分": attrs.get('注册等级分', ''),  # 添加注册等级分字段
+                    "省份排名": attrs.get('省份排名', ''),  # 添加省份排名
+                    "地区排名": attrs.get('地区排名', ''),  # 添加地区排名
+                    "Yh": yh,
+                    "编号": attrs.get('编号', '')
+                }
+                players.append(player)
+        return players
     
-    # 从RediTxt提取Yh（所有选手共用同一个Yh）
-    redi_match = re.search(r'var RediTxt = \'<Redi[^>]+Yh="(\d+)"[^>]*/>\'', html)
-    if redi_match and players:
-        yh = redi_match.group(1)
-        for player in players:
-            player['Yh'] = yh
+    # 检查是否有多个选手（通过"请确认您要查看的选手"判断）
+    if '请确认您要查看的选手' in html or 'onclick="ChooseQy' in html:
+        # 多个选手 - 解析选择列表
+        # 匹配: <td align="center">姓名</td><td align="center">地区</td>...
+        #       <tr onclick="ChooseQy(...)">...</tr>
+        
+        # 查找所有选手行
+        pattern = r'<tr[^>]*onclick="ChooseQy\((\d+),\s*\'([^\']+)\'\)"[^>]*>.*?<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>.*?</tr>'
+        matches = re.findall(pattern, html, re.DOTALL)
+        
+        for match in matches:
+            user_id, player_id = match[0], match[1]
+            name_cell = match[2]
+            region = match[3].strip()
+            title = match[4].strip()
+            rating = match[5].strip()
+            rank = match[6].strip()
+            games = match[7].strip()
+            
+            # 提取姓名（去除HTML标签）
+            clean_name = re.sub(r'<[^>]+>', '', name_cell).strip()
+            
+            player = {
+                "姓名": clean_name,
+                "地区": region,
+                "称谓": title,
+                "等级分": rating,
+                "全国排名": rank,
+                "对局次数": games,
+                "Yh": user_id,
+                "编号": player_id
+            }
+            players.append(player)
+    else:
+        # 单个选手 - 解析详情页（旧格式）
+        # 尝试提取基本信息
+        if '未找到任何记录' in html or '找不到符合条件的数据' in html:
+            return []
+        
+        # 尝试从HTML提取选手信息（详情页格式）
+        # 查找姓名、地区等信息
+        name_match = re.search(r'姓名[:：]\s*<[^>]*>([^<]+)</td>', html)
+        region_match = re.search(r'地区[:：]\s*<[^>]*>([^<]+)</td>', html)
+        title_match = re.search(r'段位[:：]\s*<[^>]*>([^<]+)</td>', html)
+        rating_match = re.search(r'等级分[:：]\s*<[^>]*>([^<]+)</td>', html)
+        rank_match = re.search(r'全国排名[:：]\s*<[^>]*>([^<]+)</td>', html)
+        games_match = re.search(r'对局[:：]\s*<[^>]*>([^<]+)</td>', html)
+        
+        if name_match:
+            player = {
+                "姓名": name_match.group(1).strip(),
+                "地区": region_match.group(1).strip() if region_match else "未知",
+                "称谓": title_match.group(1).strip() if title_match else "",
+                "等级分": rating_match.group(1).strip() if rating_match else "",
+                "全国排名": rank_match.group(1).strip() if rank_match else "",
+                "对局次数": games_match.group(1).strip() if games_match else "",
+                "Yh": "",
+                "编号": ""
+            }
+            players.append(player)
     
     return players
 
 
-def query_shoutan_detail(player, timer):
-    """
-    查询手谈详细比赛记录
-    
-    Args:
-        player: 选手信息字典（包含编号和Yh）
-        timer: 性能计时器实例
-    """
-    base_url = "https://v.dzqzd.com/SpBody.aspx"
-    
-    # 构造详细查询
-    with timer.step(f"查询详细记录({player['姓名']}-{player['地区']})"):
-        xml = f'<Redi Ns="Sp" Jk="等级分明细" Yh="{player["Yh"]}" 选手号="{player["编号"]}"/>'
-        encoded = base64.b64encode(xml.encode('utf-8')).decode('utf-8')
-        url = f"{base_url}?r={encoded}"
-        
-        try:
-            html = fetch_url(url)
-        except Exception as e:
-            print(f"  ❌ 详细记录查询失败: {e}")
-            return None
-    
-    # 检查是否有错误
-    if '系统信息' in html or 'sysError' in html or '未将对象引用' in html:
+def get_detail_url(player, base_url="https://v.dzqzd.com/SpBody.aspx"):
+    """生成选手详细记录链接"""
+    if not player.get('Yh') or not player.get('编号'):
         return None
     
-    # 尝试解析对局记录（简化版）
-    return url  # 返回链接供用户自行查看
+    xml = f'<Redi Ns="Sp" Jk="等级分明细" Yh="{player["Yh"]}" 选手号="{player["编号"]}"/>'
+    encoded = base64.b64encode(xml.encode('utf-8')).decode('utf-8')
+    return f"{base_url}?r={encoded}"
 
 
 def query_shoutan(name, timer):
@@ -186,11 +228,10 @@ def query_shoutan(name, timer):
     
     # 步骤2: 发送HTTP请求
     with timer.step("HTTP请求"):
-        print(f"🌐 查询手谈等级分: {name}")
         try:
             html = fetch_url(url)
         except Exception as e:
-            print(f"❌ 查询失败: {e}")
+            # 网络错误时返回空列表
             return []
     
     # 步骤3: 解析HTML内容
@@ -218,51 +259,106 @@ def format_player_info_single_line(player):
 
 
 def format_output(players, timer):
-    """格式化输出结果 - 单行 Markdown 格式"""
+    """格式化输出结果 - Markdown 格式"""
     name = players[0]['姓名'] if players else '未知'
-    print(f"\n📋 **{name}** - 手谈等级分查询结果\n")
+    output = []
+    output.append(f"\n📋 **{name}** - 手谈等级分查询结果\n")
     
     if len(players) > 1:
-        print(f"⚠️ 找到 {len(players)} 位同名选手\n")
+        output.append(f"⚠️ 找到 {len(players)} 位同名选手\n")
     
     for i, player in enumerate(players, 1):
         if len(players) > 1:
-            print(f"{i}. {format_player_info_single_line(player)}")
+            output.append(f"{i}. {format_player_info_single_line(player)}")
         else:
-            print(format_player_info_single_line(player))
+            output.append(format_player_info_single_line(player))
         
         # 生成详细记录链接
-        xml_detail = f'<Redi Ns="Sp" Jk="等级分明细" Yh="{player["Yh"]}" 选手号="{player["编号"]}"/>'
-        encoded_detail = base64.b64encode(xml_detail.encode('utf-8')).decode('utf-8')
-        detail_url = f"https://v.dzqzd.com/SpBody.aspx?r={encoded_detail}"
-        display_name = player['地区']
-        print(f"   👉 [查看{display_name}详细记录]({detail_url})\n")
+        detail_url = get_detail_url(player)
+        if detail_url:
+            display_name = player['地区']
+            output.append(f"   👉 [查看{display_name}详细记录]({detail_url})\n")
     
     # 输出性能报告
-    print(timer.format_report())
+    output.append(timer.format_report())
+    return "\n".join(output)
+
+
+def format_json_output(players, timer, name):
+    """格式化输出结果 - JSON 格式"""
+    result = {
+        "found": len(players) > 0,
+        "count": len(players),
+        "name": name,
+        "players": []
+    }
+    
+    for player in players:
+        player_data = {
+            "name": player.get("姓名", ""),
+            "city": player.get("地区", ""),
+            "level": player.get("称谓", ""),
+            "rating": float(player.get("等级分", 0)) if player.get("等级分") else 0,
+            "rank": int(player.get("全国排名", 0)) if player.get("全国排名") else 0,
+            "games": int(player.get("对局次数", 0)) if player.get("对局次数") else 0,
+            "detail_url": get_detail_url(player)
+        }
+        result["players"].append(player_data)
+    
+    result["performance"] = timer.to_dict()
+    
+    return json.dumps(result, ensure_ascii=False, indent=2)
 
 
 def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        print("\n用法: python3 query_shoutan.py <姓名>")
-        print("示例: python3 query_shoutan.py 张三")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description='查询手谈等级分')
+    parser.add_argument('name', help='选手姓名')
+    parser.add_argument('--json', action='store_true', help='输出 JSON 格式')
+    args = parser.parse_args()
     
-    name = sys.argv[1]
+    name = args.name
     
     # 创建计时器并启动
     timer = PerformanceTimer()
     timer.start()
     
-    # 执行查询
-    players = query_shoutan(name, timer)
-    
-    if players:
-        format_output(players, timer)
-    else:
-        print(f"\n❌ 未找到选手 '{name}' 的信息")
-        print(timer.format_report())
+    try:
+        # 执行查询
+        players = query_shoutan(name, timer)
+        
+        if players:
+            if args.json:
+                print(format_json_output(players, timer, name))
+            else:
+                print(format_output(players, timer))
+        else:
+            if args.json:
+                result = {
+                    "found": False,
+                    "count": 0,
+                    "name": name,
+                    "players": [],
+                    "error": f"未找到选手 '{name}' 的信息",
+                    "performance": timer.to_dict()
+                }
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                print(f"\n❌ 未找到选手 '{name}' 的信息")
+                print(timer.format_report())
+    except Exception as e:
+        if args.json:
+            result = {
+                "found": False,
+                "count": 0,
+                "name": name,
+                "players": [],
+                "error": str(e),
+                "performance": timer.to_dict()
+            }
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(f"\n❌ 查询失败: {e}")
+            print(timer.format_report())
 
 
 if __name__ == "__main__":
