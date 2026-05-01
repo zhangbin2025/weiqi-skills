@@ -809,12 +809,106 @@
             osc.stop(audioCtx.currentTime + 0.3);
         }
 
-        // ==================== 数据 ====================
-        const BOARD_SIZE = 19;
-        const handicapStones = [];
-        const problems = {{PROBLEMS_JSON}};
+        // ==================== 数据加载 ====================
+        // 检查 URL 参数
+        const params = new URLSearchParams(window.location.search);
+        const dataPath = params.get('data');
+        const localKey = params.get('local');
+        
+        // Canvas 初始化
+        const canvas = document.getElementById('board');
+        const ctx = canvas ? canvas.getContext('2d') : null;
+        
+        // 数据变量
+        let BOARD_SIZE = 19;
+        let handicapStones = [];
+        let problems = [];
+        let gameData = null;
         let currentProblemIndex = 0;
-        let currentProblem = problems[0];
+        let currentProblem = null;
+        
+        // 内嵌数据模式（兼容现有方式）
+        const embeddedProblemsStr = '{{PROBLEMS_JSON}}';
+        const embeddedBoardSize = 19;
+        const embeddedHandicapStones = [];
+        
+        // 清理过期的 localStorage 数据（超过 1 小时）
+        (function cleanOldQuizData() {
+            const now = Date.now();
+            const maxAge = 60 * 60 * 1000;
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('quiz_')) {
+                    const parts = key.split('_');
+                    if (parts.length >= 2) {
+                        const timestamp = parseInt(parts[1]);
+                        if (!isNaN(timestamp) && (now - timestamp) > maxAge) {
+                            keysToRemove.push(key);
+                        }
+                    }
+                }
+            }
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+        })();
+        
+        // 初始化函数
+        function initQuiz(data) {
+            if (data) {
+                gameData = data;
+                BOARD_SIZE = data.board_size || 19;
+                handicapStones = data.handicap_stones || [];
+                problems = data.problems || [];
+            }
+            
+            if (problems.length === 0) {
+                alert('没有可用的题目');
+                return;
+            }
+            
+            currentProblem = problems[0];
+            updateProblemDisplay();
+            drawBoard();
+        }
+        
+        // 异步加载 JSON、localStorage 或使用内嵌数据
+        if (localKey) {
+            const jsonStr = localStorage.getItem(localKey);
+            if (jsonStr) {
+                try {
+                    const data = JSON.parse(jsonStr);
+                    localStorage.removeItem(localKey);
+                    initQuiz(data);
+                } catch (e) {
+                    alert('题目数据解析失败: ' + e.message);
+                }
+            } else {
+                alert('题目数据已过期或不存在');
+            }
+        } else if (dataPath) {
+            fetch(dataPath)
+                .then(response => {
+                    if (!response.ok) throw new Error('加载失败: ' + response.status);
+                    return response.json();
+                })
+                .then(data => initQuiz(data))
+                .catch(err => {
+                    alert('题目加载失败: ' + err.message);
+                });
+        } else {
+            // 内嵌数据模式
+            if (embeddedProblemsStr && embeddedProblemsStr !== '{{PROBLEMS_JSON}}') {
+                try {
+                    problems = JSON.parse(embeddedProblemsStr);
+                    currentProblem = problems[0];
+                } catch (e) {
+                    console.warn('解析内嵌数据失败:', e);
+                }
+            }
+            BOARD_SIZE = embeddedBoardSize;
+            handicapStones = embeddedHandicapStones;
+            initQuiz(null);
+        }
         
         // 变化图提示状态
         const VARIATION_HINT_KEY = 'weiqi_move_variation_hint_seen';

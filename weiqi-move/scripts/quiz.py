@@ -399,6 +399,125 @@ def extract_problems(moves: List[Dict], variations: Dict, format_type: str = 'de
 
 # ==================== HTML生成 ====================
 
+def generate_quiz_json(problems: List[Problem], game_info: Dict, sgf_content: str) -> dict:
+    """生成做题 JSON 数据（不含模板）"""
+    
+    if not problems:
+        return {"success": False, "error": "没有提取到选点题"}
+    
+    # 准备题目数据
+    problems_data = []
+    for i, p in enumerate(problems):
+        # 为每个变化分配选项字母
+        options = []
+        letters = ['A', 'B', 'C', 'D', 'E', 'F']
+        
+        # 按胜率排序，最高的为正确答案
+        sorted_vars = sorted(p.variations, 
+                           key=lambda v: _extract_rate(v.get('comment', '')), 
+                           reverse=True)
+        
+        for j, var in enumerate(sorted_vars[:6]):  # 最多6个选项
+            first_move = var['moves'][0] if var.get('moves') else None
+            
+            # 提取胜率显示文本
+            comment = var.get('comment', '')
+            winrate_val = _extract_rate(comment)
+            winrate_text = f"{winrate_val:.1f}%" if winrate_val > 0 else ""
+            
+            options.append({
+                'coord': first_move['coord'] if first_move else '',
+                'color': first_move['color'] if first_move else 'B',
+                'winrate': winrate_text,
+                'comment': comment,
+                'moves': var.get('moves', []),
+                'is_correct': j == 0,
+                'sort_order': j
+            })
+        
+        # 随机打乱选项顺序
+        shuffle_seed = p.move_num + sum(ord(c) for c in (options[0]['coord'] if options else 'A'))
+        rng = random.Random(shuffle_seed)
+        rng.shuffle(options)
+        
+        # 重新分配字母标签
+        for j, opt in enumerate(options):
+            opt['letter'] = letters[j] if j < len(letters) else f"{j+1}"
+        
+        # 构建实战落子信息
+        practical_move_data = None
+        if p.practical_move:
+            practical_coord = p.practical_move.get('coord', '')
+            practical_color = p.practical_move.get('color', 'B')
+            practical_winrate = 0
+            practical_moves = []
+            
+            # 从主分支获取实战变化的后续着法
+            if p.main_moves and p.move_num < len(p.main_moves):
+                follow_up_moves = p.main_moves[p.move_num:p.move_num + 15]
+                practical_moves = [
+                    {'color': m.get('color', 'B'), 'coord': m.get('coord', '')}
+                    for m in follow_up_moves if m.get('coord')
+                ]
+            
+            # 从变化图中查找实战落子胜率
+            if not practical_moves:
+                for v in p.variations:
+                    if v.get('moves') and len(v['moves']) > 0:
+                        first_move = v['moves'][0]
+                        if first_move.get('coord') == practical_coord:
+                            comment = v.get('comment', '')
+                            practical_winrate = _extract_rate(comment)
+                            practical_moves = v.get('moves', [])
+                            break
+            
+            # 计算是否是恶手
+            max_rate = max([_extract_rate(opt.get('comment', '')) for opt in p.variations]) if p.variations else 0
+            is_practical_blunder = (max_rate - practical_winrate) > 20 if practical_winrate > 0 else False
+            
+            practical_move_data = {
+                'coord': practical_coord,
+                'color': practical_color,
+                'winrate': f"{practical_winrate:.1f}%" if practical_winrate > 0 else "N/A",
+                'is_blunder': is_practical_blunder,
+                'moves': practical_moves
+            }
+        
+        problems_data.append({
+            'index': i,
+            'move_num': p.move_num,
+            'phase': p.phase,
+            'gameLevel': p.game_level,
+            'is_blunder': p.is_blunder,
+            'position': p.position,
+            'options': options,
+            'practical_move': practical_move_data
+        })
+    
+    # 标题优先使用比赛名称(GN)，如果没有则使用棋手对局
+    game_name = game_info.get('game_name', '').strip()
+    if not game_name or game_name == '围棋棋谱':
+        game_title = f"{game_info.get('black', '黑棋')} vs {game_info.get('white', '白棋')}"
+    else:
+        game_title = game_name
+    
+    return {
+        'success': True,
+        'game_name': game_title,
+        'black': game_info.get('black', '黑棋'),
+        'white': game_info.get('white', '白棋'),
+        'black_rank': game_info.get('black_rank', ''),
+        'white_rank': game_info.get('white_rank', ''),
+        'board_size': int(game_info.get('board_size', 19)),
+        'handicap_stones': game_info.get('handicap_stones', []),
+        'result': game_info.get('result', ''),
+        'date': game_info.get('date', ''),
+        'problems': problems_data,
+        'total': len(problems_data),
+        'sgf': sgf_content
+    }
+
+
 def generate_quiz_html(problems: List[Problem], game_info: Dict, sgf_content: str,
                        output_path: Optional[str] = None) -> str:
     """生成做题网页"""
@@ -580,17 +699,20 @@ def main():
   python3 quiz.py game.sgf -t blunder         # 只生成恶手题
   python3 quiz.py game.sgf --phase middle     # 只生成中盘题
   python3 quiz.py game.sgf -n 10              # 生成10道题（默认5道）
+  python3 quiz.py game.sgf --data-only -o quiz.json  # 仅输出JSON
         """
     )
     
     parser.add_argument('sgf', help='输入SGF文件路径')
-    parser.add_argument('-o', '--output', help='输出HTML文件路径（默认: 输入文件名.html）')
+    parser.add_argument('-o', '--output', help='输出HTML/JSON文件路径（默认: 输入文件名.html/.json）')
     parser.add_argument('-t', '--type', choices=['blunder'],
                        help='题目类型筛选（仅支持恶手题）')
     parser.add_argument('--phase', choices=['layout', 'middle', 'endgame'],
                        help='阶段筛选（布局/中盘/官子）')
     parser.add_argument('-n', '--number', type=int, default=5,
                        help='最大题目数量（默认: 5，恶手题优先）')
+    parser.add_argument('--data-only', action='store_true',
+                       help='仅输出JSON数据（不含HTML模板）')
     
     args = parser.parse_args()
     
@@ -649,11 +771,20 @@ def main():
     if args.output:
         output_path = args.output
     else:
-        output_path = sgf_path.with_suffix('.html')
+        ext = '.json' if args.data_only else '.html'
+        output_path = sgf_path.with_suffix(ext)
     
-    # 生成HTML
-    print(f"\n正在生成做题网页...")
-    generate_quiz_html(problems, game_info, sgf_content, output_path)
+    # 根据模式生成输出
+    if args.data_only:
+        # JSON 模式
+        print(f"\n正在生成 JSON 数据...")
+        data = generate_quiz_json(problems, game_info, sgf_content)
+        Path(output_path).write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+        print(f"✅ 已生成 JSON 数据: {output_path}")
+    else:
+        # HTML 模式
+        print(f"\n正在生成做题网页...")
+        generate_quiz_html(problems, game_info, sgf_content, output_path)
 
 
 if __name__ == '__main__':
