@@ -161,6 +161,7 @@ def main():
     nickname = sys.argv[1]
     limit = None
     output_dir = "/tmp/foxwq_by_name"
+    json_output = False
     
     # 解析参数
     for i, arg in enumerate(sys.argv[2:], 2):
@@ -171,6 +172,8 @@ def main():
                 pass
         elif arg == "--output-dir" and i + 1 < len(sys.argv):
             output_dir = sys.argv[i + 1]
+        elif arg == "--json":
+            json_output = True
     
     print("=" * 60)
     print("🎯 野狐围棋 - 通过昵称下载棋谱")
