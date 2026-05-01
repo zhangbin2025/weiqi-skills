@@ -1007,9 +1007,8 @@
         }
 
         // ==================== 棋盘渲染 ====================
-        const canvas = document.getElementById('board');
-        const ctx = canvas.getContext('2d');
-
+        // canvas 已在顶部初始化
+        
         function resizeCanvas() {
             const container = document.querySelector('.board-container');
             const isMobile = window.innerWidth < 600;
