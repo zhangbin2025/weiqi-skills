@@ -5,8 +5,8 @@
 
 用法:
     python3 download_by_name.py <昵称> [--limit N] [--output-dir DIR]
-    python3 download_by_name.py 星阵谈兵
-    python3 download_by_name.py 星阵谈兵 --limit 10 --output-dir /tmp/qipu
+    python3 download_by_name.py KataGo
+    python3 download_by_name.py KataGo --limit 10 --output-dir /tmp/qipu
 
 注意：本脚本通过平台提供的公开API获取数据，仅供个人学习研究使用。
 """
@@ -154,8 +154,8 @@ def parse_result(winner, point, reason):
 def main():
     if len(sys.argv) < 2:
         print("用法: python3 download_by_name.py <昵称> [--limit N] [--output-dir DIR]")
-        print("示例: python3 download_by_name.py 星阵谈兵")
-        print("      python3 download_by_name.py 星阵谈兵 --limit 5 --output-dir /tmp/qipu")
+        print("示例: python3 download_by_name.py KataGo")
+        print("      python3 download_by_name.py KataGo --limit 5 --output-dir /tmp/qipu")
         sys.exit(1)
     
     nickname = sys.argv[1]
