@@ -89,14 +89,76 @@ def generate_html(tree, game_info, output_path, input_base_name='棋谱', start_
     print(f"   白棋: {white_name}")
 
 
+def generate_json(tree, game_info, output_path, input_base_name='棋谱', start_move=0, max_moves=0):
+    """生成 JSON 数据文件（供 replay.html 异步加载）"""
+    
+    board_size = int(game_info.get('board_size', '19'))
+    handicap = game_info.get('handicap', '0')
+    handicap_stones = game_info.get('handicap_stones', [])
+    
+    # 精简棋谱树：只保留主分支着法，删除 AI 分析数据和变化
+    def simplify_tree(node):
+        """只保留主分支，删除 properties（AI分析数据）"""
+        if not node:
+            return None
+        
+        simplified = {
+            'color': node.get('color'),
+            'coord': node.get('coord'),
+        }
+        
+        # 只保留主分支（第一个 child）
+        if node.get('children'):
+            child = simplify_tree(node['children'][0])
+            if child:
+                simplified['children'] = [child]
+        
+        return simplified
+    
+    clean_tree = simplify_tree(tree)
+    
+    # 处理 start_move：-1 表示最后一手
+    default_move = start_move if start_move >= 0 else max_moves
+    
+    data = {
+        'game_name': game_info.get('game_name', '围棋棋谱'),
+        'black': game_info.get('black', '黑棋'),
+        'white': game_info.get('white', '白棋'),
+        'black_rank': game_info.get('black_rank', ''),
+        'white_rank': game_info.get('white_rank', ''),
+        'board_size': board_size,
+        'handicap': int(handicap),
+        'handicap_stones': handicap_stones,
+        'result': game_info.get('result', ''),
+        'tree': clean_tree,
+        'download_filename': input_base_name + '.sgf',
+        'default_move': default_move,
+        'max_moves': max_moves
+    }
+    
+    # 确保输出目录存在
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    
+    print(f"✅ 已生成 JSON 数据: {output_path}")
+    print(f"   黑棋: {data['black']}")
+    print(f"   白棋: {data['white']}")
+
+
 def main():
     if len(sys.argv) < 2:
         print("用法: python3 replay.py input.sgf [output.html]")
         print("       python3 replay.py input.sgf --output-dir /path/to/dir")
         print("       python3 replay.py input.sgf --start-move 50")
         print("       python3 replay.py input.sgf --start-move last")
+        print("       python3 replay.py input.sgf --data-only  # 仅输出JSON")
         print("示例: python3 replay.py game.sgf")
         print("       python3 replay.py game.sgf -o /tmp/myviewer")
+        print("       python3 replay.py game.sgf --data-only -o /path/to/data.json")
         print("       python3 replay.py game.sgf --start-move 100  # 默认跳转到第100手")
         print("       python3 replay.py game.sgf --start-move last # 跳转到最后一手")
         sys.exit(1)
@@ -107,15 +169,22 @@ def main():
     output_file = None
     output_dir = None
     start_move = 0
+    data_only = False  # 新增: 仅输出JSON
 
     i = 2
     while i < len(sys.argv):
         if sys.argv[i] in ('--output-dir', '-o'):
             if i + 1 < len(sys.argv):
-                output_dir = sys.argv[i + 1]
+                path_arg = sys.argv[i + 1]
+                # 根据是否有扩展名判断是文件还是目录
+                _, ext = os.path.splitext(path_arg)
+                if ext and ext in ('.html', '.htm', '.json'):
+                    output_file = path_arg  # 是文件路径
+                else:
+                    output_dir = path_arg   # 是目录路径
                 i += 2
             else:
-                print("❌ 错误: --output-dir 需要指定目录路径")
+                print("❌ 错误: --output-dir 需要指定路径")
                 sys.exit(1)
         elif sys.argv[i] == '--start-move':
             if i + 1 < len(sys.argv):
@@ -135,6 +204,9 @@ def main():
             else:
                 print("❌ 错误: --start-move 需要指定手数")
                 sys.exit(1)
+        elif sys.argv[i] == '--data-only':
+            data_only = True
+            i += 1
         elif not output_file:
             output_file = sys.argv[i]
             i += 1
@@ -142,21 +214,30 @@ def main():
             i += 1
 
     # 默认输出目录为 /tmp/sgf-viewer
-    if output_dir is None:
+    if output_dir is None and not output_file:
         output_dir = '/tmp/sgf-viewer'
-
-    # 确保输出目录存在
-    os.makedirs(output_dir, exist_ok=True)
 
     # 确定输出文件名
     if output_file:
         if os.path.isabs(output_file):
             output_path = output_file
         else:
-            output_path = os.path.join(output_dir, output_file)
-    else:
+            output_path = output_file  # 相对路径直接使用
+        # 确保目录存在
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+    elif output_dir:
+        # 根据模式确定扩展名
+        ext = '.json' if data_only else '.html'
         base_name = os.path.splitext(os.path.basename(input_file))[0]
-        output_path = os.path.join(output_dir, base_name + '.html')
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, base_name + ext)
+    else:
+        # 相对路径默认
+        ext = '.json' if data_only else '.html'
+        base_name = os.path.splitext(os.path.basename(input_file))[0]
+        output_path = base_name + ext
 
     # 读取SGF文件
     try:
@@ -199,13 +280,22 @@ def main():
     # 获取输入文件名（不含扩展名）
     input_base_name = os.path.splitext(os.path.basename(input_file))[0]
 
-    # 生成HTML
-    generate_html(tree, game_info, output_path, input_base_name, start_move, stats['max_depth'])
-    
-    if start_move > 0:
-        print(f"   默认跳转: 第 {start_move} 手")
-    elif start_move == -1:
-        print(f"   默认跳转: 最后一手")
+    # 根据模式生成输出
+    if data_only:
+        # JSON 模式
+        generate_json(tree, game_info, output_path, input_base_name, start_move, stats['max_depth'])
+        if start_move > 0:
+            print(f"   默认跳转: 第 {start_move} 手")
+        elif start_move == -1:
+            print(f"   默认跳转: 最后一手")
+        print(f"✅ JSON 生成完成: {output_path}")
+    else:
+        # HTML 模式
+        generate_html(tree, game_info, output_path, input_base_name, start_move, stats['max_depth'])
+        if start_move > 0:
+            print(f"   默认跳转: 第 {start_move} 手")
+        elif start_move == -1:
+            print(f"   默认跳转: 最后一手")
 
     print(f"\n✅ 生成完成: {output_path}")
 
