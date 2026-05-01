@@ -859,6 +859,20 @@
                 BOARD_SIZE = data.board_size || 19;
                 handicapStones = data.handicap_stones || [];
                 problems = data.problems || [];
+                
+                // 更新标题和棋手信息
+                if (data.game_name) {
+                    document.getElementById('gameTitle').textContent = data.game_name;
+                    document.title = data.game_name;
+                }
+                if (data.black) {
+                    const blackRank = data.black_rank ? ` (${data.black_rank})` : '';
+                    document.getElementById('blackName').textContent = data.black + blackRank;
+                }
+                if (data.white) {
+                    const whiteRank = data.white_rank ? ` (${data.white_rank})` : '';
+                    document.getElementById('whiteName').textContent = data.white + whiteRank;
+                }
             }
             
             if (problems.length === 0) {
@@ -866,9 +880,9 @@
                 return;
             }
             
-            currentProblem = problems[0];
-            updateProblemDisplay();
-            drawBoard();
+            // 初始化棋盘大小并加载第一题
+            resizeCanvas();
+            loadProblem(0);
         }
         
         // 异步加载 JSON、localStorage 或使用内嵌数据
@@ -900,7 +914,6 @@
             if (embeddedProblemsStr && embeddedProblemsStr !== '{{PROBLEMS_JSON}}') {
                 try {
                     problems = JSON.parse(embeddedProblemsStr);
-                    currentProblem = problems[0];
                 } catch (e) {
                     console.warn('解析内嵌数据失败:', e);
                 }
@@ -2323,10 +2336,6 @@
 
         canvas.addEventListener('click', handleBoardClick);
         window.addEventListener('resize', resizeCanvas);
-
-        // ==================== 初始化 ====================
-        resizeCanvas();
-        loadProblem(0);
     </script>
 </body>
 </html>
