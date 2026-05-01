@@ -1,25 +1,18 @@
 """
-weiqi-sgf 前端自动化测试配置
+weiqi-sgf 测试配置
 
-使用 Playwright 进行浏览器自动化测试
-兼容模式：无 Playwright 时跳过前端测试
+仅保留 SGF Parser 单元测试
 """
 
 import pytest
-import tempfile
-import os
 import sys
+import os
 
-# 检查 Playwright 是否可用
-try:
-    import pytest_playwright
-    PLAYWRIGHT_AVAILABLE = True
-except ImportError:
-    PLAYWRIGHT_AVAILABLE = False
+# 添加 weiqi-sgf 脚本路径
+sys.path.insert(0, '/root/.openclaw/workspace/weiqi-sgf/scripts')
 
 
 # 测试用的 SGF 数据
-
 SIMPLE_SGF = """(;GM[1]FF[4]SZ[19]PB[黑棋]PW[白棋];B[pd];W[dp];B[pp];W[dd];B[pj];W[nc];B[pf];W[kc])"""
 
 VARIATIONS_SGF = """(;GM[1]FF[4]SZ[19]PB[柯洁]PW[申真谞]EV[第28届LG杯决赛];B[pd]C[jueyi黑62%]
@@ -30,60 +23,6 @@ VARIATIONS_SGF = """(;GM[1]FF[4]SZ[19]PB[柯洁]PW[申真谞]EV[第28届LG杯决
 HANDICAP_SGF = """(;GM[1]FF[4]SZ[19]PB[黑棋]PW[白棋]HA[4]AB[dd][pd][dp][pp];W[qf])"""
 
 EMPTY_SGF = """(;GM[1]FF[4]SZ[19]PB[黑棋]PW[白棋])"""
-
-
-def generate_replay_html(sgf_content, game_name="测试对局"):
-    """
-    生成用于测试的 replay.html 内容
-    模拟 weiqi-sgf/scripts/replay.py 的输出
-    """
-    sys.path.insert(0, '/root/.openclaw/workspace/weiqi-sgf/scripts')
-    from sgf_parser import parse_sgf
-    import json
-    import html as html_module
-    
-    result = parse_sgf(sgf_content)
-    tree = result["tree"]
-    game_info = result["game_info"]
-    board_size = game_info.get("SZ", 19)
-    
-    # 处理让子
-    handicap_stones = []
-    handicap = game_info.get("HA", 0)
-    if handicap and "AB" in game_info:
-        for coord in game_info["AB"]:
-            if len(coord) >= 2:
-                x = ord(coord[0]) - 97
-                y = ord(coord[1]) - 97
-                handicap_stones.append({"x": x, "y": y})
-    
-    # 读取模板
-    template_path = '/root/.openclaw/workspace/weiqi-sgf/scripts/templates/replay.html'
-    with open(template_path, 'r', encoding='utf-8') as f:
-        template = f.read()
-    
-    # 替换变量
-    pb = game_info.get("PB", "黑棋")
-    pw = game_info.get("PW", "白棋")
-    ev = game_info.get("EV", "")
-    
-    tree_json = json.dumps(tree, ensure_ascii=False)
-    tree_json_escaped = html_module.escape(tree_json)
-    
-    output = template
-    output = output.replace('{{GAME_NAME}}', html_module.escape(game_name))
-    output = output.replace('{{GAME_TITLE}}', html_module.escape(game_name))
-    output = output.replace('{{GAME_INFO}}', html_module.escape(f"{pb} vs {pw}" + (f" | {ev}" if ev else "")))
-    output = output.replace('{{BLACK_NAME}}', html_module.escape(pb))
-    output = output.replace('{{WHITE_NAME}}', html_module.escape(pw))
-    output = output.replace('{{TREE_JSON}}', tree_json_escaped)
-    output = output.replace('{{BOARD_SIZE}}', str(board_size))
-    output = output.replace('{{HANDICAP_STONES}}', json.dumps(handicap_stones))
-    output = output.replace('{{DOWNLOAD_FILENAME}}', 'test.sgf')
-    output = output.replace('{{MAX_MOVES}}', str(result["stats"]["max_depth"]))
-    output = output.replace('{{DEFAULT_MOVE}}', '0')  # 默认从第0手开始
-    
-    return output
 
 
 @pytest.fixture
@@ -108,57 +47,3 @@ def handicap_sgf():
 def empty_sgf():
     """空棋谱"""
     return EMPTY_SGF
-
-
-@pytest.fixture
-def page_factory():
-    """
-    创建一个工厂函数，用于生成带有指定 SGF 内容的测试页面
-    
-    使用方式：
-        page = page_factory(sgf_content, "对局名称")
-    """
-    def _create_page(sgf_content, game_name="测试对局"):
-        html_content = generate_replay_html(sgf_content, game_name)
-        
-        # 创建临时 HTML 文件
-        fd, path = tempfile.mkstemp(suffix='.html', prefix='weiqi_test_')
-        try:
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            return path
-        except:
-            os.unlink(path)
-            raise
-    
-    return _create_page
-
-
-# 全局配置 - 只在 Playwright 可用时加载
-# 注意：pytest_plugins 已移至顶层 conftest.py
-if PLAYWRIGHT_AVAILABLE:
-    def pytest_configure(config):
-        """配置 pytest-playwright"""
-        config.option.browser = ["chromium"]
-        config.option.headless = True
-        
-    @pytest.fixture(scope="session")
-    def browser_context_args(browser_context_args):
-        """配置浏览器上下文"""
-        return {
-            **browser_context_args,
-            "viewport": {"width": 1280, "height": 720},
-        }
-else:
-    # 无 Playwright 时的配置
-    def pytest_configure(config):
-        """配置 pytest"""
-        pass
-    
-    def pytest_collection_modifyitems(config, items):
-        """修改测试项：跳过所有前端测试"""
-        skip_mark = pytest.mark.skip(reason="Playwright 未安装，跳过前端测试")
-        for item in items:
-            # 如果测试函数使用 page fixture，标记为跳过
-            if "page" in item.fixturenames:
-                item.add_marker(skip_mark)
