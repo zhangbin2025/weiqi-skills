@@ -1043,7 +1043,11 @@
             canvas.height = boardSize;
             canvas.style.width = boardSize + 'px';
             canvas.style.height = boardSize + 'px';
-            updateDisplay();
+            
+            // 只有在数据加载完成后才更新显示
+            if (currentProblem) {
+                updateDisplay();
+            }
         }
 
         function getGridParams() {
