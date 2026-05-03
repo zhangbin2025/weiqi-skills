@@ -96,9 +96,9 @@ def generate_json(tree, game_info, output_path, input_base_name='棋谱', start_
     handicap = game_info.get('handicap', '0')
     handicap_stones = game_info.get('handicap_stones', [])
     
-    # 精简棋谱树：只保留主分支着法，删除 AI 分析数据和变化
+    # 精简棋谱树：删除 AI 分析数据，保留所有变化分支
     def simplify_tree(node):
-        """只保留主分支，删除 properties（AI分析数据）"""
+        """删除 properties（AI分析数据），保留所有变化分支"""
         if not node:
             return None
         
@@ -107,11 +107,9 @@ def generate_json(tree, game_info, output_path, input_base_name='棋谱', start_
             'coord': node.get('coord'),
         }
         
-        # 只保留主分支（第一个 child）
+        # 保留所有子节点（包括变化分支）
         if node.get('children'):
-            child = simplify_tree(node['children'][0])
-            if child:
-                simplified['children'] = [child]
+            simplified['children'] = [simplify_tree(child) for child in node['children'] if child]
         
         return simplified
     
