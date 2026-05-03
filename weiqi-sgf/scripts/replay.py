@@ -140,7 +140,7 @@ def generate_json(tree, game_info, output_path, input_base_name='棋谱', start_
         os.makedirs(output_dir, exist_ok=True)
     
     with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False)
     
     print(f"✅ 已生成 JSON 数据: {output_path}")
     print(f"   黑棋: {data['black']}")
