@@ -96,9 +96,9 @@ def generate_json(tree, game_info, output_path, input_base_name='棋谱', start_
     handicap = game_info.get('handicap', '0')
     handicap_stones = game_info.get('handicap_stones', [])
     
-    # 精简棋谱树：删除 AI 分析数据，保留所有变化分支
+    # 精简棋谱树：保留变化分支和 AI 分析关键属性
     def simplify_tree(node):
-        """删除 properties（AI分析数据），保留所有变化分支"""
+        """保留所有变化分支，保留 C（注释/胜率）和 N（标签）属性"""
         if not node:
             return None
         
@@ -106,6 +106,17 @@ def generate_json(tree, game_info, output_path, input_base_name='棋谱', start_
             'color': node.get('color'),
             'coord': node.get('coord'),
         }
+        
+        # 保留 C（注释，包含胜率信息）和 N（标签）属性
+        if node.get('properties'):
+            props = node['properties']
+            keep_props = {}
+            if props.get('C'):
+                keep_props['C'] = props['C']
+            if props.get('N'):
+                keep_props['N'] = props['N']
+            if keep_props:
+                simplified['properties'] = keep_props
         
         # 保留所有子节点（包括变化分支）
         if node.get('children'):
