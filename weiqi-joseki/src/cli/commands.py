@@ -183,6 +183,14 @@ def cmd_list(args):
         print("数据库为空")
         return
     
+    # 前缀过滤
+    if args.prefix:
+        prefix = args.prefix.split()
+        joseki_list = [j for j in joseki_list if j.get("moves", [])[:len(prefix)] == prefix]
+        if not joseki_list:
+            print(f"未找到以 '{args.prefix}' 开头的定式")
+            return
+    
     # 排序
     reverse = (args.order == "desc")
     if args.sort == "freq":
@@ -535,6 +543,7 @@ def main():
     
     # list
     p_list = subparsers.add_parser("list", help="列出定式")
+    p_list.add_argument("--prefix", type=str, help="着法前缀过滤，如 'pd qc'")
     p_list.add_argument("--limit", type=int, help="限制数量")
     p_list.add_argument("--sort", choices=["id", "freq", "probability", "moves", "length"], default="id", help="排序方式")
     p_list.add_argument("--order", choices=["asc", "desc"], default="asc", help="排序方向")
