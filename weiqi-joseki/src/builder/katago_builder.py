@@ -29,6 +29,10 @@ from ..utils import CountMinSketch
 # 四角配置
 CORNERS = ['tl', 'tr', 'bl', 'br']
 
+# 有效第一着坐标（右上角ruld视角，标准化后）
+# 这些是常见定式起始位置：星位、小目、目外、高目等
+VALID_FIRST_MOVES = {'pd', 'qc', 'pc', 'oe', 'oc', 'nc', 'od', 'nd', 'ne', 'me'}
+
 
 def convert_to_rudl(moves: List[str]) -> List[str]:
     """
@@ -298,6 +302,11 @@ class KatagoJosekiBuilder:
                     # 标准化：统一到对角线上方（靠近上边缘）
                     from ..core.coords import normalize_corner_sequence
                     std_coords, _ = normalize_corner_sequence(tr_coords)
+                    
+                    # 检查第一着是否在有效坐标列表中
+                    if not std_coords or std_coords[0] not in VALID_FIRST_MOVES:
+                        continue  # 第一着异常，跳过
+                    
                     seq = " ".join(std_coords)
                     
                     if seq in seen_sequences:
