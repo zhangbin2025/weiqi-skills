@@ -441,19 +441,19 @@ def extract_corner_moves_9lu(
     """
     提取指定角的着法（9路范围，最终回退方案）
     
-    只做局面连通性过滤（不做时序过滤）：
+    只做时序过滤：
     1. 收集9路范围内的所有棋子
-    2. 找连通块，取离角最近的
-    3. 保留该连通块内的所有棋子（含脱先后回归）
+    2. 按行棋顺序，每步距离活跃区域 <= distance_threshold 才保留
+    3. 检测脱先（连续同色插入tt）
     """
     from ..core.coords import CoordinateSystem
     
     # 9路范围配置
     corner_config = {
-        'tl': {'col_range': (0, 8), 'row_range': (0, 8), 'origin': (0, 0)},
-        'tr': {'col_range': (10, 18), 'row_range': (0, 8), 'origin': (18, 0)},
-        'bl': {'col_range': (0, 8), 'row_range': (10, 18), 'origin': (0, 18)},
-        'br': {'col_range': (10, 18), 'row_range': (10, 18), 'origin': (18, 18)},
+        'tl': {'col_range': (0, 8), 'row_range': (0, 8)},
+        'tr': {'col_range': (10, 18), 'row_range': (0, 8)},
+        'bl': {'col_range': (0, 8), 'row_range': (10, 18)},
+        'br': {'col_range': (10, 18), 'row_range': (10, 18)},
     }
     
     config = corner_config.get(corner_key)
@@ -462,11 +462,9 @@ def extract_corner_moves_9lu(
     
     col_min, col_max = config['col_range']
     row_min, row_max = config['row_range']
-    origin = config['origin']
     
-    # 收集9路范围内的棋子位置和对应着法
-    corner_positions = []
-    corner_moves_map = {}  # (col,row) -> [(color, coord), ...]
+    # 收集9路范围内的着法（带时序）
+    corner_moves_list = []  # [(color, col, row, coord), ...]
     
     for color, coord in moves:
         if coord == 'tt' or not coord or len(coord) != 2:
@@ -474,41 +472,46 @@ def extract_corner_moves_9lu(
         try:
             col, row = CoordinateSystem.sgf_to_nums(coord)
             if col_min <= col <= col_max and row_min <= row <= row_max:
-                corner_positions.append((col, row))
-                if (col, row) not in corner_moves_map:
-                    corner_moves_map[(col, row)] = []
-                corner_moves_map[(col, row)].append((color, coord))
+                corner_moves_list.append((color, col, row, coord))
         except:
             continue
     
-    if not corner_positions:
+    if not corner_moves_list:
         return []
     
-    # 找连通块并筛选最近的（局面连通性）
-    components = find_connected_components(corner_positions, origin, distance_threshold)
-    valid_positions = filter_nearest_component(components)
+    # 时序过滤
+    active_positions = set()
+    core_positions = set()
     
-    if not valid_positions:
+    for color, col, row, coord in corner_moves_list:
+        if not active_positions:
+            # 第一手
+            active_positions.add((col, row))
+            core_positions.add((col, row))
+        else:
+            # 计算到活跃区域的最小曼哈顿距离
+            min_dist = min(
+                abs(col - ax) + abs(row - ay)
+                for (ax, ay) in active_positions
+            )
+            if min_dist <= distance_threshold:
+                active_positions.add((col, row))
+                core_positions.add((col, row))
+    
+    if not core_positions:
         return []
     
-    # 构建结果（不过滤时序，保留所有在连通块内的着法）
+    # 构建结果（检测脱先）
     result = []
     last_color = None
     
-    for color, coord in moves:
-        if coord == 'tt' or not coord or len(coord) != 2:
-            continue
-        try:
-            col, row = CoordinateSystem.sgf_to_nums(coord)
-            if (col, row) in valid_positions:
-                # 检测脱先
-                if last_color == color:
-                    pass_color = 'W' if color == 'B' else 'B'
-                    result.append((pass_color, 'tt'))
-                result.append((color, coord))
-                last_color = color
-        except:
-            continue
+    for color, col, row, coord in corner_moves_list:
+        if (col, row) in core_positions:
+            if last_color == color:
+                pass_color = 'W' if color == 'B' else 'B'
+                result.append((pass_color, 'tt'))
+            result.append((color, coord))
+            last_color = color
     
     return result
 
