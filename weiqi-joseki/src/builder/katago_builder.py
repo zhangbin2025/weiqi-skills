@@ -373,23 +373,25 @@ class KatagoJosekiBuilder:
                     # 获取第一手颜色
                     first_color = corner_moves[0][0] if corner_moves else 'B'
                     
-                    # 关联胜率数据
+                    # 关联胜率数据（确保和着法长度一致）
                     winrates = []
                     for color, coord in corner_moves:
                         if coord == 'tt':
-                            continue  # 跳过 tt
+                            # tt 也添加默认胜率
+                            winrates.append("0.5000")
+                            continue
+                        
                         key = (color, coord)
                         wr_list = coord_to_winrates.get(key, [])
-                        if wr_list:
-                            # 取第一个（最常用的）
-                            wr = wr_list.pop(0) if wr_list else None
-                            if wr:
-                                # 统一为先手方视角
-                                if first_color == 'B':
-                                    wr_val = wr.get('black_wr', 0.5)
-                                else:
-                                    wr_val = wr.get('white_wr', 0.5)
-                                winrates.append(f"{wr_val:.4f}")
+                        wr = wr_list.pop(0) if wr_list else None
+                        
+                        # 统一为先手方视角
+                        if first_color == 'B':
+                            wr_val = wr.get('black_wr', 0.5) if wr else 0.5
+                        else:
+                            wr_val = wr.get('white_wr', 0.5) if wr else 0.5
+                        
+                        winrates.append(f"{wr_val:.4f}")
                     
                     seq = " ".join(std_coords)
                     
