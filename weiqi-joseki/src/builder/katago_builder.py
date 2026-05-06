@@ -546,14 +546,16 @@ class KatagoJosekiBuilder:
                         seen_hashes[prefix_hash] = item
                         prefix_processed += 1
                     elif est_count > heap[0].count:
-                        old_item = heapq.heapreplace(heap, HeapItem(est_count, prefix, direction, prefix_hash))
-                        del seen_hashes[old_item.prefix_hash]
-                        # 新项
-                        new_item = heap[0]  # 刚替换进来的
+                        # 创建新项
+                        new_item = HeapItem(est_count, prefix, direction, prefix_hash)
+                        # 累积胜率
                         if winrates and len(winrates) >= end:
                             start_wr = winrates[0]
                             end_wr = winrates[end - 1]
                             new_item.add_winrate(start_wr, end_wr)
+                        # 替换堆顶
+                        old_item = heapq.heapreplace(heap, new_item)
+                        del seen_hashes[old_item.prefix_hash]
                         seen_hashes[prefix_hash] = new_item
                         prefix_processed += 1
                 
