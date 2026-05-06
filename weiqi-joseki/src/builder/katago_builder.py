@@ -375,10 +375,12 @@ class KatagoJosekiBuilder:
                     
                     # 关联胜率数据（确保和着法长度一致）
                     winrates = []
+                    last_wr_val = 0.5  # 默认值
+                    
                     for color, coord in corner_moves:
                         if coord == 'tt':
-                            # tt 也添加默认胜率
-                            winrates.append("0.5000")
+                            # 脱先：使用前一着的胜率
+                            winrates.append(f"{last_wr_val:.4f}")
                             continue
                         
                         key = (color, coord)
@@ -391,6 +393,7 @@ class KatagoJosekiBuilder:
                         else:
                             wr_val = wr.get('white_wr', 0.5) if wr else 0.5
                         
+                        last_wr_val = wr_val  # 更新最后一手胜率
                         winrates.append(f"{wr_val:.4f}")
                     
                     seq = " ".join(std_coords)
