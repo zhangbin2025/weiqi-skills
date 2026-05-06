@@ -113,18 +113,23 @@ def convert_to_ruld(moves: List[str]) -> List[str]:
 class HeapItem:
     """堆项 - 用于小顶堆选top-k"""
     __slots__ = ['count', 'prefix', 'direction', 'prefix_hash', 
-                 'wr_start_sum', 'wr_end_sum', 'wr_delta_sum', 'wr_delta_sq_sum', 'wr_samples']
+                 'wr_delta_sum', 'wr_delta_sq_sum', 'wr_samples',
+                 'wr_positive_count', 'wr_negative_count', 'wr_neutral_count']
+    
+    # 胜率变化阈值：|delta| < 0.005 视为中性
+    NEUTRAL_THRESHOLD = 0.005
     
     def __init__(self, count, prefix, direction, prefix_hash):
         self.count = count
         self.prefix = prefix
         self.direction = direction
         self.prefix_hash = prefix_hash
-        self.wr_start_sum = 0.0      # 起始胜率总和
-        self.wr_end_sum = 0.0        # 结束胜率总和
         self.wr_delta_sum = 0.0     # 胜率变化总和
         self.wr_delta_sq_sum = 0.0  # 胜率变化平方和
-        self.wr_samples = 0         # 样本数
+        self.wr_samples = 0          # 样本数
+        self.wr_positive_count = 0   # delta > threshold（黑有利）
+        self.wr_negative_count = 0  # delta < -threshold（白有利）
+        self.wr_neutral_count = 0    # |delta| <= threshold（中性）
     
     def __lt__(self, other):
         return self.count < other.count
@@ -132,11 +137,17 @@ class HeapItem:
     def add_winrate(self, start_wr: float, end_wr: float):
         """累积胜率数据"""
         delta = end_wr - start_wr
-        self.wr_start_sum += start_wr
-        self.wr_end_sum += end_wr
         self.wr_delta_sum += delta
         self.wr_delta_sq_sum += delta * delta
         self.wr_samples += 1
+        
+        # 统计分布
+        if delta > self.NEUTRAL_THRESHOLD:
+            self.wr_positive_count += 1
+        elif delta < -self.NEUTRAL_THRESHOLD:
+            self.wr_negative_count += 1
+        else:
+            self.wr_neutral_count += 1
     
     def get_winrate_stats(self) -> dict:
         """获取胜率统计"""
@@ -144,8 +155,6 @@ class HeapItem:
             return None
         
         import math
-        avg_start = self.wr_start_sum / self.wr_samples
-        avg_end = self.wr_end_sum / self.wr_samples
         avg_delta = self.wr_delta_sum / self.wr_samples
         
         # 标准差
@@ -156,11 +165,12 @@ class HeapItem:
             std_delta = 0.0
         
         return {
-            "start_wr": round(avg_start, 4),
-            "end_wr": round(avg_end, 4),
             "delta": round(avg_delta, 4),
             "stddev": round(std_delta, 4),
-            "samples": self.wr_samples
+            "samples": self.wr_samples,
+            "positive": self.wr_positive_count,  # 黑有利次数
+            "negative": self.wr_negative_count,  # 白有利次数
+            "neutral": self.wr_neutral_count      # 中性次数
         }
 
 
