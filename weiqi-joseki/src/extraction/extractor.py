@@ -4,7 +4,7 @@
 基于连通块检测的四角定式提取
 """
 
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional, Any
 from .sgf_parser import parse_sgf
 from .component_detector import extract_corner_moves
 
@@ -38,6 +38,72 @@ def extract_main_branch(sgf_data: str, first_n: int = 80) -> List[Tuple[str, str
         node = node['children'][0]
         coord = node['coord'] if node['coord'] else 'tt'
         moves.append((node['color'], coord))
+        if len(moves) >= first_n:
+            break
+    
+    return moves
+
+
+def _parse_winrate(comment: str) -> Optional[Dict[str, float]]:
+    """解析 KataGo 胜率注释
+    
+    格式: <blackWinrate> <whiteWinrate> <scoreMean> <scoreStdev> v=<visits>
+    示例: "0.53 0.47 0.00 0.4 v=600"
+    
+    Returns:
+        {"black_wr": 0.53, "white_wr": 0.47, "score_mean": 0.0, "visits": 600}
+        或 None（如果解析失败）
+    """
+    if not comment:
+        return None
+    
+    try:
+        parts = comment.strip().split()
+        if len(parts) < 5:
+            return None
+        
+        black_wr = float(parts[0])
+        white_wr = float(parts[1])
+        score_mean = float(parts[2])
+        
+        # visits: v=600 -> 600
+        visits = 0
+        if parts[4].startswith('v='):
+            visits = int(parts[4][2:])
+        
+        return {
+            "black_wr": black_wr,
+            "white_wr": white_wr,
+            "score_mean": score_mean,
+            "visits": visits
+        }
+    except (ValueError, IndexError):
+        return None
+
+
+def extract_main_branch_with_winrate(sgf_data: str, first_n: int = 80) -> List[Tuple[str, str, Optional[Dict[str, float]]]]:
+    """
+    从SGF提取主分支着法（含胜率）
+    
+    Args:
+        sgf_data: SGF棋谱内容
+        first_n: 只取前N手
+    
+    Returns:
+        [(color, coord, winrate), ...] 颜色、坐标和胜率
+        winrate: {"black_wr": 0.53, "white_wr": 0.47, ...} 或 None
+    """
+    sgf = parse_sgf(sgf_data)
+    moves = []
+    node = sgf['tree']
+    
+    while len(node['children']) > 0:
+        node = node['children'][0]
+        coord = node['coord'] if node['coord'] else 'tt'
+        # 从 properties['C'] 解析胜率
+        comment = node.get('properties', {}).get('C', '')
+        winrate = _parse_winrate(comment)
+        moves.append((node['color'], coord, winrate))
         if len(moves) >= first_n:
             break
     

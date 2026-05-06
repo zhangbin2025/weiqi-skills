@@ -20,6 +20,7 @@ from collections import Counter
 from datetime import datetime
 
 from ..extraction import extract_moves_all_corners, get_move_sequence
+from ..extraction.sgf_parser import parse_sgf
 from ..extraction.katago_downloader import iter_sgf_from_tar
 from ..core.coords import convert_to_top_right
 from ..storage.json_storage import JsonStorage, DEFAULT_DB_PATH
@@ -111,16 +112,56 @@ def convert_to_ruld(moves: List[str]) -> List[str]:
 
 class HeapItem:
     """堆项 - 用于小顶堆选top-k"""
-    __slots__ = ['count', 'prefix', 'direction', 'prefix_hash']
+    __slots__ = ['count', 'prefix', 'direction', 'prefix_hash', 
+                 'wr_start_sum', 'wr_end_sum', 'wr_delta_sum', 'wr_delta_sq_sum', 'wr_samples']
     
     def __init__(self, count, prefix, direction, prefix_hash):
         self.count = count
         self.prefix = prefix
         self.direction = direction
         self.prefix_hash = prefix_hash
+        self.wr_start_sum = 0.0      # 起始胜率总和
+        self.wr_end_sum = 0.0        # 结束胜率总和
+        self.wr_delta_sum = 0.0     # 胜率变化总和
+        self.wr_delta_sq_sum = 0.0  # 胜率变化平方和
+        self.wr_samples = 0         # 样本数
     
     def __lt__(self, other):
         return self.count < other.count
+    
+    def add_winrate(self, start_wr: float, end_wr: float):
+        """累积胜率数据"""
+        delta = end_wr - start_wr
+        self.wr_start_sum += start_wr
+        self.wr_end_sum += end_wr
+        self.wr_delta_sum += delta
+        self.wr_delta_sq_sum += delta * delta
+        self.wr_samples += 1
+    
+    def get_winrate_stats(self) -> dict:
+        """获取胜率统计"""
+        if self.wr_samples == 0:
+            return None
+        
+        import math
+        avg_start = self.wr_start_sum / self.wr_samples
+        avg_end = self.wr_end_sum / self.wr_samples
+        avg_delta = self.wr_delta_sum / self.wr_samples
+        
+        # 标准差
+        if self.wr_samples > 1:
+            variance = (self.wr_delta_sq_sum / self.wr_samples) - (avg_delta ** 2)
+            std_delta = math.sqrt(max(0, variance))
+        else:
+            std_delta = 0.0
+        
+        return {
+            "start_wr": round(avg_start, 4),
+            "end_wr": round(avg_end, 4),
+            "delta": round(avg_delta, 4),
+            "stddev": round(std_delta, 4),
+            "samples": self.wr_samples
+        }
 
 
 class KatagoJosekiBuilder:
@@ -254,18 +295,16 @@ class KatagoJosekiBuilder:
     ) -> tuple:
         """从单个tar文件提取四角着法到temp文件，同时更新CMS
         
-        这是一个可复用的核心函数，供自定义构建和自动构建共用。
+        新版本：包含胜率数据
         
-        Args:
-            tar_path: tar文件路径
-            temp_f_out: 临时文件写入句柄（gzip.open后的文件对象）
-            cms: CountMinSketch实例
-            config: 配置字典，包含 first_n, distance_threshold, min_moves
-            verbose: 是否打印进度
-            
-        Returns:
-            (processed_sgf, joseki_count, prefix_count, unique_sequences)
+        temp 格式：std|着法序列|胜率序列|第一手颜色
+        示例：std|pd qc pc qd|0.53 0.51 0.52 0.51|B
+        
+        胜率序列：每手棋走之前的局面胜率（已统一为先手方视角）
         """
+        from ..extraction.extractor import extract_main_branch_with_winrate
+        from ..extraction.component_detector import extract_corner_moves
+        
         first_n = config.get('first_n', 80)
         distance_threshold = config.get('distance_threshold', 4)
         min_moves = config.get('min_moves', 4)
@@ -277,35 +316,70 @@ class KatagoJosekiBuilder:
         
         for sgf_data in iter_sgf_from_tar(str(tar_path)):
             try:
-                corner_moves_dict = extract_moves_all_corners(
-                    sgf_data, first_n=first_n, distance_threshold=distance_threshold
-                )
+                # 提取带胜率的主分支着法
+                all_moves_with_wr = extract_main_branch_with_winrate(sgf_data, first_n=first_n)
+                if not all_moves_with_wr:
+                    continue
+                
+                # 构建着法序列（不带胜率）用于角区提取
+                all_moves = [(color, coord) for color, coord, _ in all_moves_with_wr]
+                
+                # 建立坐标到胜率的映射（用于后续关联）
+                # 注意：同一坐标可能出现多次（打劫等），用列表存储
+                coord_to_winrates = {}
+                for color, coord, wr in all_moves_with_wr:
+                    key = (color, coord)
+                    if key not in coord_to_winrates:
+                        coord_to_winrates[key] = []
+                    if wr:  # wr 可能为 None
+                        coord_to_winrates[key].append(wr)
                 
                 seen_sequences = set()
                 
                 for corner in CORNERS:
-                    moves = corner_moves_dict.get(corner)
-                    if not moves or len(moves) < min_moves:
+                    # 提取该角的着法
+                    corner_moves = extract_corner_moves(all_moves, corner, distance_threshold)
+                    if not corner_moves or len(corner_moves) < min_moves:
                         continue
                     
-                    coords = get_move_sequence(moves)
+                    coords = get_move_sequence(corner_moves)
                     if len(coords) < min_moves:
                         continue
                     
-                    # 检查该角9路范围内是否有棋子（转换前判断）
+                    # 检查该角9路范围内是否有棋子
                     from ..core.coords import has_stone_in_corner_9lu
                     if not has_stone_in_corner_9lu(coords, corner):
-                        continue  # 该角9路无棋子，跳过
+                        continue
                     
                     tr_coords = convert_to_top_right(coords, corner)
                     
-                    # 标准化：统一到对角线上方（靠近上边缘）
+                    # 标准化
                     from ..core.coords import normalize_corner_sequence
                     std_coords, _ = normalize_corner_sequence(tr_coords)
                     
-                    # 检查第一着是否在有效坐标列表中
                     if not std_coords or std_coords[0] not in VALID_FIRST_MOVES:
-                        continue  # 第一着异常，跳过
+                        continue
+                    
+                    # 获取第一手颜色
+                    first_color = corner_moves[0][0] if corner_moves else 'B'
+                    
+                    # 关联胜率数据
+                    winrates = []
+                    for color, coord in corner_moves:
+                        if coord == 'tt':
+                            continue  # 跳过 tt
+                        key = (color, coord)
+                        wr_list = coord_to_winrates.get(key, [])
+                        if wr_list:
+                            # 取第一个（最常用的）
+                            wr = wr_list.pop(0) if wr_list else None
+                            if wr:
+                                # 统一为先手方视角
+                                if first_color == 'B':
+                                    wr_val = wr.get('black_wr', 0.5)
+                                else:
+                                    wr_val = wr.get('white_wr', 0.5)
+                                winrates.append(f"{wr_val:.4f}")
                     
                     seq = " ".join(std_coords)
                     
@@ -313,9 +387,15 @@ class KatagoJosekiBuilder:
                         continue
                     seen_sequences.add(seq)
                     
-                    temp_f_out.write(f"std|{seq}\n")
+                    # 写入 temp：std|着法|胜率|第一手颜色
+                    if winrates:
+                        wr_str = " ".join(winrates)
+                        temp_f_out.write(f"std|{seq}|{wr_str}|{first_color}\n")
+                    else:
+                        temp_f_out.write(f"std|{seq}||{first_color}\n")
                     joseki_count += 1
                     
+                    # CMS 统计前缀出现次数（不变）
                     seq_parts = seq.split()
                     for end in range(min_moves, len(seq_parts) + 1):
                         prefix = " ".join(seq_parts[:end])
@@ -358,6 +438,8 @@ class KatagoJosekiBuilder:
         
         Args:
             temp_source: 单个Path或List[Path]（支持多文件流式读取）
+        
+        新版本：包含胜率统计
         """
         import heapq
         from datetime import datetime
@@ -366,7 +448,7 @@ class KatagoJosekiBuilder:
             print(f"🔄 Phase 2: 逆向遍历+单链检测，选取top-{top_k}...")
         
         heap = []
-        seen_hashes = {}
+        seen_hashes = {}  # prefix_hash -> HeapItem (已入堆的项)
         SINGLE_CHAIN_THRESHOLD = 0.05
         
         processed_seq = 0
@@ -385,11 +467,25 @@ class KatagoJosekiBuilder:
                 if not line or '|' not in line:
                     continue
                 
-                direction, joseki_str = line.split('|', 1)
+                # 解析新格式：std|着法|胜率|第一手颜色
+                parts = line.split('|')
+                direction = parts[0]
+                joseki_str = parts[1]
+                winrate_str = parts[2] if len(parts) > 2 else ''
+                first_color = parts[3] if len(parts) > 3 else 'B'
+                
                 seq_parts = joseki_str.split()
                 
                 if len(seq_parts) < min_moves:
                     continue
+                
+                # 解析胜率数据
+                winrates = []
+                if winrate_str:
+                    try:
+                        winrates = [float(wr) for wr in winrate_str.split()]
+                    except ValueError:
+                        pass
                 
                 last_count = float('inf')
                 
@@ -413,18 +509,37 @@ class KatagoJosekiBuilder:
                     
                     last_count = est_count
                     
+                    # 检查是否已在堆中
                     if prefix_hash in seen_hashes:
-                        break
+                        # 已在堆中，累积胜率数据
+                        item = seen_hashes[prefix_hash]
+                        if winrates and len(winrates) >= end:
+                            start_wr = winrates[0]
+                            end_wr = winrates[end - 1]
+                            item.add_winrate(start_wr, end_wr)
+                        break  # 已处理过，跳出循环
                     
+                    # 新项，加入堆
                     if len(heap) < top_k:
                         item = HeapItem(est_count, prefix, direction, prefix_hash)
+                        # 累积胜率
+                        if winrates and len(winrates) >= end:
+                            start_wr = winrates[0]
+                            end_wr = winrates[end - 1]
+                            item.add_winrate(start_wr, end_wr)
                         heapq.heappush(heap, item)
-                        seen_hashes[prefix_hash] = True
+                        seen_hashes[prefix_hash] = item
                         prefix_processed += 1
                     elif est_count > heap[0].count:
                         old_item = heapq.heapreplace(heap, HeapItem(est_count, prefix, direction, prefix_hash))
                         del seen_hashes[old_item.prefix_hash]
-                        seen_hashes[prefix_hash] = True
+                        # 新项
+                        new_item = heap[0]  # 刚替换进来的
+                        if winrates and len(winrates) >= end:
+                            start_wr = winrates[0]
+                            end_wr = winrates[end - 1]
+                            new_item.add_winrate(start_wr, end_wr)
+                        seen_hashes[prefix_hash] = new_item
                         prefix_processed += 1
                 
                 processed_seq += 1
@@ -433,14 +548,13 @@ class KatagoJosekiBuilder:
                           f"堆大小: {len(heap)}, 单链跳过: {skipped_single_chain}", 
                           end='', flush=True)
         finally:
-            # 如果是单文件模式，需要关闭文件
             if not isinstance(temp_source, list) and hasattr(line_iter, 'close'):
                 line_iter.close()
         
         if verbose:
             print(f"\n  堆中候选: {len(heap)} 个, 单链跳过: {skipped_single_chain} 个")
         
-        # Phase 3: 排序（去重已不需要，因为已标准化）
+        # Phase 3: 排序
         if verbose:
             print("🔄 Phase 3: 排序...")
         
@@ -452,6 +566,7 @@ class KatagoJosekiBuilder:
             candidates.append({
                 'moves': move_str.split(),
                 'count': item.count,
+                'winrate_stats': item.get_winrate_stats()
             })
         
         if verbose:
@@ -469,6 +584,9 @@ class KatagoJosekiBuilder:
                 "probability": round(cand['count'] / total_seq, 6),
                 "created_at": datetime.now().isoformat()
             }
+            # 添加胜率统计（如果有）
+            if cand['winrate_stats']:
+                joseki['winrate_stats'] = cand['winrate_stats']
             joseki_list.append(joseki)
         
         if verbose:
