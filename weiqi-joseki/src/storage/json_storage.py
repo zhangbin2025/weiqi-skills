@@ -11,7 +11,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 
 
-DEFAULT_DB_PATH = Path.home() / ".weiqi-joseki" / "database.json.gz"
+DEFAULT_DB_PATH = Path.home() / ".weiqi-joseki" / "database.json"
 
 
 class JsonStorage:
@@ -26,28 +26,27 @@ class JsonStorage:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
     
     def _load(self) -> dict:
-        # 支持旧版 .json 文件自动迁移
-        old_path = self.db_path.with_suffix('') if self.db_path.suffix == '.gz' else None
+        if not self.db_path.exists():
+            return {"version": "2.0.0", "joseki_list": []}
         
-        if self.db_path.exists():
+        # 先尝试按 gzip 格式读取
+        try:
             with gzip.open(self.db_path, 'rt', encoding='utf-8') as f:
                 data = json.load(f)
                 if isinstance(data, list):
                     return {"version": "2.0.0", "joseki_list": data}
                 return data
-        elif old_path and old_path.exists():
-            # 迁移旧文件
-            with open(old_path, 'r', encoding='utf-8') as f:
+        except gzip.BadGzipFile:
+            # 不是 gzip 格式，按普通 JSON 读取
+            with open(self.db_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             if isinstance(data, list):
                 data = {"version": "2.0.0", "joseki_list": data}
-            # 保存为新格式
+            # 自动转换为压缩格式
             self._data = data
             self._save()
-            # 删除旧文件
-            old_path.unlink()
+            print(f"已将 {self.db_path.name} 转换为压缩格式")
             return data
-        return {"version": "2.0.0", "joseki_list": []}
     
     def _save(self):
         self._data["last_updated"] = datetime.now().isoformat()
