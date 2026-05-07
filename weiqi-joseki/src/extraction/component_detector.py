@@ -57,8 +57,13 @@ def find_connected_components(
     
     算法：
     1. 八连通找基础连通块（上下左右 + 4个对角线方向相邻视为连通）
-    2. 合并相近的块（块间最小距离 <= distance_threshold）
+    2. 合并相近的块（使用围棋连通距离判断）
     3. 返回所有连通块
+    
+    围棋连通距离：
+    - 单向距离 max(|dx|, |dy|) <= 4
+    - 总距离 |dx| + |dy| <= 5
+    - 满足以上两个条件才算应该合并
     
     说明：八连通是指一个棋子的8个邻接位置（上、下、左、右、左上、右上、左下、右下）
           如果相邻位置有棋子，则认为这两个棋子属于同一个连通块
@@ -66,7 +71,7 @@ def find_connected_components(
     Args:
         positions: 棋子位置列表 [(col, row), ...]
         corner_origin: 角的原点坐标 (col, row)
-        distance_threshold: 块间合并距离阈值（默认4）
+        distance_threshold: 已废弃，保留参数兼容性
     
     Returns:
         连通块列表
@@ -113,12 +118,15 @@ def find_connected_components(
 
 def _merge_close_components(
     components: List[ConnectedComponent], 
-    threshold: int
+    threshold: int  # 保留参数兼容性，但不再使用
 ) -> List[ConnectedComponent]:
     """
     合并距离相近的连通块
     
-    如果两个连通块之间的最小距离 <= threshold，则合并
+    使用围棋连通距离判断：
+    - 单向距离 max(|dx|, |dy|) <= 4
+    - 总距离 |dx| + |dy| <= 5
+    - 满足以上两个条件则合并
     """
     if not components:
         return components
@@ -139,8 +147,7 @@ def _merge_close_components(
     # 计算所有连通块间的距离，合并相近的
     for i in range(n):
         for j in range(i + 1, n):
-            dist = _component_distance(components[i], components[j])
-            if dist <= threshold:
+            if _component_distance(components[i], components[j]) == 0:
                 union(i, j)
     
     # 按合并结果分组
@@ -157,13 +164,23 @@ def _merge_close_components(
 
 
 def _component_distance(c1: ConnectedComponent, c2: ConnectedComponent) -> int:
-    """计算两个连通块之间的最小曼哈顿距离"""
-    min_dist = float('inf')
+    """判断两个连通块是否应该合并
+    
+    使用围棋连通距离判断：
+    - 如果任意两点的 max(|dx|, |dy|) <= 4 且 |dx| + |dy| <= 5，则应该合并
+    - 这样可以覆盖超大飞/斜拆三等正常下法
+    
+    Returns:
+        0 表示应该合并，1 表示不应该合并
+    """
     for p1 in c1.positions:
         for p2 in c2.positions:
-            dist = abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
-            min_dist = min(min_dist, dist)
-    return min_dist
+            dx = abs(p1[0] - p2[0])
+            dy = abs(p1[1] - p2[1])
+            # 连通条件：单向不超过4，总和不超过5
+            if dx <= 4 and dy <= 4 and dx + dy <= 5:
+                return 0  # 应该合并
+    return 1  # 不应该合并
 
 
 def filter_nearest_component(components: List[ConnectedComponent]) -> Set[Tuple[int, int]]:
