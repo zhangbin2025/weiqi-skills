@@ -434,7 +434,8 @@ def cmd_discover(args):
                     "prefix_len": m.prefix_len,
                     "total_moves": m.total_moves,
                     "frequency": joseki.get("frequency", 0) if joseki else 0,
-                    "probability": joseki.get("probability", 0.0) if joseki else 0.0
+                    "probability": joseki.get("probability", 0.0) if joseki else 0.0,
+                    "winrate_stats": joseki.get("winrate_stats") if joseki else None
                 })
         except Exception as e:
             print(f"⚠️  处理失败 {sgf_file}: {e}")
@@ -466,6 +467,17 @@ def cmd_discover(args):
             print(f"  匹配: {m['prefix_len']}/{m['total_moves']}手")
             print(f"  前缀: {m['prefix']}")
             print(f"  频率: {m['frequency']}  概率: {m['probability']:.4%}")
+            
+            # 胜率统计
+            wr = m.get('winrate_stats')
+            if wr:
+                delta = wr.get('delta', 0)
+                samples = wr.get('samples', 0)
+                positive = wr.get('positive', 0)
+                negative = wr.get('negative', 0)
+                print(f"  胜率: Δ={delta:+.4f} ({positive}+/{negative}-/{samples}样本)")
+            else:
+                print(f"  胜率: -")
             print()
 
 
