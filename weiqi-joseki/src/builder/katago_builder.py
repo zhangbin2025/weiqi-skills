@@ -199,8 +199,7 @@ class KatagoJosekiBuilder:
     
 
     
-    def process_sgf(self, sgf_data: str, first_n: int = 80, 
-                    distance_threshold: int = 4) -> Dict[str, List[str]]:
+    def process_sgf(self, sgf_data: str, first_n: int = 80) -> Dict[str, List[str]]:
         """
         处理单个SGF，提取四角着法
         
@@ -209,8 +208,7 @@ class KatagoJosekiBuilder:
         """
         corner_moves = extract_moves_all_corners(
             sgf_data, 
-            first_n=first_n, 
-            distance_threshold=distance_threshold
+            first_n=first_n
         )
         
         # 转换为纯坐标序列
@@ -224,7 +222,6 @@ class KatagoJosekiBuilder:
         min_freq: int = 5,
         top_k: int = 10000,
         first_n: int = 80,
-        distance_threshold: int = 4,
         min_moves: int = 4,
         max_moves: int = 50,
         verbose: bool = True
@@ -237,7 +234,6 @@ class KatagoJosekiBuilder:
             min_freq: 最小出现频率
             top_k: 入库定式数量上限
             first_n: 提取前N手
-            distance_threshold: 连通块距离阈值
             min_moves: 最少手数
             max_moves: 最多手数
             verbose: 详细输出
@@ -255,7 +251,6 @@ class KatagoJosekiBuilder:
         
         config = {
             'first_n': first_n,
-            'distance_threshold': distance_threshold,
             'min_moves': min_moves
         }
         
@@ -316,7 +311,6 @@ class KatagoJosekiBuilder:
         from ..extraction.component_detector import extract_corner_moves
         
         first_n = config.get('first_n', 80)
-        distance_threshold = config.get('distance_threshold', 4)
         min_moves = config.get('min_moves', 4)
         
         processed = 0
@@ -348,7 +342,7 @@ class KatagoJosekiBuilder:
                 
                 for corner in CORNERS:
                     # 提取该角的着法
-                    corner_moves = extract_corner_moves(all_moves, corner, distance_threshold)
+                    corner_moves = extract_corner_moves(all_moves, corner)
                     if not corner_moves or len(corner_moves) < min_moves:
                         continue
                     
@@ -616,7 +610,6 @@ class KatagoJosekiBuilder:
                        min_freq: int = 5,
                        top_k: int = 10000,
                        first_n: int = 80,
-                       distance_threshold: int = 4,
                        min_moves: int = 4,
                        max_moves: int = 50,
                        verbose: bool = True) -> List[dict]:
@@ -626,7 +619,6 @@ class KatagoJosekiBuilder:
             min_freq=min_freq,
             top_k=top_k,
             first_n=first_n,
-            distance_threshold=distance_threshold,
             min_moves=min_moves,
             max_moves=max_moves,
             verbose=verbose
@@ -651,7 +643,6 @@ def build_katago_joseki_db(
     min_freq: int = 5,
     top_k: int = 10000,
     first_n: int = 80,
-    distance_threshold: int = 4,
     min_moves: int = 4,
     max_moves: int = 50
 ) -> int:
@@ -663,7 +654,6 @@ def build_katago_joseki_db(
         min_freq=min_freq,
         top_k=top_k,
         first_n=first_n,
-        distance_threshold=distance_threshold,
         min_moves=min_moves,
         max_moves=max_moves
     )
@@ -746,7 +736,6 @@ class KatagoJosekiBuilderAutoMixin:
         
         config = {
             'first_n': state.config.get('first_n', 80),
-            'distance_threshold': state.config.get('distance_threshold', 4),
             'min_moves': state.config.get('min_moves', 4)
         }
         

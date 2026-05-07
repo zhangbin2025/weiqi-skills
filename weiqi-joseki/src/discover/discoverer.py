@@ -93,15 +93,13 @@ class JosekiDiscoverer:
             source_corner=corner,
         )
     
-    def discover(self, sgf_data: str, first_n: int = 80,
-                 distance_threshold: int = 4) -> Dict[str, DiscoverResult]:
+    def discover(self, sgf_data: str, first_n: int = 80) -> Dict[str, DiscoverResult]:
         """
         从SGF发现定式
         
         Args:
             sgf_data: SGF棋谱内容
             first_n: 提取前N手
-            distance_threshold: 连通块距离阈值
         
         Returns:
             {corner: DiscoverResult, ...}
@@ -110,8 +108,7 @@ class JosekiDiscoverer:
         # 使用新提取接口提取四角着法
         corner_moves_dict = extract_moves_all_corners(
             sgf_data, 
-            first_n=first_n, 
-            distance_threshold=distance_threshold
+            first_n=first_n
         )
         
         results = {}
@@ -132,8 +129,7 @@ class JosekiDiscoverer:
 def discover_joseki(
     sgf_data: str,
     joseki_list: List[dict],
-    first_n: int = 80,
-    distance_threshold: int = 4
+    first_n: int = 80
 ) -> Dict[str, DiscoverResult]:
     """
     便捷函数：从SGF发现定式
@@ -142,10 +138,9 @@ def discover_joseki(
         sgf_data: SGF棋谱内容
         joseki_list: 定式列表
         first_n: 提取前N手
-        distance_threshold: 连通块距离阈值
     
     Returns:
         {corner: DiscoverResult, ...}
     """
     discoverer = JosekiDiscoverer(joseki_list)
-    return discoverer.discover(sgf_data, first_n, distance_threshold)
+    return discoverer.discover(sgf_data, first_n)

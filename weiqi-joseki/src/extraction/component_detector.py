@@ -49,8 +49,7 @@ class ConnectedComponent:
 
 def find_connected_components(
     positions: List[Tuple[int, int]], 
-    corner_origin: Tuple[int, int],
-    distance_threshold: int = 4
+    corner_origin: Tuple[int, int]
 ) -> List[ConnectedComponent]:
     """
     从位置列表中查找连通块
@@ -71,7 +70,6 @@ def find_connected_components(
     Args:
         positions: 棋子位置列表 [(col, row), ...]
         corner_origin: 角的原点坐标 (col, row)
-        distance_threshold: 已废弃，保留参数兼容性
     
     Returns:
         连通块列表
@@ -111,14 +109,13 @@ def find_connected_components(
     
     # 步骤2: 合并相近的块
     if len(components) > 1:
-        components = _merge_close_components(components, distance_threshold)
+        components = _merge_close_components(components)
     
     return components
 
 
 def _merge_close_components(
-    components: List[ConnectedComponent], 
-    threshold: int  # 保留参数兼容性，但不再使用
+    components: List[ConnectedComponent]
 ) -> List[ConnectedComponent]:
     """
     合并距离相近的连通块
@@ -361,8 +358,7 @@ def _point_in_polygon(point: Tuple[int, int], polygon: List[Tuple[int, int]]) ->
 def _extract_corner_moves_lu(
     moves: List[Tuple[str, str]],
     corner_key: str,
-    lu_size: int,
-    distance_threshold: int = 4
+    lu_size: int
 ) -> Tuple[List[Tuple[str, str]], Set[Tuple[int, int]], Set[Tuple[int, int]]]:
     """
     通用N路角提取（返回结果、核心位置、被剔除位置）
@@ -371,7 +367,6 @@ def _extract_corner_moves_lu(
         moves: 着法序列
         corner_key: 角标识
         lu_size: 路数（9/11/13）
-        distance_threshold: 连通块阈值
     
     Returns:
         (result_moves, core_positions, discarded_positions)
@@ -452,15 +447,14 @@ def _extract_corner_moves_lu(
 
 def extract_corner_moves_9lu(
     moves: List[Tuple[str, str]],
-    corner_key: str,
-    distance_threshold: int = 4
+    corner_key: str
 ) -> List[Tuple[str, str]]:
     """
     提取指定角的着法（9路范围，最终回退方案）
     
     只做时序过滤：
     1. 收集9路范围内的所有棋子
-    2. 按行棋顺序，每步距离活跃区域 <= distance_threshold 才保留
+    2. 按行棋顺序，每步距离活跃区域 <= 4 才保留
     3. 检测脱先（连续同色插入tt）
     """
     from ..core.coords import CoordinateSystem
@@ -511,7 +505,7 @@ def extract_corner_moves_9lu(
                 abs(col - ax) + abs(row - ay)
                 for (ax, ay) in active_positions
             )
-            if min_dist <= distance_threshold:
+            if min_dist <= 4:
                 active_positions.add((col, row))
                 core_positions.add((col, row))
     
@@ -535,8 +529,7 @@ def extract_corner_moves_9lu(
 
 def extract_corner_moves(
     moves: List[Tuple[str, str]], 
-    corner_key: str,
-    distance_threshold: int = 4
+    corner_key: str
 ) -> List[Tuple[str, str]]:
     """
     提取指定角的着法（含脱先标记）
@@ -544,7 +537,6 @@ def extract_corner_moves(
     Args:
         moves: [(color, coord), ...] 完整着法序列
         corner_key: 角标识 ('tl', 'tr', 'bl', 'br')
-        distance_threshold: 连通块合并距离阈值
     
     Returns:
         处理后的着法序列（含tt脱先标记）
@@ -585,7 +577,7 @@ def extract_corner_moves(
     # 多级回退策略：13路 → 11路 → 9路
     # 1. 先尝试13路
     result_13, core_13, discarded_13 = _extract_corner_moves_lu(
-        moves, corner_key, 13, distance_threshold
+        moves, corner_key, 13
     )
     
     # 检查13路是否需要回退（被剔除的着法在凸包内）
@@ -602,7 +594,7 @@ def extract_corner_moves(
     
     # 2. 回退到11路
     result_11, core_11, discarded_11 = _extract_corner_moves_lu(
-        moves, corner_key, 11, distance_threshold
+        moves, corner_key, 11
     )
     
     # 检查11路是否需要回退
@@ -618,4 +610,4 @@ def extract_corner_moves(
         return result_11
     
     # 3. 最终回退到9路
-    return extract_corner_moves_9lu(moves, corner_key, distance_threshold)
+    return extract_corner_moves_9lu(moves, corner_key)

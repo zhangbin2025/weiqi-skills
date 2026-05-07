@@ -113,8 +113,7 @@ def extract_main_branch_with_winrate(sgf_data: str, first_n: int = 80) -> List[T
 def extract_moves(
     sgf_data: str,
     corner: Optional[str] = None,
-    first_n: int = 80,
-    distance_threshold: int = 4
+    first_n: int = 80
 ) -> Dict[str, List[Tuple[str, str]]]:
     """
     从SGF提取四角定式（新方案）
@@ -132,7 +131,6 @@ def extract_moves(
         sgf_data: SGF棋谱内容
         corner: 指定提取哪个角 ('tl', 'tr', 'bl', 'br')，None表示全部四角
         first_n: 只取前N手（默认80）
-        distance_threshold: 连通块合并距离阈值（默认4）
     
     Returns:
         {corner_key: [(color, coord), ...], ...}
@@ -150,7 +148,7 @@ def extract_moves(
     # 步骤2-5: 对每个角提取定式
     result = {}
     for corner_key in corners_to_process:
-        corner_moves = extract_corner_moves(moves, corner_key, distance_threshold)
+        corner_moves = extract_corner_moves(moves, corner_key)
         if corner_moves and len(corner_moves) >= 2:
             result[corner_key] = corner_moves
     
@@ -159,14 +157,12 @@ def extract_moves(
 
 def extract_moves_all_corners(
     sgf_data: str,
-    first_n: int = 80,
-    distance_threshold: int = 4
+    first_n: int = 80
 ) -> Dict[str, List[Tuple[str, str]]]:
     """
     提取四角着法（便捷函数）
     """
-    return extract_moves(sgf_data, corner=None, first_n=first_n, 
-                         distance_threshold=distance_threshold)
+    return extract_moves(sgf_data, corner=None, first_n=first_n)
 
 
 def convert_to_multigogm(

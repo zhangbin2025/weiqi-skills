@@ -150,7 +150,6 @@ def _cmd_katago_custom(args):
         min_freq=args.min_freq,
         top_k=args.top_k,
         first_n=args.first_n,
-        distance_threshold=args.distance_threshold,
         min_moves=args.min_moves,
         max_moves=args.max_moves,
         verbose=True
@@ -299,15 +298,14 @@ def cmd_extract(args):
     
     result = extract_moves_all_corners(
         sgf_data,
-        first_n=args.first_n,
-        distance_threshold=args.distance_threshold
+        first_n=args.first_n
     )
     
     if not result:
         print("未提取到着法")
         return
     
-    print(f"提取结果（前{args.first_n}手，距离阈值{args.distance_threshold}）:")
+    print(f"提取结果（前{args.first_n}手）:")
     print()
     
     corner_names = {'tl': '左上', 'tr': '右上', 'bl': '左下', 'br': '右下'}
@@ -399,7 +397,7 @@ def cmd_discover(args):
             from ..core.coords import convert_to_top_right
             from ..builder import convert_to_rudl
             corner_moves_dict = extract_moves_all_corners(
-                sgf_data, first_n=args.first_n, distance_threshold=args.distance_threshold
+                sgf_data, first_n=args.first_n
             )
             # 准备着法串（用于输出）
             extracted_moves = {}
@@ -417,8 +415,7 @@ def cmd_discover(args):
             results = discover_joseki(
                 sgf_data,
                 joseki_list,
-                first_n=args.first_n,
-                distance_threshold=args.distance_threshold
+                first_n=args.first_n
             )
             
             # 每条定式一条记录
@@ -555,7 +552,6 @@ def main():
     p_katago.add_argument("--min-freq", type=int, default=10, help="最小频率")
     p_katago.add_argument("--top-k", type=int, default=100000, help="入库数量上限")
     p_katago.add_argument("--first-n", type=int, default=80, help="提取前N手")
-    p_katago.add_argument("--distance-threshold", type=int, default=4, help="连通块距离阈值")
     p_katago.add_argument("--min-moves", type=int, default=4, help="最少手数")
     p_katago.add_argument("--max-moves", type=int, default=50, help="最多手数")
     p_katago.add_argument("--download-only", action="store_true", help="仅下载棋谱到缓存，不构建定式库")
@@ -577,7 +573,6 @@ def main():
     p_extract = subparsers.add_parser("extract", help="从SGF提取四角着法")
     p_extract.add_argument("input", help="SGF文件路径")
     p_extract.add_argument("--first-n", type=int, default=80, help="提取前N手")
-    p_extract.add_argument("--distance-threshold", type=int, default=4, help="连通块距离阈值")
     p_extract.add_argument("--output", "-o", help="输出MULTIGOGM文件")
     p_extract.add_argument("--verbose", "-v", action="store_true", help="详细输出")
     
@@ -585,7 +580,6 @@ def main():
     p_discover = subparsers.add_parser("discover", help="从SGF发现定式")
     p_discover.add_argument("paths", nargs="+", help="SGF文件或目录路径")
     p_discover.add_argument("--first-n", type=int, default=80, help="提取前N手")
-    p_discover.add_argument("--distance-threshold", type=int, default=4, help="连通块距离阈值")
     p_discover.add_argument("--json", action="store_true", help="JSON格式输出")
     p_discover.add_argument("--output", "-o", help="输出文件")
     p_discover.add_argument("--verbose", "-v", action="store_true", help="详细输出")

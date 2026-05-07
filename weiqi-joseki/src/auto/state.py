@@ -77,7 +77,6 @@ class AutoState:
     def init_config(self, 
                     estimated_games: int = 2_000_000,
                     first_n: int = 80,
-                    distance_threshold: int = 4,
                     min_freq: int = 10,
                     global_top_k: int = 100_000,
                     rebuild_threshold_days: int = 0) -> dict:
@@ -86,7 +85,6 @@ class AutoState:
         Args:
             estimated_games: 预估棋谱数，用于自适应CMS配置
             first_n: 提取前N手
-            distance_threshold: 连通块距离阈值
             min_freq: 最小频率
             global_top_k: 全局Top-K定式数
             rebuild_threshold_days: 重建触发阈值（天）
@@ -100,7 +98,6 @@ class AutoState:
             "cms_width": cms_config["width"],
             "cms_depth": cms_config["depth"],
             "first_n": first_n,
-            "distance_threshold": distance_threshold,
             "min_freq": min_freq,
             "global_top_k": global_top_k,
             "rebuild_threshold_days": rebuild_threshold_days
