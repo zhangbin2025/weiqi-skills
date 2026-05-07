@@ -210,18 +210,28 @@ def cmd_list(args):
     
     print(f"共 {len(storage.get_all())} 条定式")
     print()
-    print(f"{'ID':<12} {'手数':>4} {'频率':>8} {'概率':>8} {'着法串'}")
-    print("-" * 70)
+    print(f"{'ID':<12} {'手数':>4} {'频率':>8} {'概率':>8} {'胜率变化':>8} {'着法串'}")
+    print("-" * 90)
     
     for j in joseki_list:
         jid = j.get("id", "-")
         moves = j.get("moves", [])
         freq = j.get("frequency", 0)
         prob = j.get("probability", 0.0)
+        
+        # 胜率统计
+        wr_stats = j.get("winrate_stats")
+        if wr_stats:
+            delta = wr_stats.get("delta", 0)
+            samples = wr_stats.get("samples", 0)
+            wr_str = f"{delta:+.4f}({samples})"
+        else:
+            wr_str = "-"
+        
         moves_str = " ".join(moves[:8])
         if len(moves) > 8:
             moves_str += "..."
-        print(f"{jid:<12} {len(moves):>4} {freq:>8} {prob:>8.4%} {moves_str}")
+        print(f"{jid:<12} {len(moves):>4} {freq:>8} {prob:>8.4%} {wr_str:>8} {moves_str}")
 
 
 def cmd_stats(args):
