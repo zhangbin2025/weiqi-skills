@@ -1,21 +1,15 @@
 #!/usr/bin/env python3
 """
-易查分平台围棋业余段位查询 - 浏览器会话复用优化版（支持 JSON 输出）
-使用 Playwright 持久化上下文实现会话复用
+易查分平台围棋业余段位查询 - HTTP 请求版（支持 JSON 输出）
+使用 requests 库发送 HTTP 请求，无需 Playwright
 
-优化效果：
-- 单次查询：~8-10秒（启动+关闭浏览器）
-- 批量查询：~3-5秒/人（复用会话，一次启动）
-
-依赖安装：
-    pip install playwright
-    playwright install chromium
+性能：~1-2秒/查询（相比 Playwright 的 8-10 秒）
 
 【单个查询】
     python3 query_yichafen.py 张三
     python3 query_yichafen.py 李四 --json
 
-【批量查询 - 推荐】
+【批量查询】
     python3 query_yichafen.py --batch 张三 李四 王五
     python3 query_yichafen.py --batch 赵六 孙七 --json
 """
@@ -24,528 +18,294 @@ import sys
 import json
 import time
 import os
+import re
 import argparse
-from pathlib import Path
-from contextlib import contextmanager
-from collections import OrderedDict
-
-# 尝试导入 playwright
-try:
-    from playwright.sync_api import sync_playwright
-except ImportError:
-    print("❌ 请先安装 Playwright:")
-    print("   pip install playwright")
-    print("   playwright install chromium")
-    sys.exit(1)
+import requests
+from datetime import datetime
 
 # 配置
 BASE_URL = "https://yeyuweiqi.yichafen.com/qz/s9W2g0zKmt"
-USER_DATA_DIR = Path("/tmp/yichafen_browser_data")
-SESSION_TIMEOUT = 300  # 会话有效期5分钟
-STATE_FILE = Path("/tmp/yichafen_state.json")
+VERIFY_URL = "https://yeyuweiqi.yichafen.com/public/verifycondition/sqcode/MsjcAn0mNDU5N3xjYTNmMGU0OWQxN2IwNzEyMTQ2YTViM2ZjZGY1M2VjZnwxMjc0MTQO0O0O/from_device/mobile.html"
+RESULT_URL = "https://yeyuweiqi.yichafen.com/public/queryresult/from_device/mobile.html"
 
 
-# ===== 性能计时工具 =====
-class PerformanceTimer:
-    """性能计时器 - 追踪每个步骤的执行耗时"""
-    def __init__(self):
-        self.timings = OrderedDict()
-        self.start_time = None
+def create_session():
+    """创建 session 并访问主页获取 cookie"""
+    session = requests.Session()
     
-    def start(self):
-        """开始总计时"""
-        self.start_time = time.time()
-        return self
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    }
     
-    @contextmanager
-    def step(self, name):
-        """上下文管理器 - 计时单个步骤"""
-        step_start = time.time()
-        try:
-            yield self
-        finally:
-            elapsed = time.time() - step_start
-            self.timings[name] = elapsed
+    # 访问主页，获取 session/cookie
+    session.get(BASE_URL, headers=headers, timeout=30)
     
-    def get_total(self):
-        """获取总耗时"""
-        if self.start_time:
-            return time.time() - self.start_time
-        return 0
-    
-    def format_report(self):
-        """格式化计时报告（Markdown 格式）"""
-        lines = []
-        lines.append("\n" + "="*50)
-        lines.append("⏱️  性能计时报告（易查分查询）")
-        lines.append("="*50)
-        
-        total_step_time = 0
-        for name, elapsed in self.timings.items():
-            total_step_time += elapsed
-            lines.append(f"  {name:20s} : {elapsed:>8.3f}s")
-        
-        lines.append("-"*50)
-        lines.append(f"  {'步骤累计':20s} : {total_step_time:>8.3f}s")
-        lines.append(f"  {'总耗时':20s} : {self.get_total():>8.3f}s")
-        lines.append("="*50)
-        return "\n".join(lines)
-    
-    def to_dict(self):
-        """返回计时数据字典（用于 JSON）"""
-        return {
-            "steps": dict(self.timings),
-            "total": round(self.get_total(), 3)
-        }
+    return session, headers
 
 
-# 全局计时器实例
-timer = PerformanceTimer()
-
-
-def is_browser_ready():
-    """检查浏览器是否已准备好（页面已加载）"""
-    if not STATE_FILE.exists():
-        return False
-    
-    # 检查状态文件是否过期
-    age = time.time() - STATE_FILE.stat().st_mtime
-    if age > SESSION_TIMEOUT:
-        return False
-    
-    return True
-
-
-def query_player(name, headless=True):
+def query_player(name, session=None, headers=None):
     """
     查询单个选手的业余段位信息
     
     Args:
         name: 选手姓名
-        headless: 是否无头模式
-    
-    Returns:
-        str: 页面文本内容，失败返回 None
-    """
-    global timer
-    timer.start()
-    
-    with sync_playwright() as p:
-        # 启动浏览器
-        with timer.step("启动浏览器"):
-            browser = p.chromium.launch_persistent_context(
-                user_data_dir=str(USER_DATA_DIR),
-                headless=headless,
-                args=['--no-sandbox'] if headless else []
-            )
-        
-        try:
-            # 获取页面
-            with timer.step("加载并查询"):
-                page = browser.pages[0] if browser.pages else browser.new_page()
-                page.goto(BASE_URL, wait_until='domcontentloaded')
-                
-                # 等待输入框
-                page.wait_for_selector('input[placeholder*="姓名"], input[type="text"]', timeout=10000)
-                
-                # 填写姓名
-                input_selector = 'input[placeholder*="姓名"], input[type="text"]'
-                input_box = page.locator(input_selector).first
-                input_box.fill(name)
-                time.sleep(0.3)
-                
-                # 点击查询按钮
-                button_selector = 'button:has-text("查询"), .query-btn, [class*="query"]'
-                button = page.locator(button_selector).first
-                if button.count() > 0:
-                    button.click()
-                else:
-                    input_box.press('Enter')
-                
-                # 等待结果
-                time.sleep(1.2)
-                try:
-                    page.wait_for_selector('.result-container, .info-item, table', timeout=5000)
-                except:
-                    pass
-                
-                # 获取页面文本
-                text_content = page.locator('body').inner_text()
-            
-            # 提取数据
-            with timer.step("提取数据"):
-                info = parse_player_info(text_content)
-            
-            return text_content
-            
-        except Exception as e:
-            print(f"❌ 查询出错: {e}")
-            return None
-        finally:
-            # 关闭浏览器
-            with timer.step("关闭浏览器"):
-                browser.close()
-
-
-def parse_player_info(text):
-    """
-    解析选手信息
-    
-    Args:
-        text: 页面文本内容
+        session: requests.Session 实例（可选）
+        headers: 请求头（可选）
     
     Returns:
         dict: 选手信息字典
     """
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    start_time = time.time()
     
+    # 创建 session
+    if session is None:
+        session, headers = create_session()
+    
+    headers['Referer'] = BASE_URL
+    
+    try:
+        # 第一步：POST 请求查询
+        data = {'s_xingming': name}
+        response = session.post(VERIFY_URL, data=data, headers=headers, timeout=30)
+        
+        if response.status_code != 200:
+            return {
+                'found': False,
+                'error': f'HTTP {response.status_code}',
+                'name': name
+            }
+        
+        # 检查是否查询成功
+        if '查询成功' not in response.text and 'status":1' not in response.text:
+            # 可能是验证码或其他错误
+            if '验证码' in response.text:
+                return {
+                    'found': False,
+                    'error': '需要验证码',
+                    'name': name
+                }
+            return {
+                'found': False,
+                'error': '查询失败',
+                'name': name
+            }
+        
+        # 第二步：访问结果页面
+        response = session.get(RESULT_URL, headers=headers, timeout=30)
+        
+        if response.status_code != 200:
+            return {
+                'found': False,
+                'error': f'HTTP {response.status_code}',
+                'name': name
+            }
+        
+        # 检查是否有来源异常
+        if '来源异常' in response.text or '请从查分主页登陆' in response.text:
+            return {
+                'found': False,
+                'error': '来源验证失败',
+                'name': name
+            }
+        
+        # 解析选手信息
+        info = parse_player_info(response.text)
+        
+        elapsed = time.time() - start_time
+        
+        return {
+            'found': info is not None,
+            'name': name,
+            'info': info,
+            'elapsed': round(elapsed, 2)
+        }
+        
+    except Exception as e:
+        return {
+            'found': False,
+            'error': str(e),
+            'name': name
+        }
+
+
+def parse_player_info(html):
+    """
+    从 HTML 中解析选手信息
+    
+    Args:
+        html: HTML 文本
+    
+    Returns:
+        dict: 选手信息字典
+    """
     info = {
-        '段位': None,
-        '等级分': None,
-        '总排名': None,
-        '省区排名': None,
-        '本市排名': None,
-        '省区': None,
-        '城市': None,
-        '性别': None,
-        '出生': None,
-        '备注': None,
+        'name': '',
+        'level': '',        # 段位
+        'rating': '',       # 等级分
+        'rank_total': '',   # 总排名
+        'rank_province': '',# 省区排名
+        'rank_city': '',    # 本市排名
+        'rank_age': '',     # 同龄排名
+        'rank_u18': '',     # U18排名
+        'gender': '',       # 性别
+        'birth_year': '',   # 出生年份
+        'province': '',     # 省区
+        'city': '',         # 城市
+        'games_total': '',  # 总对局数
+        'games_year': '',   # 年度对局
+        'wins_year': '',    # 年度胜局
+        'last_game': '',    # 最近对局
+        'cert_date': '',    # 发证日期
+        'note': ''          # 备注
     }
     
-    # 简单解析逻辑
-    for i, line in enumerate(lines):
-        # 段位（简单格式如 "6段"，不含其他文字）
-        if line.endswith('段') and len(line) <= 3 and '晋升' not in line and '备注' not in line:
-            info['段位'] = line
-        
-        # 等级分（通常是一个四位数左右的数字）
-        if line.replace('.', '').isdigit():
-            val = float(line)
-            if 1000 < val < 3000:
-                info['等级分'] = line
-        
-        # 总排名（格式: "总排名\t2559" 或两行格式）
-        if line.startswith('总排名'):
-            parts = line.split('\t')
-            if len(parts) > 1:
-                info['总排名'] = parts[1].strip()
-            elif i + 1 < len(lines):
-                next_line = lines[i + 1].replace('\t', '').strip()
-                if next_line.isdigit():
-                    info['总排名'] = next_line
-        
-        # 省区排名
-        if line.startswith('省区排名'):
-            parts = line.split('\t')
-            if len(parts) > 1:
-                info['省区排名'] = parts[1].strip()
-            elif i + 1 < len(lines):
-                info['省区排名'] = lines[i + 1].replace('\t', '').strip()
-        
-        # 本市排名
-        if line.startswith('本市排名'):
-            parts = line.split('\t')
-            if len(parts) > 1:
-                info['本市排名'] = parts[1].strip()
-            elif i + 1 < len(lines):
-                info['本市排名'] = lines[i + 1].replace('\t', '').strip()
-        
-        # 省区
-        if line.startswith('省区') and not line.startswith('省区排名'):
-            parts = line.split('\t')
-            if len(parts) > 1:
-                info['省区'] = parts[1].strip()
-            elif i + 1 < len(lines):
-                info['省区'] = lines[i + 1]
-        
-        # 城市
-        if line.startswith('城市'):
-            parts = line.split('\t')
-            if len(parts) > 1:
-                info['城市'] = parts[1].strip()
-            elif i + 1 < len(lines):
-                info['城市'] = lines[i + 1]
-        
-        # 性别
-        if line.startswith('性别'):
-            parts = line.split('\t')
-            if len(parts) > 1:
-                info['性别'] = parts[1].strip()
-            elif i + 1 < len(lines):
-                info['性别'] = lines[i + 1]
-        
-        # 出生
-        if line.startswith('出生'):
-            parts = line.split('\t')
-            if len(parts) > 1:
-                info['出生'] = parts[1].strip()
-            elif i + 1 < len(lines):
-                info['出生'] = lines[i + 1]
-        
-        # 备注（以"备注"开头或包含晋升信息）
-        if line.startswith('备注\t') or (len(line) > 10 and '晋升' in line and '杯' in line):
-            info['备注'] = line.replace('备注\t', '')
+    # 提取姓名（在 font-size:36px 的 div 中）
+    name_match = re.search(r'<div style="font-size:36px;">([^<]+)</div>', html)
+    if name_match:
+        info['name'] = name_match.group(1).strip()
+    
+    # 提取段位（类似格式的第二个 div）
+    name_matches = re.findall(r'<div style="font-size:36px;">([^<]+)</div>', html)
+    if len(name_matches) >= 2:
+        info['level'] = name_matches[1].strip()
+    
+    # 提取等级分
+    rating_match = re.search(r'等级分.*?<div[^>]*>([\d.]+)</div>', html, re.DOTALL)
+    if rating_match:
+        info['rating'] = rating_match.group(1).strip()
+    
+    # 提取表格中的信息
+    # 格式：<td class="left_cell"><span >总排名</span></td><td class="right_cell">777</td>
+    def extract_field(label):
+        pattern = rf'<span[^>]*>\s*{re.escape(label)}\s*</span>.*?<td class="right_cell">([^<]+)</td>'
+        match = re.search(pattern, html, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        return ''
+    
+    info['rank_total'] = extract_field('总排名')
+    info['rank_province'] = extract_field('省区排名')
+    info['rank_city'] = extract_field('本市排名')
+    info['rank_age'] = extract_field('同龄排名')
+    info['rank_u18'] = extract_field('U18排名')
+    info['gender'] = extract_field('性别')
+    info['birth_year'] = extract_field('出生')
+    info['province'] = extract_field('省区')
+    info['city'] = extract_field('城市')
+    info['games_total'] = extract_field('总对局数')
+    info['games_year'] = extract_field('年度对局')
+    info['wins_year'] = extract_field('年度胜局')
+    info['last_game'] = extract_field('最近对局')
+    info['cert_date'] = extract_field('发证日期')
+    info['note'] = extract_field('备注')
+    
+    # 检查是否有有效信息
+    if not info['name'] and not info['level']:
+        return None
     
     return info
 
 
-def format_output(name, info, elapsed):
-    """格式化输出结果 - Markdown 格式"""
-    output = []
-    output.append(f"\n📋 **{name}** - 易查分业余段位查询\n")
+def format_output(result, json_output=False):
+    """格式化输出结果"""
+    if json_output:
+        # 保持和原来一致的 JSON 格式
+        info = result.get('info', {})
+        output = {
+            "found": result.get('found', False),
+            "name": result.get('name', ''),
+            "level": info.get('level', ''),
+            "rating": float(info.get('rating', 0)) if info.get('rating') else 0,
+            "total_rank": int(info.get('rank_total', 0)) if info.get('rank_total') else 0,
+            "province_rank": int(info.get('rank_province', 0)) if info.get('rank_province') else 0,
+            "city_rank": int(info.get('rank_city', 0)) if info.get('rank_city') else 0,
+            "gender": info.get('gender', ''),
+            "birth_year": info.get('birth_year', ''),
+            "province": info.get('province', ''),
+            "city": info.get('city', ''),
+            "notes": info.get('note', ''),
+            "query_time": result.get('elapsed', 0)
+        }
+        return json.dumps(output, ensure_ascii=False, indent=2)
     
-    parts = []
-    if info.get('段位'):
-        parts.append(f"段位: {info['段位']}")
-    if info.get('等级分'):
-        parts.append(f"等级分: {info['等级分']}")
-    if info.get('总排名'):
-        parts.append(f"总排名: {info['总排名']}")
-    if info.get('省区'):
-        parts.append(f"地区: {info['省区']} {info.get('城市', '')}".strip())
-    if info.get('性别'):
-        parts.append(f"性别: {info['性别']}")
-    if info.get('出生'):
-        parts.append(f"出生: {info['出生']}")
+    if not result.get('found'):
+        return f"❌ {result['name']}: {result.get('error', '未找到')}"
     
-    if parts:
-        output.append(" | ".join(parts))
-    else:
-        output.append("⚠️ 未查询到业余段位信息")
+    info = result.get('info', {})
+    lines = []
     
-    if info.get('备注'):
-        output.append(f"\n备注: {info['备注']}")
+    lines.append(f"\n{'='*50}")
+    lines.append(f"📋 {info.get('name', result['name'])} - 易查分业余段位")
+    lines.append(f"{'='*50}")
     
-    output.append(f"\n⏱️ 查询耗时: {elapsed:.1f}秒\n")
-    output.append(timer.format_report())
-    return "\n".join(output)
-
-
-def format_json_output(name, info, elapsed):
-    """格式化输出结果 - JSON 格式"""
-    result = {
-        "found": bool(info.get('段位') or info.get('等级分')),
-        "name": name,
-        "level": info.get('段位', ''),
-        "rating": float(info.get('等级分', 0)) if info.get('等级分') else 0,
-        "total_rank": int(info.get('总排名', 0)) if info.get('总排名') else 0,
-        "province_rank": int(info.get('省区排名', 0)) if info.get('省区排名') else 0,
-        "city_rank": int(info.get('本市排名', 0)) if info.get('本市排名') else 0,
-        "gender": info.get('性别', ''),
-        "birth_year": info.get('出生', ''),
-        "province": info.get('省区', ''),
-        "city": info.get('城市', ''),
-        "notes": info.get('备注', ''),
-        "query_time": round(elapsed, 1),
-        "performance": timer.to_dict()
-    }
-    return json.dumps(result, ensure_ascii=False, indent=2)
-
-
-def query_single_player(page, name, timer):
-    """
-    在已打开的页面中查询单个选手（用于批量查询）
+    if info.get('level'):
+        lines.append(f"🏆 段位: {info['level']}")
+    if info.get('rating'):
+        lines.append(f"📊 等级分: {info['rating']}")
     
-    Args:
-        page: Playwright page 对象
-        name: 选手姓名
-        timer: 性能计时器
+    lines.append("")
     
-    Returns:
-        dict: 选手信息字典
-    """
-    try:
-        # 重新导航到页面
-        with timer.step(f"[{name}] 页面导航"):
-            page.goto(BASE_URL, wait_until='domcontentloaded')
-            time.sleep(0.8)
-        
-        # 填写表单
-        with timer.step(f"[{name}] 填写表单"):
-            input_selector = 'input[placeholder*="姓名"], input[type="text"]'
-            input_box = page.locator(input_selector).first
-            input_box.fill("")
-            input_box.fill(name)
-            time.sleep(0.2)
-        
-        # 点击查询
-        with timer.step(f"[{name}] 点击查询"):
-            button_selector = 'button:has-text("查询"), .query-btn, [class*="query"]'
-            button = page.locator(button_selector).first
-            if button.count() > 0:
-                button.click()
-            else:
-                input_box.press('Enter')
-        
-        # 等待结果
-        with timer.step(f"[{name}] 等待结果"):
-            time.sleep(1.0)
-            try:
-                page.wait_for_selector('.result-container, .info-item, table', timeout=4000)
-            except:
-                pass
-        
-        # 提取数据
-        with timer.step(f"[{name}] 提取数据"):
-            text_content = page.locator('body').inner_text()
-            info = parse_player_info(text_content)
-            info['_name'] = name
-            info['_raw'] = text_content
-            return info
-            
-    except Exception as e:
-        return {'_name': name, '_error': str(e)}
-
-
-def query_multiple_players(names, headless=True):
-    """
-    批量查询多个选手（共享浏览器会话）
+    if info.get('rank_total'):
+        lines.append(f"📌 总排名: {info['rank_total']}")
+    if info.get('rank_province'):
+        lines.append(f"📍 省区排名: {info['rank_province']}")
+    if info.get('rank_city'):
+        lines.append(f"🏙️  本市排名: {info['rank_city']}")
     
-    Args:
-        names: 姓名列表
-        headless: 是否无头模式
+    lines.append("")
     
-    Returns:
-        list: 选手信息列表
-    """
-    global timer
-    timer.start()
-    results = []
+    if info.get('province') or info.get('city'):
+        lines.append(f"🌍 地区: {info.get('province', '')} {info.get('city', '')}")
+    if info.get('gender') or info.get('birth_year'):
+        lines.append(f"👤 性别: {info.get('gender', '')} | 出生: {info.get('birth_year', '')}")
     
-    with sync_playwright() as p:
-        # 启动浏览器（只启动一次）
-        with timer.step("启动浏览器"):
-            browser = p.chromium.launch_persistent_context(
-                user_data_dir=str(USER_DATA_DIR),
-                headless=headless,
-                args=['--no-sandbox'] if headless else []
-            )
-        
-        # 获取页面
-        with timer.step("初始化页面"):
-            page = browser.pages[0] if browser.pages else browser.new_page()
-            page.goto(BASE_URL, wait_until='networkidle')
-            page.wait_for_selector('input[placeholder*="姓名"], input[type="text"]', timeout=10000)
-        
-        # 逐个查询
-        for i, name in enumerate(names, 1):
-            info = query_single_player(page, name, timer)
-            results.append(info)
-        
-        # 关闭浏览器（只关闭一次）
-        with timer.step("关闭浏览器"):
-            browser.close()
+    if info.get('games_total'):
+        lines.append(f"🎮 总对局: {info['games_total']}")
+    if info.get('last_game'):
+        lines.append(f"📅 最近对局: {info['last_game']}")
     
-    return results
-
-
-def format_batch_output(results, total_elapsed, json_mode=False):
-    """格式化批量查询输出"""
-    if json_mode:
-        output = []
-        for info in results:
-            name = info.get('_name', '未知')
-            if info.get('_error'):
-                output.append({
-                    "found": False,
-                    "name": name,
-                    "error": info['_error']
-                })
-            else:
-                output.append({
-                    "found": bool(info.get('段位') or info.get('等级分')),
-                    "name": name,
-                    "level": info.get('段位', ''),
-                    "rating": float(info.get('等级分', 0)) if info.get('等级分') else 0,
-                    "province": info.get('省区', ''),
-                    "city": info.get('城市', ''),
-                    "notes": info.get('备注', '')
-                })
-        print(json.dumps({
-            "count": len(results),
-            "results": output,
-            "performance": timer.to_dict()
-        }, ensure_ascii=False, indent=2))
-    else:
-        output = []
-        output.append("\n📋 批量查询结果汇总\n")
-        
-        for info in results:
-            name = info.get('_name', '未知')
-            
-            if info.get('_error'):
-                output.append(f"• **{name}**: ❌ 查询失败 - {info['_error']}")
-                continue
-            
-            parts = []
-            if info.get('段位'):
-                parts.append(f"段位: {info['段位']}")
-            if info.get('等级分'):
-                parts.append(f"等级分: {info['等级分']}")
-            if info.get('总排名'):
-                parts.append(f"总排名: {info['总排名']}")
-            if info.get('省区'):
-                parts.append(f"地区: {info['省区']}")
-            
-            if parts:
-                output.append(f"• **{name}**: {' | '.join(parts)}")
-            else:
-                output.append(f"• **{name}**: ⚠️ 未找到段位信息")
-        
-        output.append(f"\n⏱️ 总耗时: {total_elapsed:.1f}秒 | 平均: {total_elapsed/len(results):.1f}秒/人\n")
-        output.append(timer.format_report())
-        return "\n".join(output)
+    if result.get('elapsed'):
+        lines.append(f"\n⏱️  查询耗时: {result['elapsed']}秒")
+    
+    return '\n'.join(lines)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='查询易查分业余段位')
-    parser.add_argument('names', nargs='+', help='选手姓名（单个或多个）')
-    parser.add_argument('--batch', action='store_true', help='批量查询模式')
+    parser = argparse.ArgumentParser(description='易查分业余段位查询（HTTP 请求版）')
+    parser.add_argument('name', nargs='*', help='选手姓名')
     parser.add_argument('--json', action='store_true', help='输出 JSON 格式')
-    parser.add_argument('--visible', action='store_true', help='显示浏览器窗口（调试用）')
-    parser.add_argument('--debug', action='store_true', help='打印调试信息')
+    parser.add_argument('--batch', action='store_true', help='批量查询模式')
     args = parser.parse_args()
     
-    headless = not args.visible
+    if not args.name:
+        print(__doc__)
+        print("\n【单个查询】")
+        print("  python3 query_yichafen.py 张三")
+        print("  python3 query_yichafen.py 李四 --json")
+        print("\n【批量查询】")
+        print("  python3 query_yichafen.py --batch 张三 李四 王五")
+        sys.exit(0)
     
-    # 批量查询模式
+    names = args.name
+    
+    # 创建 session（复用于所有查询）
+    session, headers = create_session()
+    
     if args.batch:
-        start_time = time.time()
-        results = query_multiple_players(args.names, headless=headless)
-        total_elapsed = time.time() - start_time
-        format_batch_output(results, total_elapsed, json_mode=args.json)
-        return
-    
-    # 单个查询模式
-    name = args.names[0]
-    start_time = time.time()
-    
-    # 执行查询
-    result_text = query_player(name, headless=headless)
-    elapsed = time.time() - start_time
-    
-    if result_text:
-        info = parse_player_info(result_text)
-        if args.json:
-            print(format_json_output(name, info, elapsed))
-        else:
-            print(format_output(name, info, elapsed))
+        # 批量查询
+        results = []
+        for name in names:
+            result = query_player(name, session, headers)
+            results.append(result)
+            if not args.json:
+                print(format_output(result))
         
-        # 同时打印原始文本（调试用）
-        if args.debug:
-            print("\n原始文本:")
-            print("-" * 50)
-            print(result_text[:1500])
-    else:
         if args.json:
-            print(json.dumps({
-                "found": False,
-                "name": name,
-                "error": "查询失败，请检查网络连接或稍后重试",
-                "performance": timer.to_dict()
-            }, ensure_ascii=False, indent=2))
-        else:
-            print("❌ 查询失败，请检查网络连接或稍后重试")
+            print(json.dumps(results, ensure_ascii=False, indent=2))
+    else:
+        # 单个查询
+        result = query_player(names[0], session, headers)
+        print(format_output(result, args.json))
 
 
 if __name__ == "__main__":
