@@ -63,7 +63,6 @@ class TestAutoStateInit:
             config = state.init_config(
                 estimated_games=100_000,
                 first_n=80,
-                distance_threshold=4,
                 min_freq=5,
                 global_top_k=10_000,
                 rebuild_threshold_days=7

@@ -46,7 +46,6 @@ def run_full_integration_test():
         state.init_config(
             estimated_games=50_000,
             first_n=50,
-            distance_threshold=4,
             min_freq=5,
             global_top_k=5000,
             rebuild_threshold_days=0

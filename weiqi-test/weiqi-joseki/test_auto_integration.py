@@ -52,7 +52,6 @@ def run_integration_test():
         state.init_config(
             estimated_games=50_000,  # 小规模CMS
             first_n=50,              # 只提取前50手
-            distance_threshold=4,
             min_freq=3,              # 降低频率阈值
             global_top_k=1000,       # 只保留1000条定式
             rebuild_threshold_days=0  # 立即重建

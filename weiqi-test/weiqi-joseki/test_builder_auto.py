@@ -63,12 +63,10 @@ class TestExtractFromTarToTemp:
         """测试config参数结构"""
         config = {
             'first_n': 80,
-            'distance_threshold': 4,
             'min_moves': 4
         }
         # 验证配置结构
         assert 'first_n' in config
-        assert 'distance_threshold' in config
         assert 'min_moves' in config
 
 
