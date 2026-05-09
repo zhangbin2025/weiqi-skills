@@ -18,7 +18,7 @@ from src.extraction import convert_to_multigogm
 from src.builder import KatagoJosekiBuilder
 from src.discover import JosekiDiscoverer
 from src.storage import JsonStorage
-from src.core.coords import convert_to_top_right
+from src.core.coords import convert_to_top_right, normalize_corner_sequence
 
 
 class TestExtract(unittest.TestCase):
@@ -144,8 +144,13 @@ class TestDiscover(unittest.TestCase):
     
     def test_discover_corner(self):
         """测试单角发现"""
+        # 原始定式着法
+        original_moves = ["pd", "qf", "nc", "rd"]
+        # 标准化定式（因为 TrieMatcher 期望定式已标准化）
+        std_moves, _ = normalize_corner_sequence(original_moves)
+        
         joseki_list = [
-            {"id": "kj_00001", "moves": ["pd", "qf", "nc", "rd"]},
+            {"id": "kj_00001", "moves": std_moves},
         ]
         discoverer = JosekiDiscoverer(joseki_list)
 
