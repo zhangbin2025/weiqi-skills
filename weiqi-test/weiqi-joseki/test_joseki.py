@@ -26,13 +26,13 @@ class TestExtract(unittest.TestCase):
     
     def test_extract_empty_sgf(self):
         """测试空SGF"""
-        result = extract_moves_all_corners("", first_n=80, distance_threshold=4)
+        result = extract_moves_all_corners("", first_n=80)
         self.assertEqual(result, {})
     
     def test_extract_simple_sgf(self):
         """测试简单SGF提取"""
         sgf = "(;SZ[19];B[pd];W[qf];B[nc])"
-        result = extract_moves_all_corners(sgf, first_n=10, distance_threshold=4)
+        result = extract_moves_all_corners(sgf, first_n=10)
         
         # 应该提取到右上角
         self.assertIn('tr', result)
@@ -42,7 +42,7 @@ class TestExtract(unittest.TestCase):
     def test_extract_with_pass(self):
         """测试提取含脱先的棋谱"""
         sgf = "(;SZ[19];B[pd];W[dp];B[pp];W[dd];B[qf];W[pj];B[nc])"
-        result = extract_moves_all_corners(sgf, first_n=10, distance_threshold=4)
+        result = extract_moves_all_corners(sgf, first_n=10)
         
         # 右上角应该包含脱先标记
         if 'tr' in result:
@@ -54,7 +54,7 @@ class TestExtract(unittest.TestCase):
     def test_extract_four_corners(self):
         """测试四角提取"""
         sgf = "(;SZ[19];B[pd];W[dp];B[dd];W[pp];B[nc];W[qc];B[cj];W[cn];B[jc];W[pd])"
-        result = extract_moves_all_corners(sgf, first_n=20, distance_threshold=4)
+        result = extract_moves_all_corners(sgf, first_n=20)
         
         # 应该能提取到至少两个角
         corners = list(result.keys())
@@ -64,29 +64,19 @@ class TestExtract(unittest.TestCase):
         """测试first_n参数"""
         sgf = "(;SZ[19]" + ";B[pd];W[qf]" * 30 + ")"
         
-        result_10 = extract_moves_all_corners(sgf, first_n=10, distance_threshold=4)
-        result_20 = extract_moves_all_corners(sgf, first_n=20, distance_threshold=4)
+        result_10 = extract_moves_all_corners(sgf, first_n=10)
+        result_20 = extract_moves_all_corners(sgf, first_n=20)
         
         # first_n越大，提取到的着法可能越多
         total_10 = sum(len(get_move_sequence(moves)) for moves in result_10.values())
         total_20 = sum(len(get_move_sequence(moves)) for moves in result_20.values())
         self.assertGreaterEqual(total_20, total_10)
     
-    def test_extract_distance_threshold(self):
-        """测试距离阈值参数"""
-        sgf = "(;SZ[19];B[pd];W[qf];B[nc])"
-        
-        result_4 = extract_moves_all_corners(sgf, first_n=10, distance_threshold=4)
-        result_6 = extract_moves_all_corners(sgf, first_n=10, distance_threshold=6)
-        
-        # 距离阈值不同，提取结果可能不同
-        self.assertIsInstance(result_4, dict)
-        self.assertIsInstance(result_6, dict)
-    
+
     def test_convert_to_multigogm(self):
         """测试MULTIGOGM转换"""
         sgf = "(;SZ[19];B[pd];W[qf];B[nc])"
-        result = extract_moves_all_corners(sgf, first_n=10, distance_threshold=4)
+        result = extract_moves_all_corners(sgf, first_n=10)
         
         if result:
             multigogm = convert_to_multigogm(result)
@@ -116,13 +106,13 @@ class TestBuilder(unittest.TestCase):
         builder = KatagoJosekiBuilder(str(self.db_path))
         sgf = "(;SZ[19];B[pd];W[qf];B[nc];W[rd])"
         
-        result = builder.process_sgf(sgf, first_n=10, distance_threshold=4)
+        result = builder.process_sgf(sgf, first_n=10)
         self.assertIsInstance(result, dict)
     
     def test_builder_empty_sgf(self):
         """测试处理空SGF"""
         builder = KatagoJosekiBuilder(str(self.db_path))
-        result = builder.process_sgf("", first_n=10, distance_threshold=4)
+        result = builder.process_sgf("", first_n=10)
         self.assertEqual(result, {})
     
     def test_save_to_db(self):
@@ -192,7 +182,7 @@ class TestDiscover(unittest.TestCase):
         discoverer = JosekiDiscoverer(joseki_list)
 
         sgf = "(;SZ[19];B[pd];W[qf];B[nc])"
-        results = discoverer.discover(sgf, first_n=10, distance_threshold=4)
+        results = discoverer.discover(sgf, first_n=10)
 
         self.assertIsInstance(results, dict)
         for corner, match in results.items():
@@ -275,12 +265,12 @@ class TestIntegration(unittest.TestCase):
         
         # 2. 从SGF提取
         sgf = "(;SZ[19];B[pd];W[qf];B[nc];W[rd])"
-        extracted = extract_moves_all_corners(sgf, first_n=10, distance_threshold=4)
+        extracted = extract_moves_all_corners(sgf, first_n=10)
         self.assertIn('tr', extracted)
         
         # 3. 发现定式
         discoverer = JosekiDiscoverer(joseki_list)
-        results = discoverer.discover(sgf, first_n=10, distance_threshold=4)
+        results = discoverer.discover(sgf, first_n=10)
         self.assertIsInstance(results, dict)
         
         # 4. 验证发现结果
