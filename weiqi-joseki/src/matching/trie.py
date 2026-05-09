@@ -51,10 +51,14 @@ class TrieMatcher:
     def _add_to_trie(self, trie: dict, moves: List[str], joseki_id: str):
         """将定式着法序列加入前缀树"""
         node = trie
-        for move in moves:
+        for i, move in enumerate(moves):
             if move not in node:
                 node[move] = {'next': {}, 'ids': []}
-            node[move]['ids'].append(joseki_id)
+            
+            # 只在最后一着才添加 joseki_id
+            if i == len(moves) - 1:
+                node[move]['ids'].append(joseki_id)
+            
             node = node[move]['next']
     
     def match(self, moves: List[str], top_k: int = 3) -> List[PrefixMatchResult]:
