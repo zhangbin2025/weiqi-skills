@@ -53,7 +53,7 @@ def parse_sgf(sgf_content: str) -> Dict[str, Any]:
         'black_rank': info.get('black_rank', ''),
         'white_rank': info.get('white_rank', ''),
         'date': info.get('date', ''),
-        'event': info.get('game_name', ''),
+        'event': info.get('event', '') or info.get('game_name', ''),
         'result': info.get('result', ''),
         'komi': info.get('komi', ''),
         'handicap': info.get('handicap', 0),
