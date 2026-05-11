@@ -18,7 +18,6 @@
 import argparse
 import json
 import os
-import random
 import re
 import sys
 from pathlib import Path
@@ -26,81 +25,7 @@ from typing import Dict, List, Optional, Tuple
 
 # 导入SGF解析器
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sgf_parser import parse_sgf
-
-
-# ==================== 等级判定 ====================
-
-# 等级映射表：内部标识 -> 显示名称
-# 三级划分：职业 / 高段 / 普通
-LEVEL_MAP = {
-    'pro': '职业',      # 职业棋手（P段/职业/九段...初段）
-    'high': '高段',     # 业余5段以上（野狐5d+）
-    'normal': '普通'    # 业余1-4段、级位、未知
-}
-
-
-def parse_rank(rank_str: str) -> Optional[str]:
-    """
-    解析段位字符串，返回内部等级标识
-    
-    三级划分：
-    - 职业: 职业/九段...初段/P段
-    - 高段: 业余5段以上（野狐5d+）
-    - 普通: 业余1-4段、级位、未知
-    """
-    if not rank_str:
-        return None
-    
-    rank_str = str(rank_str).strip()
-    
-    # 职业棋手
-    if '职业' in rank_str:
-        return 'pro'
-    if re.match(r'[九八七六五四三二初]段$', rank_str):
-        return 'pro'
-    # 野狐格式：P9段（P表示职业 Professional）
-    if re.match(r'P\d+段$', rank_str, re.IGNORECASE):
-        return 'pro'
-    
-    # 业余段位 (支持 "x段" 或 "xd" 格式，1-9段有效)
-    match = re.match(r'(\d+)[段d]$', rank_str, re.IGNORECASE)
-    if match:
-        d = int(match.group(1))
-        if d < 1 or d > 9:
-            return None       # 超出有效段位范围
-        if d >= 5:
-            return 'high'     # 高段：5-9段
-        else:
-            return 'normal'   # 普通：1-4段
-    
-    # 级位归入普通
-    if re.match(r'\d+[级kK]$', rank_str):
-        return 'normal'
-    
-    return None
-
-
-def determine_game_level(game_info: Dict) -> str:
-    """
-    判定整局棋的等级
-    
-    规则：取双方段位中较高的一方作为整局等级
-    """
-    b = parse_rank(game_info.get('black_rank', ''))
-    w = parse_rank(game_info.get('white_rank', ''))
-    
-    levels = [l for l in [b, w] if l]
-    if not levels:
-        return LEVEL_MAP['normal']  # 无段位信息归入普通
-    
-    # 优先级顺序：职业 > 高段 > 普通
-    priority = ['pro', 'high', 'normal']
-    for p in priority:
-        if p in levels:
-            return LEVEL_MAP[p]
-    
-    return LEVEL_MAP['normal']
+from sgf_parser import parse_sgf, coord_to_pos
 
 
 # ==================== 格式适配器 ====================
@@ -225,79 +150,68 @@ def get_adapter(format_type: str) -> FormatAdapter:
 class Problem:
     """单个选点题"""
     
-    def __init__(self, move_num: int, position: List[Dict], variations: List[Dict], 
-                 main_moves: List[Dict] = None, game_level: str = '未知'):
-        self.move_num = move_num          # 题目标记的手数
-        self.position = position          # 题目前的历史局面着法
-        self.variations = variations      # 变化图（选项）
-        self.main_moves = main_moves      # 主分支所有着法
-        self.game_level = game_level      # 题目所属等级（来自整局棋）
-        self.practical_move = self._get_practical_move(main_moves, move_num)
+    def __init__(self, move_num: int, position: List[Dict], variations: List[Dict]):
+        self.move_num = move_num  # 题目标记的手数
+        self.position = position  # 题目前的历史局面着法
+        self.variations = variations  # 变化图（选项）
         self.phase = self._classify_phase(move_num)
-        self.is_blunder = self._check_blunder(variations, main_moves, move_num)
-    
-    def _get_practical_move(self, main_moves: List[Dict], move_num: int) -> Optional[Dict]:
-        """获取实战落子信息"""
-        if not main_moves or move_num >= len(main_moves):
-            return None
-        return main_moves[move_num]
+        self.difficulty = self._classify_difficulty(variations)
+        self.is_blunder = self._check_blunder(variations)
     
     def _classify_phase(self, move_num: int) -> str:
         """分类题目阶段"""
         if move_num <= 60:
-            return 'layout'   # 布局
+            return 'layout'  # 布局
         elif move_num <= 180:
-            return 'middle'   # 中盘
+            return 'middle'  # 中盘
         else:
             return 'endgame'  # 官子
     
-    def _check_blunder(self, variations: List[Dict], main_moves: List[Dict] = None, 
-                       move_num: int = None) -> bool:
-        """
-        检查是否为恶手题
+    def _classify_difficulty(self, variations: List[Dict]) -> str:
+        """分类难度"""
+        if len(variations) < 2:
+            return 'easy'
         
-        判定标准：实战落子对应的AI变化胜率比最高胜率差20%以上
-        """
+        rates = []
+        for v in variations:
+            rate_info = self._parse_var_winrate(v)
+            if rate_info:
+                rates.append(rate_info['rate'])
+        
+        if len(rates) < 2:
+            return 'easy'
+        
+        rates.sort(reverse=True)
+        diff = rates[0] - rates[1]
+        
+        if diff > 15:
+            return 'easy'
+        elif diff > 5:
+            return 'medium'
+        else:
+            return 'hard'
+    
+    def _check_blunder(self, variations: List[Dict]) -> bool:
+        """检查是否为恶手题"""
         if len(variations) < 2:
             return False
         
-        # 获取实战落子坐标
-        if not main_moves or move_num is None or move_num >= len(main_moves):
-            return False
-        
-        practical_move = main_moves[move_num]
-        practical_coord = practical_move.get('coord', '')
-        
-        if not practical_coord:
-            return False
-        
-        # 在变化图中找到实战落子对应的变化
-        practical_rate = None
-        max_rate = 0
-        
+        rates = []
         for v in variations:
             rate_info = self._parse_var_winrate(v)
-            if not rate_info:
-                continue
-            
-            rate = rate_info['rate']
-            max_rate = max(max_rate, rate)
-            
-            # 检查这个变化的第一步是否等于实战落子
-            if v.get('moves') and len(v['moves']) > 0:
-                first_move = v['moves'][0]
-                if first_move.get('coord') == practical_coord:
-                    practical_rate = rate
+            if rate_info:
+                rates.append(rate_info['rate'])
         
-        # 实战落子胜率比最高胜率差20%以上，才是恶手题
-        if practical_rate is None:
+        if len(rates) < 2:
             return False
         
-        return (max_rate - practical_rate) > 20
+        rates.sort(reverse=True)
+        return (rates[0] - rates[1]) > 20
     
     def _parse_var_winrate(self, variation: Dict) -> Optional[Dict]:
         """解析变化的胜率"""
         comment = variation.get('comment', '')
+        # 尝试各种格式
         patterns = [
             r'([黑白]).*?(\d+\.?\d*)%',
             r'([BW])\s+(\d+\.?\d*)%',
@@ -331,6 +245,7 @@ def deduplicate_variations(variations: List[Dict], format_type: str) -> List[Dic
         if winrate_info:
             rate = winrate_info['rate']
         else:
+            # 尝试通用解析
             match = re.search(r'(\d+\.?\d*)%', comment)
             if match:
                 rate = float(match.group(1))
@@ -345,8 +260,7 @@ def deduplicate_variations(variations: List[Dict], format_type: str) -> List[Dic
 
 
 def extract_problems(moves: List[Dict], variations: Dict, format_type: str = 'default',
-                     problem_type: Optional[str] = None, phase: Optional[str] = None,
-                     max_problems: int = 5, game_level: str = '未知') -> List[Problem]:
+                     problem_type: Optional[str] = None, phase: Optional[str] = None) -> List[Problem]:
     """
     提取选点题
     
@@ -354,10 +268,8 @@ def extract_problems(moves: List[Dict], variations: Dict, format_type: str = 'de
         moves: 主分支着法
         variations: 变化图字典 {move_num: [variations]}
         format_type: 棋谱格式
-        problem_type: 题目类型筛选 (blunder/None)
+        problem_type: 题目类型筛选 (blunder/easy/medium/hard)
         phase: 阶段筛选 (layout/middle/endgame)
-        max_problems: 最大题目数量
-        game_level: 整局棋等级
     
     Returns:
         Problem对象列表
@@ -376,147 +288,26 @@ def extract_problems(moves: List[Dict], variations: Dict, format_type: str = 'de
         # 截取历史局面
         position = moves[:move_num]
         
-        problem = Problem(move_num, position, deduped, moves, game_level)
+        problem = Problem(move_num, position, deduped)
         
         # 应用筛选
-        if problem_type == 'blunder' and not problem.is_blunder:
-            continue
+        if problem_type:
+            if problem_type == 'blunder' and not problem.is_blunder:
+                continue
+            elif problem_type in ['easy', 'medium', 'hard'] and problem.difficulty != problem_type:
+                continue
         
         if phase and problem.phase != phase:
             continue
         
         problems.append(problem)
     
-    # 恶手题优先，然后按手数排序
-    problems.sort(key=lambda p: (not p.is_blunder, p.move_num))
-    
-    # 限制题目数量
-    if max_problems and len(problems) > max_problems:
-        problems = problems[:max_problems]
-    
+    # 按手数排序
+    problems.sort(key=lambda p: p.move_num)
     return problems
 
 
 # ==================== HTML生成 ====================
-
-def generate_quiz_json(problems: List[Problem], game_info: Dict, sgf_content: str) -> dict:
-    """生成做题 JSON 数据（不含模板）"""
-    
-    if not problems:
-        return {"success": False, "error": "没有提取到选点题"}
-    
-    # 准备题目数据
-    problems_data = []
-    for i, p in enumerate(problems):
-        # 为每个变化分配选项字母
-        options = []
-        letters = ['A', 'B', 'C', 'D', 'E', 'F']
-        
-        # 按胜率排序，最高的为正确答案
-        sorted_vars = sorted(p.variations, 
-                           key=lambda v: _extract_rate(v.get('comment', '')), 
-                           reverse=True)
-        
-        for j, var in enumerate(sorted_vars[:6]):  # 最多6个选项
-            first_move = var['moves'][0] if var.get('moves') else None
-            
-            # 提取胜率显示文本
-            comment = var.get('comment', '')
-            winrate_val = _extract_rate(comment)
-            winrate_text = f"{winrate_val:.1f}%" if winrate_val > 0 else ""
-            
-            options.append({
-                'coord': first_move['coord'] if first_move else '',
-                'color': first_move['color'] if first_move else 'B',
-                'winrate': winrate_text,
-                'comment': comment,
-                'moves': var.get('moves', []),
-                'is_correct': j == 0,
-                'sort_order': j
-            })
-        
-        # 随机打乱选项顺序
-        shuffle_seed = p.move_num + sum(ord(c) for c in (options[0]['coord'] if options else 'A'))
-        rng = random.Random(shuffle_seed)
-        rng.shuffle(options)
-        
-        # 重新分配字母标签
-        for j, opt in enumerate(options):
-            opt['letter'] = letters[j] if j < len(letters) else f"{j+1}"
-        
-        # 构建实战落子信息
-        practical_move_data = None
-        if p.practical_move:
-            practical_coord = p.practical_move.get('coord', '')
-            practical_color = p.practical_move.get('color', 'B')
-            practical_winrate = 0
-            practical_moves = []
-            
-            # 从主分支获取实战变化的后续着法
-            if p.main_moves and p.move_num < len(p.main_moves):
-                follow_up_moves = p.main_moves[p.move_num:p.move_num + 15]
-                practical_moves = [
-                    {'color': m.get('color', 'B'), 'coord': m.get('coord', '')}
-                    for m in follow_up_moves if m.get('coord')
-                ]
-            
-            # 从变化图中查找实战落子胜率
-            if not practical_moves:
-                for v in p.variations:
-                    if v.get('moves') and len(v['moves']) > 0:
-                        first_move = v['moves'][0]
-                        if first_move.get('coord') == practical_coord:
-                            comment = v.get('comment', '')
-                            practical_winrate = _extract_rate(comment)
-                            practical_moves = v.get('moves', [])
-                            break
-            
-            # 计算是否是恶手
-            max_rate = max([_extract_rate(opt.get('comment', '')) for opt in p.variations]) if p.variations else 0
-            is_practical_blunder = (max_rate - practical_winrate) > 20 if practical_winrate > 0 else False
-            
-            practical_move_data = {
-                'coord': practical_coord,
-                'color': practical_color,
-                'winrate': f"{practical_winrate:.1f}%" if practical_winrate > 0 else "N/A",
-                'is_blunder': is_practical_blunder,
-                'moves': practical_moves
-            }
-        
-        problems_data.append({
-            'index': i,
-            'move_num': p.move_num,
-            'phase': p.phase,
-            'gameLevel': p.game_level,
-            'is_blunder': p.is_blunder,
-            'position': p.position,
-            'options': options,
-            'practical_move': practical_move_data
-        })
-    
-    # 标题优先使用比赛名称(GN)，如果没有则使用棋手对局
-    game_name = game_info.get('game_name', '').strip()
-    if not game_name or game_name == '围棋棋谱':
-        game_title = f"{game_info.get('black', '黑棋')} vs {game_info.get('white', '白棋')}"
-    else:
-        game_title = game_name
-    
-    return {
-        'success': True,
-        'game_name': game_title,
-        'black': game_info.get('black', '黑棋'),
-        'white': game_info.get('white', '白棋'),
-        'black_rank': game_info.get('black_rank', ''),
-        'white_rank': game_info.get('white_rank', ''),
-        'board_size': int(game_info.get('board_size', 19)),
-        'handicap_stones': game_info.get('handicap_stones', []),
-        'result': game_info.get('result', ''),
-        'date': game_info.get('date', ''),
-        'problems': problems_data,
-        'total': len(problems_data),
-        'sgf': sgf_content
-    }
-
 
 def generate_quiz_html(problems: List[Problem], game_info: Dict, sgf_content: str,
                        output_path: Optional[str] = None) -> str:
@@ -547,101 +338,37 @@ def generate_quiz_html(problems: List[Problem], game_info: Dict, sgf_content: st
                            reverse=True)
         
         for j, var in enumerate(sorted_vars[:6]):  # 最多6个选项
+            letter = letters[j] if j < len(letters) else f"{j+1}"
             first_move = var['moves'][0] if var.get('moves') else None
             
-            # 提取胜率显示文本
-            comment = var.get('comment', '')
-            winrate_val = _extract_rate(comment)
-            winrate_text = f"{winrate_val:.1f}%" if winrate_val > 0 else ""
-            
             options.append({
+                'letter': letter,
                 'coord': first_move['coord'] if first_move else '',
                 'color': first_move['color'] if first_move else 'B',
-                'winrate': winrate_text,
-                'comment': comment,
+                'winrate': var.get('winRate', ''),
+                'comment': var.get('comment', ''),
                 'moves': var.get('moves', []),
-                'is_correct': j == 0,
-                'sort_order': j
+                'is_correct': j == 0  # 胜率最高的是正确答案
             })
-        
-        # 随机打乱选项顺序
-        shuffle_seed = p.move_num + sum(ord(c) for c in (options[0]['coord'] if options else 'A'))
-        rng = random.Random(shuffle_seed)
-        rng.shuffle(options)
-        
-        # 重新分配字母标签
-        for j, opt in enumerate(options):
-            opt['letter'] = letters[j] if j < len(letters) else f"{j+1}"
-        
-        # 构建实战落子信息
-        practical_move_data = None
-        if p.practical_move:
-            practical_coord = p.practical_move.get('coord', '')
-            practical_color = p.practical_move.get('color', 'B')
-            practical_winrate = 0
-            practical_moves = []
-            
-            # 从主分支获取实战变化的后续着法
-            if p.main_moves and p.move_num < len(p.main_moves):
-                follow_up_moves = p.main_moves[p.move_num:p.move_num + 15]
-                practical_moves = [
-                    {'color': m.get('color', 'B'), 'coord': m.get('coord', '')}
-                    for m in follow_up_moves if m.get('coord')
-                ]
-            
-            # 从变化图中查找实战落子胜率
-            if not practical_moves:
-                for v in p.variations:
-                    if v.get('moves') and len(v['moves']) > 0:
-                        first_move = v['moves'][0]
-                        if first_move.get('coord') == practical_coord:
-                            comment = v.get('comment', '')
-                            practical_winrate = _extract_rate(comment)
-                            practical_moves = v.get('moves', [])
-                            break
-            
-            # 计算是否是恶手
-            max_rate = max([_extract_rate(opt.get('comment', '')) for opt in p.variations]) if p.variations else 0
-            is_practical_blunder = (max_rate - practical_winrate) > 20 if practical_winrate > 0 else False
-            
-            practical_move_data = {
-                'coord': practical_coord,
-                'color': practical_color,
-                'winrate': f"{practical_winrate:.1f}%" if practical_winrate > 0 else "N/A",
-                'is_blunder': is_practical_blunder,
-                'moves': practical_moves
-            }
         
         problems_data.append({
             'index': i,
             'move_num': p.move_num,
             'phase': p.phase,
-            'gameLevel': p.game_level,    # 使用新的等级字段
+            'difficulty': p.difficulty,
             'is_blunder': p.is_blunder,
             'position': p.position,
-            'options': options,
-            'practical_move': practical_move_data
+            'options': options
         })
     
     # 准备模板变量
     board_size = int(game_info.get('board_size', 19))
     handicap_stones = game_info.get('handicap_stones', [])
     
-    # 标题优先使用比赛名称(GN)，如果没有则使用棋手对局
-    game_name = game_info.get('game_name', '').strip()
-    if not game_name or game_name == '围棋棋谱':
-        game_title = f"{game_info.get('black', '黑棋')} vs {game_info.get('white', '白棋')}"
-    else:
-        game_title = game_name
-    
-    # 副标题显示棋手和结果信息
-    players = f"{game_info.get('black', '黑棋')} vs {game_info.get('white', '白棋')}"
-    date_result = f"{game_info.get('date', '')} {game_info.get('result', '')}".strip()
-    
     template_vars = {
-        'GAME_NAME': game_title,
-        'GAME_TITLE': game_title,
-        'GAME_INFO': f"{players} {date_result}".strip(),
+        'GAME_NAME': game_info.get('game_name', '围棋实战选点'),
+        'GAME_TITLE': f"{game_info.get('black', '黑棋')} vs {game_info.get('white', '白棋')}",
+        'GAME_INFO': f"{game_info.get('date', '')} {game_info.get('result', '')}",
         'BLACK_NAME': game_info.get('black', '黑棋'),
         'WHITE_NAME': game_info.get('white', '白棋'),
         'BOARD_SIZE': board_size,
@@ -669,17 +396,6 @@ def generate_quiz_html(problems: List[Problem], game_info: Dict, sgf_content: st
 
 def _extract_rate(comment: str) -> float:
     """从注释中提取胜率数值"""
-    if not comment:
-        return 0
-    # 优先匹配 "黑xx%" 或 "白xx%" 格式
-    match = re.search(r'[黑白].*?(\d+\.?\d*)%', comment)
-    if match:
-        return float(match.group(1))
-    # 匹配 "B xx%" 或 "W xx%" 格式
-    match = re.search(r'[BW]\s+(\d+\.?\d*)%', comment)
-    if match:
-        return float(match.group(1))
-    # 通用匹配
     match = re.search(r'(\d+\.?\d*)%', comment)
     if match:
         return float(match.group(1))
@@ -698,21 +414,18 @@ def main():
   python3 quiz.py game.sgf -o quiz.html       # 指定输出文件
   python3 quiz.py game.sgf -t blunder         # 只生成恶手题
   python3 quiz.py game.sgf --phase middle     # 只生成中盘题
-  python3 quiz.py game.sgf -n 10              # 生成10道题（默认5道）
-  python3 quiz.py game.sgf --data-only -o quiz.json  # 仅输出JSON
+  python3 quiz.py game.sgf -t easy --phase layout  # 布局阶段的简单题
         """
     )
     
     parser.add_argument('sgf', help='输入SGF文件路径')
-    parser.add_argument('-o', '--output', help='输出HTML/JSON文件路径（默认: 输入文件名.html/.json）')
-    parser.add_argument('-t', '--type', choices=['blunder'],
-                       help='题目类型筛选（仅支持恶手题）')
-    parser.add_argument('--phase', choices=['layout', 'middle', 'endgame'],
+    parser.add_argument('-o', '--output', help='输出HTML文件路径（默认: 输入文件名.html）')
+    parser.add_argument('-t', '--type', 
+                       choices=['blunder', 'easy', 'medium', 'hard'],
+                       help='题目类型筛选')
+    parser.add_argument('--phase',
+                       choices=['layout', 'middle', 'endgame'],
                        help='阶段筛选（布局/中盘/官子）')
-    parser.add_argument('-n', '--number', type=int, default=5,
-                       help='最大题目数量（默认: 5，恶手题优先）')
-    parser.add_argument('--data-only', action='store_true',
-                       help='仅输出JSON数据（不含HTML模板）')
     
     args = parser.parse_args()
     
@@ -727,32 +440,15 @@ def main():
     # 解析SGF
     print(f"正在解析: {sgf_path}")
     result = parse_sgf(sgf_content)
-    
-    # 从结果中提取各部分
-    tree = result['tree']
+    moves = result['moves']
+    variations = result['variations']
     game_info = result['game_info']
-    parse_errors = result.get('errors', [])
+    errors = result.get('errors', [])
     
-    if parse_errors:
-        print(f"解析警告: {parse_errors}")
-    
-    # 提取主分支着法
-    moves = []
-    node = tree
-    while node.get('children'):
-        node = node['children'][0]
-        if node.get('color') and node.get('coord'):
-            moves.append((node['color'], node['coord']))
-    
-    # 提取变化图（暂不实现，设为空字典）
-    variations = {}
-    
-    # 判定整局等级
-    game_level = determine_game_level(game_info)
+    if errors:
+        print(f"解析警告: {errors}")
     
     print(f"棋局: {game_info.get('black', '黑棋')} vs {game_info.get('white', '白棋')}")
-    print(f"等级: {game_level}")
-    print(f"结果: {game_info.get('result', '')}")
     print(f"主分支手数: {len(moves)}")
     print(f"变化图数量: {sum(len(v) for v in variations.values())}")
     
@@ -763,8 +459,7 @@ def main():
     
     # 提取题目
     print("\n正在提取选点题...")
-    problems = extract_problems(moves, variations, format_type, args.type, 
-                                args.phase, args.number, game_level)
+    problems = extract_problems(moves, variations, format_type, args.type, args.phase)
     print(f"提取到 {len(problems)} 道题目")
     
     if not problems:
@@ -773,34 +468,28 @@ def main():
     
     # 统计信息
     phase_counts = {'layout': 0, 'middle': 0, 'endgame': 0}
+    difficulty_counts = {'easy': 0, 'medium': 0, 'hard': 0}
     blunder_count = 0
     
     for p in problems:
         phase_counts[p.phase] = phase_counts.get(p.phase, 0) + 1
+        difficulty_counts[p.difficulty] = difficulty_counts.get(p.difficulty, 0) + 1
         if p.is_blunder:
             blunder_count += 1
     
-    print(f"  - 阶段: 布局{phase_counts['layout']}, 中盘{phase_counts['middle']}, 官子{phase_counts['endgame']}")
+    print(f"  - 布局: {phase_counts['layout']}, 中盘: {phase_counts['middle']}, 官子: {phase_counts['endgame']}")
+    print(f"  - 简单: {difficulty_counts['easy']}, 中等: {difficulty_counts['medium']}, 困难: {difficulty_counts['hard']}")
     print(f"  - 恶手题: {blunder_count}")
     
     # 确定输出路径
     if args.output:
         output_path = args.output
     else:
-        ext = '.json' if args.data_only else '.html'
-        output_path = sgf_path.with_suffix(ext)
+        output_path = sgf_path.with_suffix('.html')
     
-    # 根据模式生成输出
-    if args.data_only:
-        # JSON 模式
-        print(f"\n正在生成 JSON 数据...")
-        data = generate_quiz_json(problems, game_info, sgf_content)
-        Path(output_path).write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
-        print(f"✅ 已生成 JSON 数据: {output_path}")
-    else:
-        # HTML 模式
-        print(f"\n正在生成做题网页...")
-        generate_quiz_html(problems, game_info, sgf_content, output_path)
+    # 生成HTML
+    print(f"\n正在生成做题网页...")
+    generate_quiz_html(problems, game_info, sgf_content, output_path)
 
 
 if __name__ == '__main__':

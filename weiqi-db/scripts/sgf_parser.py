@@ -3,25 +3,39 @@
 """
 SGF 树状解析模块 - 完整支持嵌套变化分支
 
-对外接口仅2个:
+对外接口:
 - parse_sgf(sgf_content: str) -> dict
 - parse_sgf_file(filepath: str) -> dict
+- coord_to_pos(coord: str) -> tuple
+- pos_to_coord(x: int, y: int) -> str
 
-树节点固定结构:
-{
-    "properties": dict,
-    "is_root": bool,
-    "move_number": int,
-    "color": str|None,
-    "coord": str|None,
-    "children": list
-}
+返回结构包含:
+- game_info: 棋局信息
+- tree: 树状结构
+- stats: 统计信息
+- moves: 主分支着法列表 [(color, coord), ...]
+- variations: 变化图字典 {move_num: [variation, ...]}
+- errors: 错误列表
 """
 
 import re
 import json
 import unittest
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
+
+
+def coord_to_pos(coord: str) -> Optional[Tuple[int, int]]:
+    """将 SGF 坐标 (如 'pd') 转换为数字坐标 (x, y)"""
+    if not coord or len(coord) < 2:
+        return None
+    x = ord(coord[0]) - 97
+    y = ord(coord[1]) - 97
+    return (x, y)
+
+
+def pos_to_coord(x: int, y: int) -> str:
+    """将数字坐标转换为 SGF 坐标"""
+    return chr(97 + x) + chr(97 + y)
 
 
 def parse_sgf(sgf_content: str) -> dict:
@@ -36,12 +50,13 @@ def parse_sgf(sgf_content: str) -> dict:
             "white": "白棋",
             "black_rank": "9d",
             "white_rank": "9d",
+            "event": "赛事名称",
             "game_name": "围棋棋谱",
             "date": "2024-01-01",
             "result": "B+R",
             "komi": "375",
             "handicap": 0,
-            "handicap_stones": [{"x": 15, "y": 3}, ...]
+            "handicap_stones": [{"x": 15, "y": 3, "color": "B"}, ...]
         },
         "tree": {
             "properties": {"GM": "1", "FF": "4", ...},
@@ -56,6 +71,11 @@ def parse_sgf(sgf_content: str) -> dict:
             "move_nodes": 149,
             "max_depth": 80,
             "branch_count": 3
+        },
+        "moves": [("B", "pd"), ("W", "pp"), ...],
+        "variations": {
+            move_num: [{"name": "变化1", "moves": [...], "comment": "..."}],
+            ...
         },
         "errors": []
     }
@@ -93,10 +113,18 @@ class _SGFParser:
             stats = self._calc_stats(tree)
             game_info = self._extract_game_info(tree)
             
+            # 提取主分支着法
+            moves = self._extract_main_moves(tree)
+            
+            # 提取变化图
+            variations = self._extract_variations(tree)
+            
             return {
                 "game_info": game_info,
                 "tree": tree,
                 "stats": stats,
+                "moves": moves,
+                "variations": variations,
                 "errors": self.errors
             }
         except Exception as e:
@@ -117,6 +145,8 @@ class _SGFParser:
             "game_info": self._extract_game_info(empty_tree),
             "tree": empty_tree,
             "stats": {"total_nodes": 1, "move_nodes": 0, "max_depth": 0, "branch_count": 0},
+            "moves": [],
+            "variations": {},
             "errors": self.errors
         }
     
@@ -490,6 +520,92 @@ class _SGFParser:
             "handicap": handicap,
             "handicap_stones": handicap_stones
         }
+
+    def _extract_main_moves(self, tree: dict) -> List[Tuple[str, str]]:
+        """从树中提取主分支着法
+        
+        Returns:
+            [(color, coord), ...] 例如 [('B', 'pd'), ('W', 'pp'), ...]
+        """
+        moves = []
+        node = tree
+        while node.get('children'):
+            node = node['children'][0]
+            color = node.get('color')
+            coord = node.get('coord')
+            if color and coord:
+                moves.append((color, coord))
+        return moves
+
+    def _extract_variations(self, tree: dict) -> Dict[int, List[dict]]:
+        """从树中提取变化图
+        
+        Returns:
+            {move_num: [variation, ...]}
+            variation: {"name": str, "moves": [{"color": str, "coord": str}, ...], "comment": str}
+        """
+        variations = {}
+        
+        def traverse(node, move_num):
+            if not node.get('children'):
+                return
+            
+            for i, child in enumerate(node['children']):
+                # 收集这个分支的着法
+                child_moves = []
+                current = child
+                while current:
+                    color = current.get('color')
+                    coord = current.get('coord')
+                    if color and coord:
+                        child_moves.append({'color': color, 'coord': coord})
+                    
+                    if current.get('children'):
+                        current = current['children'][0]
+                    else:
+                        break
+                
+                # i > 0 表示这是变化分支（不是主分支）
+                if i > 0 and child_moves:
+                    if move_num not in variations:
+                        variations[move_num] = []
+                    
+                    # 提取注释
+                    comment = ''
+                    props = child.get('properties', {})
+                    if 'C' in props:
+                        c = props['C']
+                        if isinstance(c, list) and c:
+                            comment = c[0]
+                        else:
+                            comment = str(c) if c else ''
+                    
+                    # 生成名称
+                    name = f"变化{len(variations[move_num]) + 1}"
+                    win_rate = name
+                    
+                    if comment:
+                        win_match = re.search(r'([黑白]).*?(\d+\.?\d*)%', comment)
+                        if win_match:
+                            win_rate = f"{win_match.group(1)}{win_match.group(2)}%"
+                            name += f" {win_rate}"
+                    
+                    variations[move_num].append({
+                        'name': name,
+                        'winRate': win_rate,
+                        'moves': child_moves,
+                        'comment': comment
+                    })
+                
+                # 计算下一手的 move_num
+                next_move_num = move_num
+                if child.get('color') and child.get('coord'):
+                    next_move_num = move_num + 1
+                
+                traverse(child, next_move_num)
+        
+        traverse(tree, 0)
+        return variations
 
 
 class _SGFNode:
