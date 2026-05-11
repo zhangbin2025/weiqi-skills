@@ -1,207 +1,317 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SGF 解析模块 - 可被其他技能包复用
+SGF 树状解析模块 - 完整支持嵌套变化分支
 
-提供完整的 SGF 文件解析能力：
-- 树状结构解析（支持变化图/变例）
-- 棋局信息提取
-- 主分支着法提取
-- 变化图提取
+对外接口仅2个:
+- parse_sgf(sgf_content: str) -> dict
+- parse_sgf_file(filepath: str) -> dict
 
-安全特性:
-    - 仅使用标准库 (re, html, json)
-    - 无网络访问
+树节点固定结构:
+{
+    "properties": dict,
+    "is_root": bool,
+    "move_number": int,
+    "color": str|None,
+    "coord": str|None,
+    "children": list
+}
 """
 
 import re
-import html
 import json
+import unittest
+from typing import Optional, List, Dict, Any
 
 
-class SGFNode:
-    """SGF 树节点 - 表示一个着法或根节点"""
-    def __init__(self, properties=None, parent=None):
-        self.properties = properties or {}  # SGF 属性，如 {'B': 'pd', 'C': 'comment'}
-        self.parent = parent
-        self.children = []  # 子节点列表（变化分支）
-        self.is_root = False
-
-    def add_child(self, node):
-        """添加子节点"""
-        node.parent = self
-        self.children.append(node)
-        return node
-
-
-class SGFTreeParser:
+def parse_sgf(sgf_content: str) -> dict:
     """
-    SGF 树状结构解析器
+    解析 SGF 内容
     
-    SGF 格式使用括号表示层级：
-    - 每个 ( 开始一个新节点/分支
-    - 每个 ) 结束当前节点/分支
-    - ; 开始一个节点的属性列表
-    - 属性格式: KEY[value] 或 KEY (无值属性)
-    
-    示例:
-    (;GM[1]FF[4];B[pd];W[pp])
-    (;GM[1](;B[pd];W[pp])(;B[dd];W[dp]))
+    返回结构:
+    {
+        "game_info": {
+            "board_size": 19,
+            "black": "黑棋",
+            "white": "白棋",
+            "black_rank": "9d",
+            "white_rank": "9d",
+            "game_name": "围棋棋谱",
+            "date": "2024-01-01",
+            "result": "B+R",
+            "komi": "375",
+            "handicap": 0,
+            "handicap_stones": [{"x": 15, "y": 3}, ...]
+        },
+        "tree": {
+            "properties": {"GM": "1", "FF": "4", ...},
+            "is_root": true,
+            "move_number": 0,
+            "color": null,
+            "coord": null,
+            "children": [...]
+        },
+        "stats": {
+            "total_nodes": 150,
+            "move_nodes": 149,
+            "max_depth": 80,
+            "branch_count": 3
+        },
+        "errors": []
+    }
     """
+    parser = _SGFParser()
+    return parser.parse(sgf_content)
 
+
+def parse_sgf_file(filepath: str) -> dict:
+    """解析 SGF 文件"""
+    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+        content = f.read()
+    return parse_sgf(content)
+
+
+class _SGFParser:
+    """内部解析器实现"""
+    
     def __init__(self):
-        self.root = None
+        self.errors: List[str] = []
+        self._pending_branch_props: Dict[str, Any] = {}  # 缓存分支起始处的属性
+    
+    def parse(self, sgf_content: str) -> dict:
+        """解析 SGF 内容"""
         self.errors = []
-
-    def parse(self, sgf_content):
-        """
-        解析 SGF 内容，返回根节点
-        遇到错误时停止遍历，返回已构建的树
-        """
-        self.root = None
-        self.errors = []
-
-        # 清理内容
-        sgf_content = sgf_content.strip()
-        if not sgf_content:
+        
+        content = sgf_content.strip()
+        if not content:
             self.errors.append("SGF内容为空")
-            return None
-
-        # 预处理：处理转义字符
-        sgf_content = self._unescape(sgf_content)
-
-        # 解析
+            return self._create_empty_result()
+        
         try:
-            self.root = self._parse_tree(sgf_content)
+            root_node = self._parse_tree(content)
+            tree = self._node_to_dict(root_node)
+            stats = self._calc_stats(tree)
+            game_info = self._extract_game_info(tree)
+            
+            return {
+                "game_info": game_info,
+                "tree": tree,
+                "stats": stats,
+                "errors": self.errors
+            }
         except Exception as e:
             self.errors.append(f"解析错误: {str(e)}")
-
-        return self.root
-
-    def _unescape(self, content):
-        """处理 SGF 转义字符"""
-        result = []
-        i = 0
-        while i < len(content):
-            if content[i] == '\\' and i + 1 < len(content):
-                next_char = content[i + 1]
-                if next_char == '\\':
-                    result.append('\\')
-                    i += 2
-                elif next_char == ']':
-                    result.append(']')
-                    i += 2
-                elif next_char == 'n':
-                    result.append('\n')
-                    i += 2
-                elif next_char == 'r':
-                    result.append('\r')
-                    i += 2
-                elif next_char == 't':
-                    result.append('\t')
-                    i += 2
-                else:
-                    result.append(next_char)
-                    i += 2
-            else:
-                result.append(content[i])
-                i += 1
-        return ''.join(result)
-
-    def _parse_tree(self, content):
+            return self._create_empty_result()
+    
+    def _create_empty_result(self) -> dict:
+        """创建空结果"""
+        empty_tree = {
+            "properties": {},
+            "is_root": True,
+            "move_number": 0,
+            "color": None,
+            "coord": None,
+            "children": []
+        }
+        return {
+            "game_info": self._extract_game_info(empty_tree),
+            "tree": empty_tree,
+            "stats": {"total_nodes": 1, "move_nodes": 0, "max_depth": 0, "branch_count": 0},
+            "errors": self.errors
+        }
+    
+    def _parse_tree(self, content: str) -> '_SGFNode':
+        """解析树状结构
+        
+        SGF格式: (;GM[1](;B[pd];W[pp])(;B[dd]))
+        - 序列本身不创建节点，序列内的第一个 ';' 决定父节点
+        - '(' 只标记进入新层级，')' 标记退出
         """
-        解析树状结构
-        使用栈来跟踪当前节点
-        """
-        stack = []  # (node, is_paren_created) 的列表
-        current_node = None
-        root = None
+        # 父节点栈，存储序列的父节点（即序列内第一个节点的父节点）
+        parent_stack: List['_SGFNode'] = []
+        # 序列内当前处理的节点
+        seq_current: Optional['_SGFNode'] = None
+        root: Optional['_SGFNode'] = None
         i = 0
         n = len(content)
-
+        paren_count = 0
+        
         while i < n:
             char = content[i]
-
+            
             if char == '(':
-                # 开始新节点/分支
-                new_node = SGFNode()
-                if stack:
-                    parent, _ = stack[-1]
-                    parent.add_child(new_node)
+                # 开始新序列
+                if seq_current is not None:
+                    # 有序列内当前节点，作为新序列的父节点
+                    parent_stack.append(seq_current)
+                elif parent_stack:
+                    # 没有序列内节点但有父栈，复制栈顶
+                    parent_stack.append(parent_stack[-1])
+                elif root is not None:
+                    # 没有父栈但有根，根是新序列的父
+                    parent_stack.append(root)
+                # else: 第一个序列，parent_stack保持为空
+                
+                paren_count += 1
+                seq_current = None
+                i += 1
+                
+                # 预读并缓存 '(' 后的属性（如 C[...]），直到遇到 ';' 或 ')'
+                self._pending_branch_props = {}
+                while i < n:
+                    c = content[i]
+                    if c in '();':
+                        break
+                    if c in ' \t\n\r':
+                        i += 1
+                        continue
+                    if c.isupper():
+                        prop_name = ''
+                        while i < n and content[i].isupper():
+                            prop_name += content[i]
+                            i += 1
+                        values = []
+                        while i < n and content[i] == '[':
+                            value, i, closed = self._parse_property_value(content, i + 1)
+                            if not closed:
+                                self.errors.append(f"属性 {prop_name} 的值未闭合")
+                            values.append(value)
+                        if values:
+                            self._pending_branch_props[prop_name] = values if len(values) > 1 else values[0]
+                    else:
+                        self.errors.append(f"位置 {i}: 分支注释中意外字符 '{c}'，跳过")
+                        i += 1
+            
+            elif char == ')':
+                # 结束当前序列
+                if paren_count > 0:
+                    if parent_stack:
+                        parent = parent_stack.pop()
+                        # 序列结束后，seq_current 应该是序列的父节点
+                        # 以便下一个序列能正确地挂在同一父节点下
+                        seq_current = parent
+                    else:
+                        seq_current = None
+                    paren_count -= 1
                 else:
+                    self.errors.append(f"位置 {i}: 多余的右括号")
+                i += 1
+            
+            elif char == ';':
+                # 创建新节点
+                new_node = _SGFNode()
+                
+                # 确定父节点
+                if seq_current is not None and not seq_current.properties:
+                    # seq_current 是刚由'('创建的空白节点，给它属性
+                    # 这不应该发生，因为我们不再在'('时创建节点
+                    parent = seq_current
+                elif seq_current is not None:
+                    # 序列内已有节点，新节点作为 seq_current 的子（主分支延续）
+                    seq_current.children.append(new_node)
+                    new_node.parent = seq_current
+                    new_node.move_number = seq_current.move_number + 1 if not seq_current.is_root else 1
+                elif parent_stack:
+                    # 序列的第一个节点，父节点是 parent_stack 栈顶
+                    parent = parent_stack[-1]
+                    parent.children.append(new_node)
+                    new_node.parent = parent
+                    new_node.move_number = parent.move_number + 1 if not parent.is_root else 1
+                elif root is None:
+                    # 第一个节点，作为根
                     root = new_node
                     new_node.is_root = True
-                stack.append((new_node, True))  # 标记为由 '(' 创建
-                current_node = new_node
-                i += 1
-
-            elif char == ')':
-                # 出栈直到遇到由 '(' 创建的节点，并将该节点也出栈
-                popped_paren = False
-                while stack:
-                    node, is_paren = stack.pop()
-                    if is_paren:
-                        popped_paren = True
-                        break
-                if not popped_paren:
-                    self.errors.append(f"位置 {i}: 多余的右括号")
-                current_node = stack[-1][0] if stack else None
-                i += 1
-
-            elif char == ';':
-                if not stack:
-                    root = SGFNode()
-                    root.is_root = True
-                    stack.append((root, False))  # 根节点不由 '(' 创建
-                    current_node = root
-                elif current_node.properties:
-                    # 当前节点已有属性，创建新节点作为子节点
-                    new_node = SGFNode()
-                    current_node.add_child(new_node)
-                    stack.append((new_node, False))  # 标记为由 ';' 创建
-                    current_node = new_node
-
+                    new_node.move_number = 0
+                else:
+                    # 另一个顶级节点（无括号包裹的情况）
+                    if root.is_root and len(root.children) == 0 and not root.properties:
+                        # 根是空的，直接使用
+                        root.properties = {}
+                        new_node.parent = root
+                        new_node.move_number = 1
+                        root.children.append(new_node)
+                    elif root.is_root:
+                        # 创建包裹节点
+                        wrapper = _SGFNode()
+                        wrapper.is_root = True
+                        wrapper.move_number = 0
+                        
+                        if not root.properties and len(root.children) == 0:
+                            # root 是空的，替换
+                            root = wrapper
+                        else:
+                            # 移动原root
+                            root.parent = wrapper
+                            root.move_number = 1
+                            wrapper.children.append(root)
+                            root = wrapper
+                        
+                        new_node.parent = root
+                        new_node.move_number = 1
+                        root.children.append(new_node)
+                    else:
+                        new_node.parent = root
+                        new_node.move_number = 1
+                        root.children.append(new_node)
+                
+                # 解析属性
                 props, i = self._parse_properties(content, i + 1)
-                current_node.properties = props
-
+                
+                # 合并缓存的分支属性（如果有）
+                if self._pending_branch_props:
+                    # 缓存的属性优先，但已被解析的属性不会被覆盖
+                    merged_props = self._pending_branch_props.copy()
+                    merged_props.update(props)
+                    props = merged_props
+                    self._pending_branch_props = {}  # 清空缓存
+                
+                new_node.properties = props
+                self._extract_move_info(new_node)
+                
+                seq_current = new_node
+            
             elif char in ' \t\n\r':
                 i += 1
             else:
-                self.errors.append(f"位置 {i}: 意外字符 '{char}'，尝试跳过")
+                self.errors.append(f"位置 {i}: 意外字符 '{char}'，跳过")
                 i += 1
-
-        if stack and len(stack) > 1:
+        
+        if paren_count > 0:
             self.errors.append("警告: 括号未完全闭合")
+        
 
-        return root
-
-    def _parse_properties(self, content, start):
-        """解析属性列表"""
-        props = {}
+        
+        return root or _SGFNode()
+    
+    def _parse_properties(self, content: str, start: int) -> tuple:
+        """解析属性列表，返回 (属性字典, 新位置)"""
+        props: Dict[str, Any] = {}
         i = start
         n = len(content)
-
+        
         while i < n:
             char = content[i]
-
+            
             if char in '();':
                 break
-
+            
             if char in ' \t\n\r':
                 i += 1
                 continue
-
+            
             if char.isupper():
                 prop_name = ''
                 while i < n and content[i].isupper():
                     prop_name += content[i]
                     i += 1
-
+                
                 values = []
                 while i < n and content[i] == '[':
-                    value, i = self._parse_property_value(content, i + 1)
+                    value, i, closed = self._parse_property_value(content, i + 1)
+                    if not closed:
+                        self.errors.append(f"属性 {prop_name} 的值未闭合")
                     values.append(value)
-
+                
                 if values:
                     props[prop_name] = values if len(values) > 1 else values[0]
                 else:
@@ -209,256 +319,189 @@ class SGFTreeParser:
             else:
                 self.errors.append(f"位置 {i}: 属性名应为大写字母，跳过 '{char}'")
                 i += 1
-
+        
         return props, i
-
-    def _parse_property_value(self, content, start):
-        """解析属性值，找到匹配的 ]"""
+    
+    def _parse_property_value(self, content: str, start: int) -> tuple:
+        """解析属性值，正确处理转义
+        返回: (值, 新位置, 是否正常闭合)
+        """
         value = []
         i = start
         n = len(content)
-        depth = 1
-
-        while i < n and depth > 0:
+        
+        while i < n:
             char = content[i]
-
+            
             if char == '\\' and i + 1 < n:
-                value.append(char)
-                i += 1
-            elif char == '[':
-                depth += 1
-                value.append(char)
-                i += 1
+                next_char = content[i + 1]
+                # SGF 转义规则：\] -> ], \\ -> \, \n -> 换行等
+                if next_char == ']':
+                    value.append(']')
+                    i += 2
+                elif next_char == '\\':
+                    value.append('\\')
+                    i += 2
+                elif next_char == 'n':
+                    value.append('\n')
+                    i += 2
+                elif next_char == 'r':
+                    value.append('\r')
+                    i += 2
+                elif next_char == 't':
+                    value.append('\t')
+                    i += 2
+                else:
+                    # 其他字符直接保留
+                    value.append(next_char)
+                    i += 2
             elif char == ']':
-                depth -= 1
-                if depth > 0:
-                    value.append(char)
+                # 找到闭合括号
                 i += 1
+                return ''.join(value), i, True
             else:
                 value.append(char)
                 i += 1
-
-        if depth > 0:
-            self.errors.append(f"位置 {start}: 属性值未闭合")
-
-        return ''.join(value), i
-
-
-def parse_with_tree_parser(sgf_content):
-    """使用内置树状解析器解析 SGF"""
-    parser = SGFTreeParser()
-    root = parser.parse(sgf_content)
-
-    if not root:
-        return None, None, None, parser.errors
-
-    game_info = extract_game_info_from_tree(root)
-
-    # 提取主分支着法
-    moves = []
-    node = root
-    while node.children:
-        node = node.children[0]
-        props = node.properties
-        if 'B' in props:
-            coord = props['B']
-            moves.append({
-                'color': 'B',
-                'coord': coord[0] if isinstance(coord, list) else coord
-            })
-        elif 'W' in props:
-            coord = props['W']
-            moves.append({
-                'color': 'W',
-                'coord': coord[0] if isinstance(coord, list) else coord
-            })
-
-    variations = extract_variations_from_tree(root, moves)
-
-    return moves, variations, game_info, parser.errors
-
-
-def extract_game_info_from_tree(root):
-    """从树中提取棋局信息"""
-    props = root.properties if root else {}
-    info = {}
-
-    def get_prop(key, default=''):
-        val = props.get(key, default)
+        
+        # 未正常闭合
+        return ''.join(value), i, False
+    
+    def _extract_move_info(self, node: '_SGFNode'):
+        """从属性中提取 color 和 coord"""
+        if 'B' in node.properties:
+            node.color = 'B'
+            node.coord = self._normalize_coord(node.properties['B'])
+        elif 'W' in node.properties:
+            node.color = 'W'
+            node.coord = self._normalize_coord(node.properties['W'])
+    
+    def _normalize_coord(self, val: Any) -> Optional[str]:
+        """统一坐标格式"""
         if isinstance(val, list) and val:
-            return val[0]
-        return val if val else default
-
-    info['black'] = get_prop('PB', '黑棋')
-    info['white'] = get_prop('PW', '白棋')
-    info['black_rank'] = get_prop('BR')
-    info['white_rank'] = get_prop('WR')
-    info['game_name'] = get_prop('GN', '围棋棋谱')
-    info['date'] = get_prop('DT')
-    info['result'] = get_prop('RE')
-    info['komi'] = get_prop('KM', '375')
-    info['board_size'] = get_prop('SZ', '19')
-    info['handicap'] = get_prop('HA', '0')
-
-    handicap_stones = []
-    ab_prop = props.get('AB', [])
-    if isinstance(ab_prop, str):
-        ab_prop = [ab_prop]
-    if isinstance(ab_prop, list):
-        for coord in ab_prop:
-            if coord and len(coord) >= 2:
-                x = ord(coord[0]) - 97
-                y = ord(coord[1]) - 97
-                handicap_stones.append({'x': x, 'y': y})
-    info['handicap_stones'] = handicap_stones
-
-    return info
-
-
-def extract_variations_from_tree(root, main_moves):
-    """从树中提取变化图"""
-    variations = {}
-
-    def traverse(node, move_num):
-        if not node.children:
-            return
-
-        for i, child in enumerate(node.children):
-            child_moves = []
-            current = child
-            while current:
-                props = current.properties
-                if 'B' in props or 'W' in props:
-                    coord = props.get('B') or props.get('W')
-                    if isinstance(coord, list):
-                        coord = coord[0] if coord else ''
-                    color = 'B' if 'B' in props else 'W'
-                    child_moves.append({'color': color, 'coord': coord})
-
-                if current.children:
-                    current = current.children[0]
-                else:
-                    break
-
-            if i > 0 and child_moves:
-                if move_num not in variations:
-                    variations[move_num] = []
-
-                name = f"变化{len(variations[move_num]) + 1}"
-                win_rate = name
-
-                comment = child.properties.get('C', [''])
-                if isinstance(comment, list) and comment:
-                    comment = comment[0]
-                else:
-                    comment = str(comment)
-
-                if comment:
-                    win_match = re.search(r'([黑白]).*?(\d+\.?\d*)%', comment)
-                    if win_match:
-                        win_rate = f"{win_match.group(1)}{win_match.group(2)}%"
-                        name += f" {win_rate}"
-
-                variations[move_num].append({
-                    'name': name,
-                    'winRate': win_rate,
-                    'moves': child_moves,
-                    'comment': comment
-                })
-
-            next_move_num = move_num
-            if child.properties and ('B' in child.properties or 'W' in child.properties):
-                next_move_num = move_num + 1
-
-            traverse(child, next_move_num)
-
-    traverse(root, 0)
-    return variations
-
-
-def parse_sgf(sgf_content):
-    """
-    解析 SGF 的主入口函数
+            return val[0] if val[0] else None
+        return val if val else None
     
-    返回: (moves, variations, game_info, parse_info)
-    """
-    parse_info = {
-        'parser_used': 'tree_parser',
-        'errors': [],
-        'warnings': []
-    }
-
-    moves, variations, game_info, errors = parse_with_tree_parser(sgf_content)
-    parse_info['errors'].extend(errors)
+    def _node_to_dict(self, node: '_SGFNode') -> dict:
+        """将节点转换为字典"""
+        return {
+            "properties": node.properties,
+            "is_root": node.is_root,
+            "move_number": node.move_number,
+            "color": node.color,
+            "coord": node.coord,
+            "children": [self._node_to_dict(c) for c in node.children]
+        }
     
-    return moves, variations or {}, game_info or {}, parse_info
+    def _calc_stats(self, tree: dict) -> dict:
+        """计算统计信息"""
+        total_nodes = 0
+        move_nodes = 0
+        max_depth = 0
+        branch_count = 0
+        
+        def traverse(node: dict):
+            nonlocal total_nodes, move_nodes, max_depth, branch_count
+            total_nodes += 1
+            if not node.get("is_root", False):
+                move_nodes += 1
+            max_depth = max(max_depth, node.get("move_number", 0))
+            children = node.get("children", [])
+            # 子节点数 > 1 表示有分支（除第一个主分支外的都是变化）
+            if len(children) > 1:
+                branch_count += len(children) - 1
+            for child in children:
+                traverse(child)
+        
+        traverse(tree)
+        
+        return {
+            "total_nodes": total_nodes,
+            "move_nodes": move_nodes,
+            "max_depth": max_depth,
+            "branch_count": branch_count
+        }
+    
+    def _extract_game_info(self, tree: dict) -> dict:
+        """从根节点提取棋局信息"""
+        props = tree.get("properties", {})
+        
+        # 获取第一个子节点的属性（预置子可能在这里）
+        children = tree.get("children", [])
+        child_props = children[0].get("properties", {}) if children else {}
+        
+        def get_prop(key: str, default: str = '') -> str:
+            val = props.get(key, default)
+            if isinstance(val, list) and val:
+                return str(val[0])
+            return str(val) if val else default
+        
+        # 棋盘大小
+        try:
+            board_size = int(get_prop('SZ', '19'))
+        except ValueError:
+            board_size = 19
+        
+        # 让子数
+        try:
+            handicap = int(get_prop('HA', '0'))
+        except ValueError:
+            handicap = 0
+        
+        # 让子位置
+        handicap_stones = []
+        
+        # 解析 AB[] (添加黑子) - 先检查根节点，再检查第一个子节点
+        ab_prop = props.get('AB', child_props.get('AB', []))
+        if isinstance(ab_prop, str):
+            ab_prop = [ab_prop]
+        if isinstance(ab_prop, list):
+            for coord in ab_prop:
+                if coord and len(str(coord)) >= 2:
+                    c = str(coord)
+                    x = ord(c[0]) - 97
+                    y = ord(c[1]) - 97
+                    if 0 <= x < board_size and 0 <= y < board_size:
+                        handicap_stones.append({"x": x, "y": y, "color": "B"})
+        
+        # 解析 AW[] (添加白子) - 先检查根节点，再检查第一个子节点
+        aw_prop = props.get('AW', child_props.get('AW', []))
+        if isinstance(aw_prop, str):
+            aw_prop = [aw_prop]
+        if isinstance(aw_prop, list):
+            for coord in aw_prop:
+                if coord and len(str(coord)) >= 2:
+                    c = str(coord)
+                    x = ord(c[0]) - 97
+                    y = ord(c[1]) - 97
+                    if 0 <= x < board_size and 0 <= y < board_size:
+                        handicap_stones.append({"x": x, "y": y, "color": "W"})
+        
+        return {
+            "board_size": board_size,
+            "black": get_prop('PB', '黑棋'),
+            "white": get_prop('PW', '白棋'),
+            "black_rank": get_prop('BR'),
+            "white_rank": get_prop('WR'),
+            "event": get_prop('EV'),
+            "game_name": get_prop('GN', '围棋棋谱'),
+            "date": get_prop('DT'),
+            "result": get_prop('RE'),
+            "komi": get_prop('KM', '375'),
+            "handicap": handicap,
+            "handicap_stones": handicap_stones
+        }
 
 
-def extract_main_branch(sgf_content):
-    """从SGF中提取主分支着法"""
-    moves, _, _, _ = parse_sgf(sgf_content)
-    return moves
+class _SGFNode:
+    """内部节点类"""
+    
+    def __init__(self):
+        self.properties: Dict[str, Any] = {}
+        self.is_root: bool = False
+        self.move_number: int = 0
+        self.color: Optional[str] = None
+        self.coord: Optional[str] = None
+        self.parent: Optional['_SGFNode'] = None
+        self.children: List['_SGFNode'] = []
 
 
-def extract_variations(sgf_content):
-    """提取变化图（变例）"""
-    _, variations, _, _ = parse_sgf(sgf_content)
-    return variations
-
-
-def extract_game_info(sgf_content):
-    """提取棋局信息（兼容旧版正则方式）"""
-    info = {}
-
-    patterns = {
-        'PB': ('black', r'PB\[([^\]]+)\]'),
-        'PW': ('white', r'PW\[([^\]]+)\]'),
-        'BR': ('black_rank', r'BR\[([^\]]+)\]'),
-        'WR': ('white_rank', r'WR\[([^\]]+)\]'),
-        'GN': ('game_name', r'GN\[([^\]]+)\]'),
-        'DT': ('date', r'DT\[([^\]]+)\]'),
-        'RE': ('result', r'RE\[([^\]]+)\]'),
-        'KM': ('komi', r'KM\[([^\]]+)\]'),
-        'SZ': ('board_size', r'SZ\[(\d+)\]'),
-        'HA': ('handicap', r'HA\[(\d+)\]'),
-    }
-
-    for key, (name, pattern) in patterns.items():
-        match = re.search(pattern, sgf_content)
-        if match:
-            info[name] = match.group(1)
-
-    # 处理让子
-    handicap_stones = []
-    for match in re.finditer(r';AB\[([a-z]{2})\]', sgf_content):
-        coord = match.group(1)
-        x = ord(coord[0]) - 97
-        y = ord(coord[1]) - 97
-        handicap_stones.append({'x': x, 'y': y})
-
-    if not handicap_stones:
-        ab_match = re.search(r'AB((?:\[[a-z]{2}\])+)', sgf_content)
-        if ab_match:
-            coords = re.findall(r'\[([a-z]{2})\]', ab_match.group(1))
-            for coord in coords:
-                x = ord(coord[0]) - 97
-                y = ord(coord[1]) - 97
-                handicap_stones.append({'x': x, 'y': y})
-
-    info['handicap_stones'] = handicap_stones
-
-    return info
-
-
-def coord_to_pos(coord):
-    """将 SGF 坐标 (如 'pd') 转换为数字坐标 (x, y)"""
-    if not coord or len(coord) < 2:
-        return None
-    x = ord(coord[0]) - 97
-    y = ord(coord[1]) - 97
-    return (x, y)
-
-
-def pos_to_coord(x, y):
-    """将数字坐标转换为 SGF 坐标"""
-    return chr(97 + x) + chr(97 + y)
