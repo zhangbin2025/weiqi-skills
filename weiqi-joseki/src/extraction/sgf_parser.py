@@ -425,6 +425,10 @@ class _SGFParser:
         """从根节点提取棋局信息"""
         props = tree.get("properties", {})
         
+        # 获取第一个子节点的属性（预置子可能在这里）
+        children = tree.get("children", [])
+        child_props = children[0].get("properties", {}) if children else {}
+        
         def get_prop(key: str, default: str = '') -> str:
             val = props.get(key, default)
             if isinstance(val, list) and val:
@@ -445,7 +449,9 @@ class _SGFParser:
         
         # 让子位置
         handicap_stones = []
-        ab_prop = props.get('AB', [])
+        
+        # 解析 AB[] (添加黑子) - 先检查根节点，再检查第一个子节点
+        ab_prop = props.get('AB', child_props.get('AB', []))
         if isinstance(ab_prop, str):
             ab_prop = [ab_prop]
         if isinstance(ab_prop, list):
@@ -455,7 +461,20 @@ class _SGFParser:
                     x = ord(c[0]) - 97
                     y = ord(c[1]) - 97
                     if 0 <= x < board_size and 0 <= y < board_size:
-                        handicap_stones.append({"x": x, "y": y})
+                        handicap_stones.append({"x": x, "y": y, "color": "B"})
+        
+        # 解析 AW[] (添加白子) - 先检查根节点，再检查第一个子节点
+        aw_prop = props.get('AW', child_props.get('AW', []))
+        if isinstance(aw_prop, str):
+            aw_prop = [aw_prop]
+        if isinstance(aw_prop, list):
+            for coord in aw_prop:
+                if coord and len(str(coord)) >= 2:
+                    c = str(coord)
+                    x = ord(c[0]) - 97
+                    y = ord(c[1]) - 97
+                    if 0 <= x < board_size and 0 <= y < board_size:
+                        handicap_stones.append({"x": x, "y": y, "color": "W"})
         
         return {
             "board_size": board_size,

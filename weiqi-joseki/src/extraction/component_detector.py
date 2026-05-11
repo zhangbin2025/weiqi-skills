@@ -218,7 +218,8 @@ def filter_nearest_component(components: List[ConnectedComponent]) -> Set[Tuple[
 def _find_temporal_core(
     positions: Set[Tuple[int, int]],
     moves: List[Tuple[str, str]],
-    max_distance: int = 4
+    max_distance: int = 4,
+    initial_positions: List[Dict] = None
 ) -> Tuple[Set[Tuple[int, int]], Set[Tuple[int, int]]]:
     """
     基于行棋时序确定核心定式区域
@@ -230,6 +231,7 @@ def _find_temporal_core(
         positions: 候选位置集合(如13路连通块)
         moves: [(color, coord), ...] 着法序列
         max_distance: 时序连通距离阈值
+        initial_positions: 初始位置（预置子）[{"x": x, "y": y}, ...]
 
     Returns:
         (core_positions, discarded_positions)
@@ -241,6 +243,13 @@ def _find_temporal_core(
     core_positions = set()
     discarded_positions = set()
     active_positions = set()
+    
+    # 先添加预置子作为初始位置
+    if initial_positions:
+        for stone in initial_positions:
+            pos = (stone["x"], stone["y"])
+            active_positions.add(pos)
+            core_positions.add(pos)
 
     for color, coord in moves:
         if coord == 'tt' or not coord or len(coord) != 2:
@@ -375,7 +384,8 @@ def _point_in_polygon(point: Tuple[int, int], polygon: List[Tuple[int, int]]) ->
 def _extract_corner_moves_lu(
     moves: List[Tuple[str, str]],
     corner_key: str,
-    lu_size: int
+    lu_size: int,
+    handicap_stones: List[Dict] = None
 ) -> Tuple[List[Tuple[str, str]], Set[Tuple[int, int]], Set[Tuple[int, int]]]:
     """
     通用N路角提取(返回结果、核心位置、被剔除位置)
@@ -384,11 +394,15 @@ def _extract_corner_moves_lu(
         moves: 着法序列
         corner_key: 角标识
         lu_size: 路数(9/11/13)
+        handicap_stones: 该角的预置子 [{"x": x, "y": y, "color": "B"}, ...]
 
     Returns:
         (result_moves, core_positions, discarded_positions)
     """
     from ..core.coords import CoordinateSystem
+    
+    if handicap_stones is None:
+        handicap_stones = []
 
     # N路范围配置
     ranges = {
@@ -444,12 +458,25 @@ def _extract_corner_moves_lu(
 
     # 时序连通性分析
     core_positions, discarded_positions = _find_temporal_core(
-        all_positions, corner_moves, max_distance=4
+        all_positions, corner_moves, max_distance=4, initial_positions=handicap_stones
     )
 
     # 构建结果
     result = []
     last_color = None
+    
+    # 先添加预置子作为初始着法
+    for stone in handicap_stones:
+        # 转换为 SGF 坐标
+        coord = chr(97 + stone["x"]) + chr(97 + stone["y"])
+        
+        # 如果上一个是黑子，插入白方的 pass
+        if last_color == 'B':
+            result.append(('W', 'tt'))
+        
+        result.append((stone["color"], coord))
+        last_color = stone["color"]
+    
     for color, coord in corner_moves:
         col, row = CoordinateSystem.sgf_to_nums(coord)
         if (col, row) in core_positions:
@@ -464,7 +491,8 @@ def _extract_corner_moves_lu(
 
 def extract_corner_moves_9lu(
     moves: List[Tuple[str, str]],
-    corner_key: str
+    corner_key: str,
+    handicap_stones: List[Dict] = None
 ) -> List[Tuple[str, str]]:
     """
     提取指定角的着法(9路范围,最终回退方案)
@@ -473,8 +501,16 @@ def extract_corner_moves_9lu(
     1. 收集9路范围内的所有棋子
     2. 按行棋顺序,每步距离活跃区域 <= 4 才保留
     3. 检测脱先(连续同色插入tt)
+    
+    Args:
+        moves: 着法序列
+        corner_key: 角标识
+        handicap_stones: 该角的预置子 [{"x": x, "y": y, "color": "B"}, ...]
     """
     from ..core.coords import CoordinateSystem
+    
+    if handicap_stones is None:
+        handicap_stones = []
 
     # 9路范围配置
     corner_config = {
@@ -504,12 +540,18 @@ def extract_corner_moves_9lu(
         except:
             continue
 
-    if not corner_moves_list:
+    if not corner_moves_list and not handicap_stones:
         return []
 
     # 时序过滤
     active_positions = set()
     core_positions = set()
+    
+    # 先添加预置子作为初始位置
+    for stone in handicap_stones:
+        pos = (stone["x"], stone["y"])
+        active_positions.add(pos)
+        core_positions.add(pos)
 
     for color, col, row, coord in corner_moves_list:
         if not active_positions:
@@ -532,6 +574,18 @@ def extract_corner_moves_9lu(
     # 构建结果(检测脱先)
     result = []
     last_color = None
+    
+    # 先添加预置子作为初始着法
+    for stone in handicap_stones:
+        # 转换为 SGF 坐标
+        coord = chr(97 + stone["x"]) + chr(97 + stone["y"])
+        
+        # 如果上一个是黑子，插入白方的 pass
+        if last_color == 'B':
+            result.append(('W', 'tt'))
+        
+        result.append((stone["color"], coord))
+        last_color = stone["color"]
 
     for color, col, row, coord in corner_moves_list:
         if (col, row) in core_positions:
@@ -546,7 +600,8 @@ def extract_corner_moves_9lu(
 
 def extract_corner_moves(
     moves: List[Tuple[str, str]],
-    corner_key: str
+    corner_key: str,
+    handicap_stones: List[Dict] = None
 ) -> List[Tuple[str, str]]:
     """
     提取指定角的着法(含脱先标记)
@@ -554,11 +609,15 @@ def extract_corner_moves(
     Args:
         moves: [(color, coord), ...] 完整着法序列
         corner_key: 角标识 ('tl', 'tr', 'bl', 'br')
+        handicap_stones: 预置子 [{"x": x, "y": y, "color": "B"}, ...]
 
     Returns:
         处理后的着法序列(含tt脱先标记)
     """
     from ..core.coords import CoordinateSystem
+    
+    if handicap_stones is None:
+        handicap_stones = []
 
     # 定义四角的13路范围(左上角原点)和角的原点
     corner_config = {
@@ -575,6 +634,12 @@ def extract_corner_moves(
     col_min, col_max = config['col_range']
     row_min, row_max = config['row_range']
     origin = config['origin']
+    
+    # 过滤出属于当前角的预置子
+    corner_handicap = [
+        stone for stone in handicap_stones
+        if col_min <= stone["x"] <= col_max and row_min <= stone["y"] <= row_max
+    ]
 
     # 收集13路范围内的所有棋子位置
     corner_positions = []
@@ -594,7 +659,7 @@ def extract_corner_moves(
     # 多级回退策略:13路 → 11路 → 9路
     # 1. 先尝试13路
     result_13, core_13, discarded_13 = _extract_corner_moves_lu(
-        moves, corner_key, 13
+        moves, corner_key, 13, corner_handicap
     )
 
     # 检查13路是否需要回退(被剔除的着法在凸包内)
@@ -611,7 +676,7 @@ def extract_corner_moves(
 
     # 2. 回退到11路
     result_11, core_11, discarded_11 = _extract_corner_moves_lu(
-        moves, corner_key, 11
+        moves, corner_key, 11, corner_handicap
     )
 
     # 检查11路是否需要回退
@@ -627,4 +692,4 @@ def extract_corner_moves(
         return result_11
 
     # 3. 最终回退到9路
-    return extract_corner_moves_9lu(moves, corner_key)
+    return extract_corner_moves_9lu(moves, corner_key, corner_handicap)
