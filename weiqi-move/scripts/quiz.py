@@ -726,10 +726,26 @@ def main():
     
     # 解析SGF
     print(f"正在解析: {sgf_path}")
-    moves, variations, game_info, parse_info = parse_sgf(sgf_content)
+    result = parse_sgf(sgf_content)
     
-    if parse_info.get('errors'):
-        print(f"解析警告: {parse_info['errors']}")
+    # 从结果中提取各部分
+    tree = result['tree']
+    game_info = result['game_info']
+    parse_errors = result.get('errors', [])
+    
+    if parse_errors:
+        print(f"解析警告: {parse_errors}")
+    
+    # 提取主分支着法
+    moves = []
+    node = tree
+    while node.get('children'):
+        node = node['children'][0]
+        if node.get('color') and node.get('coord'):
+            moves.append((node['color'], node['coord']))
+    
+    # 提取变化图（暂不实现，设为空字典）
+    variations = {}
     
     # 判定整局等级
     game_level = determine_game_level(game_info)
