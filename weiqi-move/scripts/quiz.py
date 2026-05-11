@@ -26,7 +26,7 @@ from typing import Dict, List, Optional, Tuple
 
 # 导入SGF解析器
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sgf_parser import parse_sgf, coord_to_pos
+from sgf_parser import parse_sgf
 
 
 # ==================== 等级判定 ====================
