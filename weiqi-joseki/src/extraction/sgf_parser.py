@@ -482,6 +482,7 @@ class _SGFParser:
             "white": get_prop('PW', '白棋'),
             "black_rank": get_prop('BR'),
             "white_rank": get_prop('WR'),
+            "event": get_prop('EV'),
             "game_name": get_prop('GN', '围棋棋谱'),
             "date": get_prop('DT'),
             "result": get_prop('RE'),
