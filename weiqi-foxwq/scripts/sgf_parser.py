@@ -515,7 +515,7 @@ class _SGFParser:
             "handicap_stones": handicap_stones
         }
 
-    def _extract_main_moves(self, tree: dict) -> List[Tuple[str, str]]:
+    def _extract_main_moves(self, tree: dict) -> List[Dict[str, str]]:
         """从树中提取主分支着法"""
         moves = []
         node = tree
@@ -524,7 +524,7 @@ class _SGFParser:
             color = node.get('color')
             coord = node.get('coord')
             if color and coord:
-                moves.append((color, coord))
+                moves.append({'color': color, 'coord': coord})
         return moves
 
     def _extract_variations(self, tree: dict) -> Dict[int, List[dict]]:
