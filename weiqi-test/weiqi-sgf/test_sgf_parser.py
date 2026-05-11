@@ -131,8 +131,8 @@ class TestSGFParser(unittest.TestCase):
         
         self.assertEqual(result['game_info']['handicap'], 2)
         self.assertEqual(len(result['game_info']['handicap_stones']), 2)
-        self.assertEqual(result['game_info']['handicap_stones'][0], {'x': 15, 'y': 3})
-        self.assertEqual(result['game_info']['handicap_stones'][1], {'x': 3, 'y': 15})
+        self.assertEqual(result['game_info']['handicap_stones'][0], {'x': 15, 'y': 3, 'color': 'B'})
+        self.assertEqual(result['game_info']['handicap_stones'][1], {'x': 3, 'y': 15, 'color': 'B'})
         
         # 让子位置应在根节点
         ab = result['tree']['properties']['AB']

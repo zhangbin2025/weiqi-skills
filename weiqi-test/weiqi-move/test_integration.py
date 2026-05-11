@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'weiqi-move' / 'scripts'))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from sgf_parser import parse_sgf, extract_game_info
+from sgf_parser import parse_sgf
 from game_level import determine_game_level
 
 
@@ -27,7 +27,8 @@ class TestIntegration:
         sgf_path = fixtures_dir / 'pro_game.sgf'
         sgf_content = sgf_path.read_text(encoding='utf-8')
         
-        moves, variations, game_info, parse_info = parse_sgf(sgf_content)
+        result = parse_sgf(sgf_content)
+        game_info = result['game_info']
         
         assert game_info['black_rank'] == '职业'
         assert game_info['white_rank'] == '职业'
@@ -41,7 +42,8 @@ class TestIntegration:
         sgf_path = fixtures_dir / 'amateur_6d.sgf'
         sgf_content = sgf_path.read_text(encoding='utf-8')
         
-        moves, variations, game_info, parse_info = parse_sgf(sgf_content)
+        result = parse_sgf(sgf_content)
+        game_info = result['game_info']
         
         # 测试等级（6段属于高段，但7-8段也是高段）
         level = determine_game_level(game_info)
@@ -53,7 +55,8 @@ class TestIntegration:
         sgf_path = fixtures_dir / 'amateur_3d.sgf'
         sgf_content = sgf_path.read_text(encoding='utf-8')
         
-        moves, variations, game_info, parse_info = parse_sgf(sgf_content)
+        result = parse_sgf(sgf_content)
+        game_info = result['game_info']
         
         level = determine_game_level(game_info)
         # 3段属于普通
@@ -64,7 +67,8 @@ class TestIntegration:
         sgf_path = fixtures_dir / 'kyu_player.sgf'
         sgf_content = sgf_path.read_text(encoding='utf-8')
         
-        moves, variations, game_info, parse_info = parse_sgf(sgf_content)
+        result = parse_sgf(sgf_content)
+        game_info = result['game_info']
         
         level = determine_game_level(game_info)
         assert level == '普通'  # 级位归入普通
@@ -74,7 +78,8 @@ class TestIntegration:
         sgf_path = fixtures_dir / 'no_rank.sgf'
         sgf_content = sgf_path.read_text(encoding='utf-8')
         
-        moves, variations, game_info, parse_info = parse_sgf(sgf_content)
+        result = parse_sgf(sgf_content)
+        game_info = result['game_info']
         
         level = determine_game_level(game_info)
         assert level == '普通'  # 无段位归入普通
