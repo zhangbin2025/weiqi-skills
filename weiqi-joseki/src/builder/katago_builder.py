@@ -309,6 +309,7 @@ class KatagoJosekiBuilder:
         """
         from ..extraction.extractor import extract_main_branch_with_winrate
         from ..extraction.component_detector import extract_corner_moves
+        from ..extraction.sgf_parser import parse_sgf
         
         first_n = config.get('first_n', 80)
         min_moves = config.get('min_moves', 4)
@@ -324,6 +325,10 @@ class KatagoJosekiBuilder:
                 all_moves_with_wr = extract_main_branch_with_winrate(sgf_data, first_n=first_n)
                 if not all_moves_with_wr:
                     continue
+                
+                # 解析 SGF 获取预置子
+                sgf_parsed = parse_sgf(sgf_data)
+                handicap_stones = sgf_parsed['game_info'].get('handicap_stones', [])
                 
                 # 构建着法序列（不带胜率）用于角区提取
                 all_moves = [(color, coord) for color, coord, _ in all_moves_with_wr]
@@ -342,7 +347,7 @@ class KatagoJosekiBuilder:
                 
                 for corner in CORNERS:
                     # 提取该角的着法
-                    corner_moves = extract_corner_moves(all_moves, corner)
+                    corner_moves = extract_corner_moves(all_moves, corner, handicap_stones)
                     if not corner_moves or len(corner_moves) < min_moves:
                         continue
                     

@@ -36,10 +36,12 @@ def extract_main_branch(sgf_data: str, first_n: int = 80) -> List[Tuple[str, str
     
     while len(node['children']) > 0:
         node = node['children'][0]
-        coord = node['coord'] if node['coord'] else 'tt'
-        moves.append((node['color'], coord))
-        if len(moves) >= first_n:
-            break
+        # 跳过预置子节点（没有着法属性的节点）
+        if node['color'] is not None:
+            coord = node['coord'] if node['coord'] else 'tt'
+            moves.append((node['color'], coord))
+            if len(moves) >= first_n:
+                break
     
     return moves
 
@@ -99,13 +101,15 @@ def extract_main_branch_with_winrate(sgf_data: str, first_n: int = 80) -> List[T
     
     while len(node['children']) > 0:
         node = node['children'][0]
-        coord = node['coord'] if node['coord'] else 'tt'
-        # 从 properties['C'] 解析胜率
-        comment = node.get('properties', {}).get('C', '')
-        winrate = _parse_winrate(comment)
-        moves.append((node['color'], coord, winrate))
-        if len(moves) >= first_n:
-            break
+        # 跳过预置子节点（没有着法属性的节点）
+        if node['color'] is not None:
+            coord = node['coord'] if node['coord'] else 'tt'
+            # 从 properties['C'] 解析胜率
+            comment = node.get('properties', {}).get('C', '')
+            winrate = _parse_winrate(comment)
+            moves.append((node['color'], coord, winrate))
+            if len(moves) >= first_n:
+                break
     
     return moves
 
@@ -137,10 +141,26 @@ def extract_moves(
         corner_key: 'tl', 'tr', 'bl', 'br'
         坐标为原始SGF坐标，未转换视角
     """
-    # 步骤1: 提取主分支着法
-    moves = extract_main_branch(sgf_data, first_n)
+    # 步骤1: 解析 SGF 并提取主分支着法和预置子
+    sgf = parse_sgf(sgf_data)
+    
+    # 提取主分支着法（跳过预置子节点）
+    moves = []
+    node = sgf['tree']
+    while len(node['children']) > 0:
+        node = node['children'][0]
+        # 跳过预置子节点（没有着法属性的节点）
+        if node['color'] is not None:
+            coord = node['coord'] if node['coord'] else 'tt'
+            moves.append((node['color'], coord))
+        if len(moves) >= first_n:
+            break
+    
     if not moves:
         return {}
+    
+    # 获取预置子
+    handicap_stones = sgf['game_info'].get('handicap_stones', [])
     
     # 确定要处理的角
     corners_to_process = [corner] if corner else CORNERS
@@ -148,7 +168,7 @@ def extract_moves(
     # 步骤2-5: 对每个角提取定式
     result = {}
     for corner_key in corners_to_process:
-        corner_moves = extract_corner_moves(moves, corner_key)
+        corner_moves = extract_corner_moves(moves, corner_key, handicap_stones)
         if corner_moves and len(corner_moves) >= 2:
             result[corner_key] = corner_moves
     
